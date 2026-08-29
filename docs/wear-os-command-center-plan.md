@@ -101,34 +101,34 @@ The user-facing message path is not the internal orchestration mailbox. Agent di
 ```mermaid
 flowchart LR
   subgraph H[Execution boundary]
-    R[Orca runtime\nlocal, SSH, or paired host]
+    R[Orca runtime<br/>local, SSH, or paired host]
   end
 
   subgraph P[Android phone trust boundary]
-    M[Existing Orca mobile\nE2EE direct or relay client]
-    X[Wear projection and\naction executor]
+    M[Existing Orca mobile<br/>E2EE direct or relay client]
+    X[Wear projection and<br/>action executor]
     J[Durable command journal]
     M <--> X
     X <--> J
   end
 
   subgraph G[Google Wear Data Layer]
-    D[Encrypted expiring dashboard\nand transient pages/actions]
+    D[Encrypted expiring dashboard<br/>and transient pages/actions]
   end
 
   subgraph W[Watch application boundary]
-    C[Expo and React Native\ncommand center]
+    C[Expo and React Native<br/>command center]
     K[Local sensitive-minimized cache]
-    S[Wear OS system\nnotification surface]
+    S[Wear OS system<br/>notification surface]
     C <--> K
   end
 
   R <-->|Existing pinned-key E2EE RPC| M
-  X <-->|Same package, signature,\nand enrolled binding| D
+  X <-->|Same package, signature,<br/>and enrolled binding| D
   D <--> C
   M -->|Android notification bridge| S
 
-  C -. optional later: foreground-only,\nWear-scoped E2EE .-> R
+  C -. optional later: foreground-only,<br/>Wear-scoped E2EE .-> R
 ```
 
 ### Pairing and command sequence
@@ -160,7 +160,7 @@ sequenceDiagram
   R-->>P: accepted/rejected receipt, or queryable pending state
   P->>D: Acknowledge exact outcome
   D-->>W: accepted, rejected, or unknown
-  W-->>U: Show outcome; never auto-retry unknown
+  W-->>U: Show outcome#59; never auto-retry unknown
 ```
 
 ## Phone/watch contract
