@@ -28,13 +28,11 @@ type FolderSubmitOrchestrationInput = Pick<
 >
 
 import { useCallback } from 'react'
-import type { TuiAgent } from '../../../../shared/tui-agent'
+import type { AgentLaunchSelection } from '../../../../shared/custom-agent-profile'
 import { settleComposerSubmit } from '@/lib/composer-submit-cancellation'
 import { isTuiAgentEnabled } from '../../../../shared/tui-agent-selection'
-import {
-  resolveFolderWorkspaceLaunchDraft,
-  submitFolderWorkspaceCreate
-} from '@/components/sidebar/folder-workspace-composer-submit'
+import { submitFolderWorkspaceCreate } from '@/components/sidebar/folder-workspace-composer-submit'
+import { resolveFolderWorkspaceLaunchDraft } from '@/components/sidebar/folder-workspace-agent-startup'
 import {
   resolveTuiAgentLaunchArgs,
   resolveTuiAgentLaunchEnv
@@ -77,7 +75,7 @@ export function useFolderSubmitOrchestration(input: FolderSubmitOrchestrationInp
   const { canResolveFolderSmartGitHubSubmit } = decisions
 
   const submitFolderTarget = useCallback(
-    async (requestedAgent: TuiAgent | null): Promise<void> => {
+    async (requestedSelection: AgentLaunchSelection | null): Promise<void> => {
       if (!selectedProjectGroup?.parentPath || folderCreateDisabled) {
         return
       }
@@ -101,14 +99,17 @@ export function useFolderSubmitOrchestration(input: FolderSubmitOrchestrationInp
           smartGitHubResolution.kind === 'none' ? null : smartGitHubResolution
         const submitLinkedWorkItem = smartGitHubMetadata?.linkedWorkItem ?? linkedWorkItem
         const agent =
-          requestedAgent && isTuiAgentEnabled(requestedAgent, disabledTuiAgents)
-            ? requestedAgent
+          requestedSelection?.kind === 'builtin' &&
+          isTuiAgentEnabled(requestedSelection.agent, disabledTuiAgents)
+            ? requestedSelection.agent
             : null
+        const customProfileId =
+          requestedSelection?.kind === 'custom' ? requestedSelection.profileId : null
         if (isSubmissionCancelled()) {
           return
         }
         const folderLaunchDraftText =
-          agent && submitLinkedWorkItem
+          requestedSelection && submitLinkedWorkItem
             ? resolveFolderWorkspaceLaunchDraft(submitLinkedWorkItem, note)
             : null
         const folderWorkspaceCreated = await submitFolderWorkspaceCreate({
@@ -119,6 +120,7 @@ export function useFolderSubmitOrchestration(input: FolderSubmitOrchestrationInp
           linkedTaskSourceContext: taskSourceContext,
           note,
           quickAgent: agent,
+          customProfileId,
           autoRenameBranchFromWork: settings?.autoRenameBranchFromWork,
           agentCmdOverrides: settings?.agentCmdOverrides,
           agentArgs: agent

@@ -73,6 +73,25 @@ describe('tui agent startup plans', () => {
     )
   })
 
+  it('keeps a derived profile command isolated from built-in overrides and defaults', () => {
+    const plan = buildAgentStartupPlan({
+      agent: 'codex',
+      prompt: '',
+      cmdOverrides: { codex: 'global-codex' },
+      agentArgs: '--model global',
+      agentCommand: "'codex' '--model' 'luna'",
+      platform: 'linux',
+      allowEmptyPromptLaunch: true
+    })
+
+    expect(plan?.launchCommand).toBe("'codex' '--model' 'luna'")
+    expect(plan?.launchConfig).toEqual({
+      agentCommand: "'codex' '--model' 'luna'",
+      agentArgs: '',
+      agentEnv: {}
+    })
+  })
+
   it('uses cmd escaping when requested explicitly', () => {
     const plan = buildAgentStartupPlan({
       agent: 'claude',

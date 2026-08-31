@@ -2,12 +2,18 @@ import { getAgentCatalog } from '@/lib/agent-catalog'
 import { filterEnabledTuiAgents } from '../../../../shared/tui-agent-selection'
 import { normalizeMatchQuery, tokenizeMatchValue } from './query-token-match'
 import type { TuiAgent } from '../../../../shared/tui-agent'
+import type { CustomAgentProfile } from '../../../../shared/custom-agent-profile'
 
-export type TabAgentLaunchOption = {
-  agent: TuiAgent
+type TabAgentLaunchOptionBase = {
   aliases: readonly string[]
   label: string
 }
+
+export type TabAgentLaunchOption = TabAgentLaunchOptionBase &
+  (
+    | { agent: TuiAgent; customProfileId?: never; customBaseAgent?: never }
+    | { customProfileId: string; customBaseAgent?: TuiAgent; agent?: never }
+  )
 
 function normalizeAgentAlias(value: string): string {
   return value.trim().toLowerCase()
@@ -38,9 +44,10 @@ export function orderTabLaunchAgents(
 
 export function buildTabAgentLaunchOptions(
   agents: readonly TuiAgent[],
-  commandOverrides: Partial<Record<TuiAgent, string>> = {}
+  commandOverrides: Partial<Record<TuiAgent, string>> = {},
+  customProfiles: readonly CustomAgentProfile[] = []
 ): TabAgentLaunchOption[] {
-  return agents.map((agent) => {
+  const builtInOptions = agents.map((agent) => {
     const entry = getCatalogEntry(agent)
     const label = entry?.label ?? agent
     const aliases = new Set<string>([
@@ -60,6 +67,28 @@ export function buildTabAgentLaunchOptions(
     }
     return { agent, aliases: [...aliases], label }
   })
+  const customOptions = customProfiles.map((profile) => {
+    const aliases = new Set<string>([
+      normalizeAgentAlias(profile.name),
+      compactAgentAlias(profile.name),
+      normalizeAgentAlias(profile.executable),
+      compactAgentAlias(profile.executable)
+    ])
+    if (profile.kind === 'derived') {
+      const entry = getCatalogEntry(profile.baseAgent)
+      aliases.add(normalizeAgentAlias(profile.baseAgent))
+      if (entry) {
+        aliases.add(normalizeAgentAlias(entry.label))
+      }
+    }
+    return {
+      customProfileId: profile.id,
+      ...(profile.kind === 'derived' ? { customBaseAgent: profile.baseAgent } : {}),
+      aliases: [...aliases],
+      label: profile.name
+    }
+  })
+  return [...builtInOptions, ...customOptions]
 }
 
 // Scores how well a query matches an agent. Exact alias equality is the

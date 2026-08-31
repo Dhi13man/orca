@@ -64,7 +64,7 @@ export function useFullSubmitOrchestration(input: FullSubmitOrchestrationInput) 
 
   const submit = useCallback(async (): Promise<void> => {
     if (isProjectGroupTarget) {
-      await submitFolderTarget(tuiAgent)
+      await submitFolderTarget(tuiAgent ? { kind: 'builtin', agent: tuiAgent } : null)
       return
     }
 

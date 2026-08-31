@@ -29,10 +29,8 @@ vi.mock('@/lib/new-workspace', async (importOriginal) => {
 import { useAppStore } from '@/store'
 import { decideInitialAgentTabViewMode } from '@/lib/native-chat-initial-view-mode'
 import { resolveStartupLaunchDraftText } from '@/lib/worktree-startup-payload'
-import {
-  getFolderWorkspaceAgentLaunchPlatform,
-  submitFolderWorkspaceCreate
-} from './folder-workspace-composer-submit'
+import { submitFolderWorkspaceCreate } from './folder-workspace-composer-submit'
+import { getFolderWorkspaceAgentLaunchPlatform } from './folder-workspace-agent-startup'
 
 function makeProjectGroup(): ProjectGroup {
   return {

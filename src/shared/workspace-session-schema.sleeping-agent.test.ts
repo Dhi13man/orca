@@ -26,6 +26,11 @@ describe('parseWorkspaceSession sleeping agents', () => {
             agentArgs: '',
             agentEnv: {}
           },
+          customAgentProfileSnapshot: {
+            id: 'codex-luna',
+            name: 'Codex Luna',
+            baseAgent: 'codex'
+          },
           origin: 'live'
         }
       }
@@ -38,6 +43,9 @@ describe('parseWorkspaceSession sleeping agents', () => {
         agentArgs: '',
         agentEnv: {}
       })
+      expect(
+        result.value.sleepingAgentSessionsByPaneKey?.['tab1:pane-1']?.customAgentProfileSnapshot
+      ).toEqual({ id: 'codex-luna', name: 'Codex Luna', baseAgent: 'codex' })
     }
   })
 

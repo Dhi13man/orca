@@ -525,7 +525,8 @@ function buildRuntimeMobileTabsProjection(tabsByWorktree: AppState['tabsByWorktr
                 aiVaultTitle: tab.aiVaultTitle,
                 generatedTitle: tab.generatedTitle,
                 customTitle: tab.customTitle,
-                launchAgent: tab.launchAgent
+                launchAgent: tab.launchAgent,
+                customAgentProfileSnapshot: tab.customAgentProfileSnapshot
               }))
             )
           }
@@ -1994,11 +1995,13 @@ function buildMobileTerminalSurfaceTabs(
       launchDraft && launchDraft.agent === launchAgent && launchDraft.text.trim()
         ? launchDraft
         : null
+    const customAgentProfileSnapshot =
+      leafId === activeLeafId ? terminal.customAgentProfileSnapshot : undefined
     return {
       type: 'terminal' as const,
       id: mobileTerminalSurfaceId(terminal.id, leafId),
       title,
-      ...(tabWideFallbackSafe && terminal.quickCommandLabel?.trim()
+      ...((tabWideFallbackSafe || customAgentProfileSnapshot) && terminal.quickCommandLabel?.trim()
         ? { quickCommandLabel: terminal.quickCommandLabel.trim() }
         : {}),
       parentTabId: terminal.id,
@@ -2007,6 +2010,9 @@ function buildMobileTerminalSurfaceTabs(
       ...(terminalTheme ? { terminalTheme } : {}),
       ...(agentStatus ? { agentStatus } : {}),
       ...(launchAgent ? { launchAgent } : {}),
+      ...(customAgentProfileSnapshot
+        ? { customAgentProfileSnapshot: { ...customAgentProfileSnapshot } }
+        : {}),
       // Launch context that exists only as an unsent TUI-input draft; mobile
       // prefills its chat composer from it (desktop keeps its own seed store).
       ...(publishedLaunchDraft

@@ -55,6 +55,35 @@ describe('tab agent launch options', () => {
     )
   })
 
+  it('appends custom profiles and searches their name, executable, and base agent', () => {
+    const options = buildTabAgentLaunchOptions(['claude'], {}, [
+      {
+        id: 'luna',
+        name: 'Codex Luna',
+        kind: 'derived',
+        baseAgent: 'codex',
+        executable: 'codex-nightly',
+        args: ['--model', 'luna']
+      },
+      {
+        id: 'dhimanex',
+        name: 'Dhimanex',
+        kind: 'generic',
+        executable: 'dhimanex-cli',
+        args: []
+      }
+    ])
+
+    expect(options.map((option) => option.label)).toEqual(['Claude', 'Codex Luna', 'Dhimanex'])
+    expect(findMatchingTabAgentLaunchOptions('luna', options)[0]?.customProfileId).toBe('luna')
+    expect(findMatchingTabAgentLaunchOptions('codex-night', options)[0]?.customProfileId).toBe(
+      'luna'
+    )
+    expect(findMatchingTabAgentLaunchOptions('dhimanex-cli', options)[0]?.customProfileId).toBe(
+      'dhimanex'
+    )
+  })
+
   it('matches agents on a partial prefix so the launcher actually searches', () => {
     const options = buildTabAgentLaunchOptions(['claude', 'codex', 'gemini', 'antigravity'])
 

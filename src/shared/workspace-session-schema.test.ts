@@ -392,6 +392,36 @@ describe('parseWorkspaceSession', () => {
     }
   })
 
+  it('preserves an immutable custom agent profile snapshot on terminal tabs', () => {
+    const snapshot = { id: 'codex-luna', name: 'Codex Luna', baseAgent: 'codex' } as const
+    const result = parseWorkspaceSession({
+      activeRepoId: null,
+      activeWorktreeId: 'wt',
+      activeTabId: 'tab1',
+      tabsByWorktree: {
+        wt: [
+          {
+            id: 'tab1',
+            ptyId: null,
+            worktreeId: 'wt',
+            title: 'Codex Luna',
+            customTitle: null,
+            color: null,
+            sortOrder: 0,
+            createdAt: 0,
+            customAgentProfileSnapshot: snapshot
+          }
+        ]
+      },
+      terminalLayoutsByTabId: {}
+    })
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.value.tabsByWorktree.wt[0].customAgentProfileSnapshot).toEqual(snapshot)
+    }
+  })
+
   it('rejects a session with missing required top-level fields', () => {
     const result = parseWorkspaceSession({
       activeRepoId: null

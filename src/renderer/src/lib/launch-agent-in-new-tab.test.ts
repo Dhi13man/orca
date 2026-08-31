@@ -15,6 +15,8 @@ const mockMarkNativeChatLaunchPromptFailed = vi.fn()
 const mockTrack = vi.fn()
 const mockToastMessage = vi.fn()
 const mockWaitForAgentReady = vi.fn()
+const mockCanUseStructuredNativeChat = vi.fn(() => false)
+const mockStartStructuredCodexLaunch = vi.fn()
 
 const LEAF_ID = '11111111-1111-4111-8111-111111111111'
 
@@ -120,6 +122,14 @@ vi.mock('@/lib/agent-ready-wait', () => ({
   waitForAgentReady: mockWaitForAgentReady
 }))
 
+vi.mock('@/lib/structured-native-chat-availability', () => ({
+  canUseStructuredNativeChat: mockCanUseStructuredNativeChat
+}))
+
+vi.mock('@/lib/structured-agent-session-launch', () => ({
+  startStructuredCodexLaunch: mockStartStructuredCodexLaunch
+}))
+
 vi.mock('@/lib/telemetry', () => ({
   track: mockTrack,
   tuiAgentToAgentKind: (agent: string) => agent
@@ -137,10 +147,17 @@ vi.mock('@/runtime/web-runtime-session', () => ({
   isWebTerminalSurfaceTabId: vi.fn(() => false)
 }))
 
+function enableNativeChat(): void {
+  store.settings.experimentalNativeChat = true
+  store.settings.experimentalStructuredNativeChat = true
+  store.settings.openAgentTabsInChatByDefault = true
+}
+
 describe('launchAgentInNewTab', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockIsWebRuntimeSessionActive.mockReturnValue(false)
+    mockCanUseStructuredNativeChat.mockReturnValue(false)
     mockCreateWebRuntimeSessionTerminal.mockResolvedValue({ status: 'created' })
     mockCreateWebRuntimeAgentSessionTerminalWithLaunchDraft.mockResolvedValue({ status: 'created' })
     store.activeRepoId = 'repo-1'
@@ -194,6 +211,26 @@ describe('launchAgentInNewTab', () => {
       launchAgent: 'codex'
     })
   })
+
+  it('keeps an exact custom Codex command out of structured chat', async () => {
+    enableNativeChat()
+    mockCanUseStructuredNativeChat.mockReturnValue(true)
+    const { launchAgentInNewTab } = await import('./launch-agent-in-new-tab')
+
+    launchAgentInNewTab({
+      agent: 'codex',
+      worktreeId: 'wt-1',
+      agentArgs: null,
+      agentCommand: "'codex' '--model' 'luna'"
+    })
+
+    expect(mockStartStructuredCodexLaunch).not.toHaveBeenCalled()
+    expect(mockQueueTabStartupCommand).toHaveBeenCalledWith(
+      'tab-1',
+      expect.objectContaining({ command: "'codex' '--model' 'luna'" })
+    )
+  })
+
   it('keeps Floating Workspace authority on native Windows beside an active WSL project', async () => {
     store.projects = [
       {
@@ -221,15 +258,7 @@ describe('launchAgentInNewTab', () => {
   })
 
   it('keeps prompted Codex launches on the ordinary terminal path', async () => {
-    store.settings = {
-      agentCmdOverrides: {},
-      agentDefaultArgs: {},
-      agentDefaultEnv: {},
-      activeRuntimeEnvironmentId: null,
-      experimentalNativeChat: true,
-      experimentalStructuredNativeChat: true,
-      openAgentTabsInChatByDefault: true
-    }
+    enableNativeChat()
     const { launchAgentInNewTab } = await import('./launch-agent-in-new-tab')
 
     launchAgentInNewTab({
@@ -259,15 +288,7 @@ describe('launchAgentInNewTab', () => {
   })
 
   it('opens local Grok submit-after-ready launches in native chat', async () => {
-    store.settings = {
-      agentCmdOverrides: {},
-      agentDefaultArgs: {},
-      agentDefaultEnv: {},
-      activeRuntimeEnvironmentId: null,
-      experimentalNativeChat: true,
-      experimentalStructuredNativeChat: true,
-      openAgentTabsInChatByDefault: true
-    }
+    enableNativeChat()
     const { launchAgentInNewTab } = await import('./launch-agent-in-new-tab')
 
     launchAgentInNewTab({
@@ -291,15 +312,7 @@ describe('launchAgentInNewTab', () => {
   })
 
   it('keeps Model-A SSH Grok launches in terminal mode', async () => {
-    store.settings = {
-      agentCmdOverrides: {},
-      agentDefaultArgs: {},
-      agentDefaultEnv: {},
-      activeRuntimeEnvironmentId: null,
-      experimentalNativeChat: true,
-      experimentalStructuredNativeChat: true,
-      openAgentTabsInChatByDefault: true
-    }
+    enableNativeChat()
     store.repos = [{ id: 'repo-1', connectionId: 'ssh-target-1', path: '/repo' }]
     const { launchAgentInNewTab } = await import('./launch-agent-in-new-tab')
 
@@ -312,15 +325,7 @@ describe('launchAgentInNewTab', () => {
   })
 
   it('mirrors an argv-prefill draft into chat and opens the tab there', async () => {
-    store.settings = {
-      agentCmdOverrides: {},
-      agentDefaultArgs: {},
-      agentDefaultEnv: {},
-      activeRuntimeEnvironmentId: null,
-      experimentalNativeChat: true,
-      experimentalStructuredNativeChat: true,
-      openAgentTabsInChatByDefault: true
-    }
+    enableNativeChat()
     const { launchAgentInNewTab } = await import('./launch-agent-in-new-tab')
 
     const result = launchAgentInNewTab({
@@ -343,15 +348,7 @@ describe('launchAgentInNewTab', () => {
   })
 
   it('mirrors a multi-line draft into chat and opens the tab there', async () => {
-    store.settings = {
-      agentCmdOverrides: {},
-      agentDefaultArgs: {},
-      agentDefaultEnv: {},
-      activeRuntimeEnvironmentId: null,
-      experimentalNativeChat: true,
-      experimentalStructuredNativeChat: true,
-      openAgentTabsInChatByDefault: true
-    }
+    enableNativeChat()
     const { launchAgentInNewTab } = await import('./launch-agent-in-new-tab')
 
     const prompt = 'Reproduce first\n\nhttps://github.com/o/r/issues/12'

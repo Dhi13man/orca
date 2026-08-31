@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Info } from 'lucide-react'
 import type { GlobalSettings } from '../../../../shared/global-settings-types'
 import { normalizeGlobalWindowsRuntimeDefault } from '../../../../shared/project-execution-runtime'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
+import { Label } from '../ui/label'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { translate } from '@/i18n/i18n'
 
@@ -97,6 +98,7 @@ export function AgentSessionSourceHomeInput({
   onSave
 }: AgentSessionSourceHomeControl): React.JSX.Element {
   const [draft, setDraft] = useState(value)
+  const inputId = useId()
 
   const commit = (): void => {
     onSave(draft.trim())
@@ -104,11 +106,13 @@ export function AgentSessionSourceHomeInput({
 
   return (
     <div className="flex flex-col gap-1">
-      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        {translate(
-          'auto.components.settings.AgentsPane.codexSessionSource',
-          'Codex home to import from'
-        )}
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Label htmlFor={inputId} className="text-xs font-normal text-muted-foreground">
+          {translate(
+            'auto.components.settings.AgentsPane.codexSessionSource',
+            'Codex home to import from'
+          )}
+        </Label>
         <Tooltip>
           <TooltipTrigger asChild>
             <button
@@ -129,9 +133,10 @@ export function AgentSessionSourceHomeInput({
             )}
           </TooltipContent>
         </Tooltip>
-      </span>
+      </div>
       <div className="flex items-center gap-2">
         <Input
+          id={inputId}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}

@@ -43,6 +43,7 @@ export type QuickCreationRequestInput = {
   pendingFirstAgentMessageRename: boolean
   note: string
   startupPlan: AgentStartupPlan | null
+  customAgentDraftPrompt?: string | null
   quickPrompt: string
   launchDraftPrompt: string | null | undefined
   quickTelemetry: AgentStartedTelemetry | null
@@ -102,6 +103,9 @@ export function buildQuickCreationRequest(
     pendingFirstAgentMessageRename: input.pendingFirstAgentMessageRename,
     note: input.note,
     startupPlan: input.startupPlan,
+    ...(input.customAgentDraftPrompt
+      ? { customAgentDraftPrompt: input.customAgentDraftPrompt }
+      : {}),
     quickPrompt: input.quickPrompt,
     ...(input.launchDraftPrompt ? { launchDraftPrompt: input.launchDraftPrompt } : {}),
     quickTelemetry: input.quickTelemetry,

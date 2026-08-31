@@ -47,6 +47,7 @@ function TabBarCreateEntrySession({
   menuOptions = EMPTY_MENU_OPTIONS,
   onDidOpenEntry,
   onLaunchAgent,
+  onLaunchCustomAgent,
   onOpenDefaultTerminal,
   onOpenEntry,
   onQueryChange,
@@ -251,7 +252,11 @@ function TabBarCreateEntrySession({
       return
     }
     if (selectedOption.kind === 'agent') {
-      onLaunchAgent?.(selectedOption.option.agent)
+      if (selectedOption.option.customProfileId) {
+        onLaunchCustomAgent?.(selectedOption.option.customProfileId)
+      } else if (selectedOption.option.agent) {
+        onLaunchAgent?.(selectedOption.option.agent)
+      }
       onDidOpenEntry?.()
       return
     }

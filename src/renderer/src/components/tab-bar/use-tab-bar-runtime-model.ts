@@ -26,6 +26,7 @@ import {
   type TabBarAgentProjections
 } from './tab-agent-types-by-tab-id'
 import { buildTabAgentLaunchOptions, orderTabLaunchAgents } from './tab-agent-launch-options'
+import { normalizeCustomAgentProfiles } from '../../../../shared/custom-agent-profile'
 import type { TabAgentLaunchOption } from './tab-agent-launch-options'
 import { DEFAULT_DISABLED_TUI_AGENTS } from '../../../../shared/tui-agent-selection'
 import { shouldShowWindowsShellMenu } from './windows-shell-menu-visibility'
@@ -148,15 +149,20 @@ export function useTabBarRuntimeModel({
   const agentCmdOverrides = useAppStore(
     (s) => s.settings?.agentCmdOverrides ?? EMPTY_AGENT_CMD_OVERRIDES
   )
+  const customAgentProfiles = useMemo(
+    () => normalizeCustomAgentProfiles(settings?.customAgentProfiles),
+    [settings?.customAgentProfiles]
+  )
   const agentDetectionTarget = useAgentDetectionTargetForWorktree(worktreeId)
   const { detectedIds } = useDetectedAgents(agentDetectionTarget)
   const agentLaunchOptions = useMemo(
     () =>
       buildTabAgentLaunchOptions(
         orderTabLaunchAgents(defaultAgent, detectedIds ?? [], disabledTuiAgents),
-        agentCmdOverrides
+        agentCmdOverrides,
+        customAgentProfiles
       ),
-    [agentCmdOverrides, defaultAgent, detectedIds, disabledTuiAgents]
+    [agentCmdOverrides, customAgentProfiles, defaultAgent, detectedIds, disabledTuiAgents]
   )
   const isWebClient = (globalThis as { __ORCA_WEB_CLIENT__?: boolean }).__ORCA_WEB_CLIENT__ === true
   const windowsTerminalCapabilityOwnerKey = getWindowsTerminalCapabilityOwnerKey(

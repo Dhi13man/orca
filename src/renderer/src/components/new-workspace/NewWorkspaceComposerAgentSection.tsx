@@ -9,8 +9,8 @@ import type { NewWorkspaceComposerCardProps } from './new-workspace-composer-car
 
 type NewWorkspaceComposerAgentSectionProps = Pick<
   NewWorkspaceComposerCardProps,
-  | 'quickAgent'
-  | 'onQuickAgentChange'
+  | 'quickAgentSelection'
+  | 'onQuickAgentSelectionChange'
   | 'onOpenAgentSettings'
   | 'createDisabled'
   | 'onCreate'
@@ -22,11 +22,14 @@ type NewWorkspaceComposerAgentSectionProps = Pick<
   handleSetDefaultAgent: (
     next: Parameters<NonNullable<React.ComponentProps<typeof AgentCombobox>['onSetDefault']>>[0]
   ) => void
+  customAgentProfiles: NonNullable<
+    React.ComponentProps<typeof AgentCombobox>['launchSelection']
+  >['profiles']
 }
 
 export function NewWorkspaceComposerAgentSection({
-  quickAgent,
-  onQuickAgentChange,
+  quickAgentSelection,
+  onQuickAgentSelectionChange,
   onOpenAgentSettings,
   createDisabled,
   onCreate,
@@ -34,7 +37,8 @@ export function NewWorkspaceComposerAgentSection({
   onToggleAdvanced,
   visibleQuickAgents,
   defaultTuiAgent,
-  handleSetDefaultAgent
+  handleSetDefaultAgent,
+  customAgentProfiles
 }: NewWorkspaceComposerAgentSectionProps): React.JSX.Element {
   return (
     <>
@@ -67,8 +71,11 @@ export function NewWorkspaceComposerAgentSection({
         </div>
         <AgentCombobox
           agents={visibleQuickAgents}
-          value={quickAgent}
-          onValueChange={onQuickAgentChange}
+          launchSelection={{
+            value: quickAgentSelection,
+            profiles: customAgentProfiles,
+            onValueChange: onQuickAgentSelectionChange
+          }}
           onOpenManageAgents={onOpenAgentSettings}
           defaultAgent={defaultTuiAgent}
           onSetDefault={handleSetDefaultAgent}

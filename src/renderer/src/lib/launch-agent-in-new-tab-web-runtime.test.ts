@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   createTab: vi.fn(),
   closeTab: vi.fn(),
   createWebRuntimeSessionTerminal: vi.fn(),
+  createWebRuntimeGenericAgentTerminal: vi.fn(),
   setActiveTabType: vi.fn()
 }))
 
@@ -14,6 +15,7 @@ const store = {
     agentCmdOverrides: {} as Record<string, string>,
     agentDefaultArgs: {} as Record<string, string>,
     agentDefaultEnv: {} as Record<string, Record<string, string>>,
+    customAgentProfiles: [] as unknown[],
     activeRuntimeEnvironmentId: 'web-runtime' as string | null
   },
   projects: [{ id: 'repo-1', localWindowsRuntimePreference: { kind: 'inherit-global' as const } }],
@@ -36,7 +38,17 @@ const store = {
   terminalLayoutsByTabId: {},
   ptyIdsByTabId: {},
   sshConnectionStates: new Map(),
+  sshStateByEnvironment: new Map(),
   transientClearedAgentStatusConnectionIds: {},
+  runtimeStatusByEnvironmentId: new Map([
+    [
+      'web-runtime',
+      {
+        status: { hostPlatform: 'linux', terminalWindowsShell: null },
+        checkedAt: 1
+      }
+    ]
+  ]),
   allWorktrees: vi.fn(() => store.worktreesByRepo['repo-1']),
   createTab: mocks.createTab,
   closeTab: mocks.closeTab,
@@ -58,6 +70,7 @@ vi.mock('@/lib/telemetry', () => ({
 }))
 vi.mock('@/runtime/web-runtime-session', () => ({
   createWebRuntimeSessionTerminal: mocks.createWebRuntimeSessionTerminal,
+  createWebRuntimeGenericAgentTerminal: mocks.createWebRuntimeGenericAgentTerminal,
   isWebRuntimeSessionActive: vi.fn(() => true),
   isWebTerminalSurfaceTabId: vi.fn(() => false)
 }))
@@ -69,10 +82,15 @@ describe('launchAgentInNewTab paired web runtime', () => {
       agentCmdOverrides: {},
       agentDefaultArgs: {},
       agentDefaultEnv: {},
+      customAgentProfiles: [],
       activeRuntimeEnvironmentId: 'web-runtime'
     }
     store.tabsByWorktree = { 'wt-1': [{ id: 'tab-1' }] }
     mocks.createWebRuntimeSessionTerminal.mockResolvedValue({ status: 'created' })
+    mocks.createWebRuntimeGenericAgentTerminal.mockResolvedValue({
+      outcome: { status: 'created' },
+      promptDelivered: false
+    })
   })
 
   it('delegates agent quick launch to the host runtime', async () => {
@@ -134,5 +152,63 @@ describe('launchAgentInNewTab paired web runtime', () => {
       viewMode: 'terminal'
     })
     expect(mocks.createTab).not.toHaveBeenCalled()
+  })
+
+  it('preserves a derived custom profile command on the paired exact path', async () => {
+    store.settings.agentCmdOverrides = { codex: 'global-codex' }
+    store.settings.agentDefaultArgs = { codex: '--model global' }
+    store.settings.customAgentProfiles = [
+      {
+        id: 'codex-luna',
+        name: 'Codex Luna',
+        kind: 'derived',
+        baseAgent: 'codex',
+        executable: 'codex',
+        args: ['--model', 'luna']
+      }
+    ]
+    const { launchCustomAgentInNewTab } = await import('./launch-custom-agent-in-new-tab')
+
+    const result = launchCustomAgentInNewTab({
+      profileId: 'codex-luna',
+      worktreeId: 'wt-1'
+    })
+
+    expect(result?.tabId).toBeNull()
+    expect(mocks.createWebRuntimeSessionTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        launchAgent: 'codex',
+        command: "'codex' '--model' 'luna'",
+        preserveExactCommand: true,
+        viewMode: 'terminal'
+      })
+    )
+  })
+
+  it('launches a generic custom profile through the paired exact terminal path', async () => {
+    store.settings.customAgentProfiles = [
+      {
+        id: 'dhimanex',
+        name: 'Dhimanex',
+        kind: 'generic',
+        executable: 'dhimanex',
+        args: ['--fast']
+      }
+    ]
+    const { launchCustomAgentInNewTab } = await import('./launch-custom-agent-in-new-tab')
+
+    const result = launchCustomAgentInNewTab({
+      profileId: 'dhimanex',
+      worktreeId: 'wt-1'
+    })
+
+    expect(result).toEqual({ tabId: null })
+    expect(mocks.createWebRuntimeGenericAgentTerminal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: "'dhimanex' '--fast'",
+        viewMode: 'terminal',
+        activate: true
+      })
+    )
   })
 })

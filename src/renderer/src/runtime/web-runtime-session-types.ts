@@ -9,6 +9,10 @@ import type {
 import type { StartupCommandDelivery } from '../../../shared/codex-startup-delivery'
 import type { RuntimeTerminalCreate } from '../../../shared/runtime-types'
 import type { TuiAgent } from '../../../shared/tui-agent'
+import type {
+  CustomAgentProfile,
+  CustomAgentProfileSnapshot
+} from '../../../shared/custom-agent-profile'
 
 export type WebRuntimeTerminalCreateOutcome =
   | { status: 'created' }
@@ -38,6 +42,10 @@ export type CreateWebRuntimeSessionTerminalArgs = {
   viewMode?: 'terminal' | 'chat'
   activate?: boolean
   selectWorktree?: boolean
+  /** Renderer-only: keep the caller's exact command instead of asking the host to rebuild it. */
+  preserveExactCommand?: boolean
+  customAgentProfile?: CustomAgentProfile
+  customAgentProfileSnapshot?: CustomAgentProfileSnapshot
 }
 
 export type CreatedWebRuntimeSessionTerminal = {

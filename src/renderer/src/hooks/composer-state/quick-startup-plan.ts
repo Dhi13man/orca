@@ -12,9 +12,15 @@ import {
 import { resolveInitialNativeChatSessionOptions } from '@/components/native-chat/native-chat-launch-session-options'
 import { isNativeChatTranscriptLocalReadable } from '@/lib/native-chat-transcript-readability'
 import { tuiAgentToAgentKind } from '@/lib/telemetry'
+import {
+  normalizeCustomAgentProfiles,
+  snapshotCustomAgentProfile
+} from '../../../../shared/custom-agent-profile'
+import { translate } from '@/i18n/i18n'
 
 export type QuickComposerStartupInput = {
   agent: TuiAgent | null
+  customProfileId?: string | null
   prompt: string
   draftPrompt: string | null | undefined
   settings: GlobalSettings | null | undefined
@@ -26,13 +32,75 @@ export type QuickComposerStartupInput = {
 }
 
 export type QuickComposerStartup = {
+  launchAgent: TuiAgent | null
   startupPlan: AgentStartupPlan | null
   backendStartup: WorktreeCreationRequest['startup']
   telemetry: AgentStartedTelemetry | null
+  genericDraftPrompt: string | null
 }
 
 export function buildQuickComposerStartup(input: QuickComposerStartupInput): QuickComposerStartup {
-  const { agent, draftPrompt, prompt, settings } = input
+  const { draftPrompt, prompt, settings } = input
+  const customProfile = input.customProfileId
+    ? normalizeCustomAgentProfiles(settings?.customAgentProfiles).find(
+        (profile) => profile.id === input.customProfileId
+      )
+    : null
+  if (input.customProfileId && !customProfile) {
+    throw new Error(
+      translate(
+        'auto.hooks.useComposerState.customAgentRemoved',
+        'This custom agent was removed. Choose another agent.'
+      )
+    )
+  }
+  if (customProfile) {
+    const launchAgent = customProfile.kind === 'derived' ? customProfile.baseAgent : null
+    const telemetry: AgentStartedTelemetry | null = launchAgent
+      ? {
+          agent_kind: tuiAgentToAgentKind(launchAgent),
+          launch_source:
+            input.telemetrySource === 'onboarding' ? 'onboarding' : 'new_workspace_composer',
+          request_kind: 'new'
+        }
+      : null
+    const customAgentPrompt = draftPrompt ?? prompt.trim()
+    if (customProfile.kind === 'generic') {
+      return {
+        launchAgent: null,
+        startupPlan: null,
+        backendStartup: {
+          command: customProfile.executable,
+          customAgentProfile: customProfile,
+          customAgentProfileSnapshot: snapshotCustomAgentProfile(customProfile)
+        },
+        telemetry: null,
+        genericDraftPrompt: customAgentPrompt || null
+      }
+    }
+    return {
+      launchAgent,
+      startupPlan: null,
+      backendStartup: {
+        // The execution owner replaces this compatibility placeholder from the
+        // structured profile before spawning the terminal.
+        command: customProfile.executable,
+        customAgentProfile: customProfile,
+        customAgentProfileSnapshot: snapshotCustomAgentProfile(customProfile),
+        launchAgent: customProfile.baseAgent,
+        ...(customAgentPrompt
+          ? {
+              customAgentPrompt,
+              customAgentPromptDelivery: draftPrompt ? ('draft' as const) : ('auto-submit' as const)
+            }
+          : {}),
+        ...(telemetry ? { telemetry } : {})
+      },
+      telemetry,
+      genericDraftPrompt: null
+    }
+  }
+  const agent = input.agent
   const sessionOptions =
     agent === null
       ? undefined
@@ -119,5 +187,11 @@ export function buildQuickComposerStartup(input: QuickComposerStartupInput): Qui
           ...(telemetry ? { telemetry } : {})
         }
       : undefined
-  return { startupPlan, backendStartup, telemetry }
+  return {
+    launchAgent: agent,
+    startupPlan,
+    backendStartup,
+    telemetry,
+    genericDraftPrompt: null
+  }
 }

@@ -4,6 +4,7 @@ import type { RuntimeBrowserPlacement } from './runtime-browser-placement'
 import type { TerminalColorOverrides } from './terminal-color-overrides'
 import type { TerminalLayoutSnapshot } from './terminal-tab-types'
 import type { TuiAgent } from './tui-agent'
+import type { CustomAgentProfileSnapshot } from './custom-agent-profile'
 
 export type RuntimeMobileSessionTerminalTab = {
   type: 'terminal'
@@ -18,6 +19,7 @@ export type RuntimeMobileSessionTerminalTab = {
   /** Event-only lead-turn end time for paired clients; never persisted in AgentStatusEntry. */
   turnCompletedAt?: number
   launchAgent?: TuiAgent
+  customAgentProfileSnapshot?: CustomAgentProfileSnapshot
   startupCwd?: string
   parentLayout?: TerminalLayoutSnapshot
   color?: string | null

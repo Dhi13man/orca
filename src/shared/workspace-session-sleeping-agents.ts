@@ -6,6 +6,10 @@ import {
 } from './agent-session-resume'
 import { isValidTerminalTabId } from './terminal-tab-id'
 import { salvagingRecord } from './zod-salvage'
+import {
+  normalizeCustomAgentProfileSnapshot,
+  type CustomAgentProfileSnapshot
+} from './custom-agent-profile'
 
 const terminalTabIdSchema = z
   .string()
@@ -98,6 +102,12 @@ const sleepingAgentSessionRecordSchema = z
     interrupted: z.boolean().optional(),
     connectionId: z.string().nullable().optional(),
     launchConfig: sleepingAgentLaunchConfigSchema.optional(),
+    customAgentProfileSnapshot: z
+      .preprocess(
+        (raw) => normalizeCustomAgentProfileSnapshot(raw) ?? undefined,
+        z.custom<CustomAgentProfileSnapshot>().optional()
+      )
+      .optional(),
     origin: z.enum(['worktree-sleep', 'quit', 'live']).optional(),
     automaticResumeBlockedBy: z.enum(['legacy-orchestration-worker']).optional(),
     restoreOnTabOpenOnly: z.boolean().optional()

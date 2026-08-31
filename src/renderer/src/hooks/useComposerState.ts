@@ -5,7 +5,7 @@ import {
   type LinkedWorkItemSummary
 } from '@/lib/new-workspace'
 import type { GitHubWorkItem } from '../../../shared/github/work-item-types'
-import type { TuiAgent } from '../../../shared/tui-agent'
+import type { AgentLaunchSelection } from '../../../shared/custom-agent-profile'
 import type { TaskSourceContext } from '../../../shared/task-source-context'
 import type { WorkspaceSource as WorkspaceCreateTelemetrySource } from '../../../shared/workspace-source'
 import type { WorkspaceStatus } from '../../../shared/worktree/types'
@@ -59,7 +59,7 @@ export type UseComposerStateResult = {
   promptTextareaRef: RefObject<HTMLTextAreaElement | null>
   nameInputRef: RefObject<HTMLInputElement | null>
   submit: () => Promise<void>
-  submitQuick: (agent: TuiAgent | null) => Promise<void>
+  submitQuick: (selection: AgentLaunchSelection | null) => Promise<void>
   createDisabled: boolean
   selectAddedProjectRepo: (repoId: string) => void
 }

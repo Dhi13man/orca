@@ -1,13 +1,18 @@
 import React, { useCallback } from 'react'
-import { Settings as SettingsIcon } from 'lucide-react'
+import { Settings as SettingsIcon, Terminal } from 'lucide-react'
 import { toast } from 'sonner'
-import { DropdownMenuItem, DropdownMenuShortcut } from '@/components/ui/dropdown-menu'
+import {
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut
+} from '@/components/ui/dropdown-menu'
 import { getAgentCatalog, AgentIcon } from '@/lib/agent-catalog'
 import { useAppStore } from '@/store'
 import { useAgentDetectionTargetForWorktree } from '@/hooks/useAgentDetectionTarget'
 import { useDetectedAgents } from '@/hooks/useDetectedAgents'
 import { useOptionalShortcutLabel } from '@/hooks/useShortcutLabel'
 import { launchAgentInNewTab } from '@/lib/launch-agent-in-new-tab'
+import { launchCustomAgentInNewTab } from '@/lib/launch-custom-agent-in-new-tab'
 import type { TuiAgent } from '../../../../shared/tui-agent'
 import type { LaunchSource } from '../../../../shared/telemetry-events'
 import {
@@ -15,6 +20,7 @@ import {
   filterEnabledTuiAgents
 } from '../../../../shared/tui-agent-selection'
 import { translate } from '@/i18n/i18n'
+import { normalizeCustomAgentProfiles } from '../../../../shared/custom-agent-profile'
 
 export type QuickLaunchAgentMenuItemsProps = {
   worktreeId: string
@@ -116,6 +122,11 @@ function QuickLaunchAgentMenuItemsInner({
   const openSettingsPage = useAppStore((s) => s.openSettingsPage)
   const openSettingsTarget = useAppStore((s) => s.openSettingsTarget)
   const newAgentShortcut = useOptionalShortcutLabel('tab.newAgent')
+  const rawCustomProfiles = useAppStore((s) => s.settings?.customAgentProfiles)
+  const customProfiles = React.useMemo(
+    () => normalizeCustomAgentProfiles(rawCustomProfiles),
+    [rawCustomProfiles]
+  )
 
   const openAgentSettings = useCallback(() => {
     openSettingsTarget({ pane: 'agents', repoId: null })
@@ -178,6 +189,23 @@ function QuickLaunchAgentMenuItemsInner({
 
   const enabledDetectedIds = detectedIds ? filterEnabledTuiAgents(detectedIds, disabledAgents) : []
   const agents = detectedIds ? orderAgents(defaultAgent, enabledDetectedIds) : []
+  const runCustomLaunch = (profileId: string): void => {
+    const result = launchCustomAgentInNewTab({
+      profileId,
+      worktreeId,
+      groupId,
+      ...(prompt !== undefined ? { prompt } : {}),
+      ...(promptDelivery !== undefined ? { promptDelivery } : {}),
+      ...(launchSource !== undefined ? { launchSource } : {}),
+      ...(onPromptDelivered !== undefined ? { onPromptDelivered } : {})
+    })
+    if (!result) {
+      return
+    }
+    if (result.tabId) {
+      onFocusTerminal(result.tabId)
+    }
+  }
 
   return (
     <>
@@ -218,6 +246,26 @@ function QuickLaunchAgentMenuItemsInner({
           </DropdownMenuItem>
         )
       })}
+      {customProfiles.length > 0 ? <DropdownMenuSeparator /> : null}
+      {customProfiles.map((profile) => (
+        <DropdownMenuItem
+          key={profile.id}
+          onSelect={() => runCustomLaunch(profile.id)}
+          className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 font-medium"
+          title={translate(
+            'auto.components.tab.bar.QuickLaunchButton.customLaunchTitle',
+            'Launch {{value0}} in a new terminal',
+            { value0: profile.name }
+          )}
+        >
+          {profile.kind === 'derived' ? (
+            <AgentIcon agent={profile.baseAgent} size={14} />
+          ) : (
+            <Terminal className="size-3.5" />
+          )}
+          <span className="flex-1">{profile.name}</span>
+        </DropdownMenuItem>
+      ))}
       <DropdownMenuItem
         onSelect={openAgentSettings}
         className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 font-medium text-muted-foreground"

@@ -1,4 +1,5 @@
 import type { TuiAgent } from '../../../../shared/tui-agent'
+import type { AgentLaunchSelection } from '../../../../shared/custom-agent-profile'
 import type { GitPushTarget } from '../../../../shared/worktree/types'
 import type { SetupDecision } from '../../../../shared/worktree/create-types'
 import type { Repo } from '../../../../shared/repo-types'
@@ -50,6 +51,7 @@ export type PreparedFullSubmit = FullSubmitSource & {
 
 export type QuickSubmitSource = {
   submitLinkedWorkItem: LinkedWorkItemSummary | null
+  launchSelection: AgentLaunchSelection | null
   agent: TuiAgent | null
   submitLinkedIssueNumber: number | null
   submitLinkedPR: number | null
@@ -84,7 +86,7 @@ export type ComposerSubmitModel = {
   ) => Promise<void>
   executeQuickCreation: (
     resolution: PendingSmartGitHubSubmitResolution,
-    requestedAgent: TuiAgent | null,
+    requestedSelection: AgentLaunchSelection | null,
     workspaceNameSeed: string,
     workspaceRunContext: WorktreeCreationRequest['workspaceRunContext'],
     repoId: string,
@@ -98,16 +100,16 @@ export type ComposerSubmitModel = {
   ) => FullSubmitSource | null
   prepareQuickSubmit: (
     resolution: PendingSmartGitHubSubmitResolution,
-    requestedAgent: TuiAgent | null,
+    requestedSelection: AgentLaunchSelection | null,
     workspaceNameSeed: string
   ) => Promise<PreparedQuickSubmit | null>
   prepareQuickSubmitSource: (
     resolution: PendingSmartGitHubSubmitResolution,
-    requestedAgent: TuiAgent | null,
+    requestedSelection: AgentLaunchSelection | null,
     workspaceNameSeed: string
   ) => QuickSubmitSource | null
   resetForNextCreate: () => void
   submit: () => Promise<void>
-  submitQuick: (agent: TuiAgent | null) => Promise<void>
-  submitFolderTarget: (requestedAgent: TuiAgent | null) => Promise<void>
+  submitQuick: (selection: AgentLaunchSelection | null) => Promise<void>
+  submitFolderTarget: (selection: AgentLaunchSelection | null) => Promise<void>
 }

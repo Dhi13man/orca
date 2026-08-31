@@ -629,6 +629,9 @@ function sleepingRecordFromEntry(args: {
       ? { lastAssistantMessage: args.entry.lastAssistantMessage }
       : {}),
     ...(args.launchConfig ? { launchConfig: copyLaunchConfig(args.launchConfig) } : {}),
+    ...(tab?.customAgentProfileSnapshot
+      ? { customAgentProfileSnapshot: { ...tab.customAgentProfileSnapshot } }
+      : {}),
     ...(args.entry.interrupted ? { interrupted: true } : {}),
     ...(args.origin ? { origin: args.origin } : {})
   }
@@ -893,6 +896,10 @@ function sleepingRecordsEquivalentIgnoringCaptureTime(
     existing.lastAssistantMessage === next.lastAssistantMessage &&
     existing.interrupted === next.interrupted &&
     existing.origin === next.origin &&
+    customAgentProfileSnapshotsEqual(
+      existing.customAgentProfileSnapshot,
+      next.customAgentProfileSnapshot
+    ) &&
     launchConfigsEqual(existing.launchConfig, next.launchConfig)
   )
 }
@@ -913,6 +920,10 @@ function recoveryRecordMatches(
     existing.state === next.state &&
     existing.interrupted === next.interrupted &&
     agentProviderSessionsEqual(existing.agent, existing.providerSession, next.providerSession) &&
+    customAgentProfileSnapshotsEqual(
+      existing.customAgentProfileSnapshot,
+      next.customAgentProfileSnapshot
+    ) &&
     launchConfigsEqual(existing.launchConfig, next.launchConfig)
   )
 }
@@ -939,6 +950,13 @@ function copyLaunchConfig(config: SleepingAgentLaunchConfig): SleepingAgentLaunc
     agentEnv: { ...config.agentEnv },
     ...(config.ompResumeFilePath ? { ompResumeFilePath: config.ompResumeFilePath } : {})
   }
+}
+
+function customAgentProfileSnapshotsEqual(
+  a: SleepingAgentSessionRecord['customAgentProfileSnapshot'],
+  b: SleepingAgentSessionRecord['customAgentProfileSnapshot']
+): boolean {
+  return a?.id === b?.id && a?.name === b?.name && a?.baseAgent === b?.baseAgent
 }
 
 function launchConfigsEqual(
@@ -2037,6 +2055,11 @@ export const createAgentStatusSlice: StateCreator<AppState, [], [], AgentStatusS
         const launchConfig =
           (registryMatches ? registryEntry?.launchConfig : undefined) ??
           (existingRecordMatchesProviderSession ? existingRecord.launchConfig : undefined)
+        const customAgentProfileSnapshot =
+          (tabId
+            ? s.tabsByWorktree[worktreeId]?.find((candidate) => candidate.id === tabId)
+                ?.customAgentProfileSnapshot
+            : undefined) ?? existingRecord?.customAgentProfileSnapshot
         const record: SleepingAgentSessionRecord = {
           paneKey,
           ...(tabId ? { tabId } : {}),
@@ -2059,6 +2082,9 @@ export const createAgentStatusSlice: StateCreator<AppState, [], [], AgentStatusS
               ? { connectionId: existingRecord.connectionId }
               : {}),
           ...(launchConfig ? { launchConfig: copyLaunchConfig(launchConfig) } : {}),
+          ...(customAgentProfileSnapshot
+            ? { customAgentProfileSnapshot: { ...customAgentProfileSnapshot } }
+            : {}),
           ...(existingRecordMatchesProviderSession &&
           existingRecord.automaticResumeBlockedBy === 'legacy-orchestration-worker'
             ? { automaticResumeBlockedBy: 'legacy-orchestration-worker' }

@@ -13,6 +13,7 @@ import type { StartupCommandDelivery } from '../../../../shared/codex-startup-de
 import type { SessionOptionValue } from '../../../../shared/native-chat-session-options'
 import type { AgentStartedTelemetry } from '../../lib/worktree-startup-payload'
 import type { AiVaultSessionTitle } from '../../../../shared/ai-vault-session-title'
+import type { CustomAgentProfileSnapshot } from '../../../../shared/custom-agent-profile'
 import type {
   GeneratedTabTitleUpdate,
   TerminalTabTitleUpdate
@@ -78,6 +79,7 @@ export type TerminalActions = {
       recordInteraction?: boolean
       id?: string
       launchAgent?: TuiAgent
+      customAgentProfileSnapshot?: CustomAgentProfileSnapshot
       quickCommandLabel?: string | null
       viewMode?: Tab['viewMode']
       startupCwd?: string

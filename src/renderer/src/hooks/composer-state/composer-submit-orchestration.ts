@@ -217,6 +217,7 @@ export function useComposerSubmitOrchestration(
     prepareQuickSubmit: quickSubmitPreparation.prepareQuickSubmit,
     resetForNextCreate: multipleCreateReset.resetForNextCreate,
     resolvedInitialWorkspaceStatus: target.initialTargetState.resolvedInitialWorkspaceStatus,
+    runtimeStatusByEnvironmentId: target.composerTargetStore.runtimeStatusByEnvironmentId,
     selectedEphemeralVmRecipeId: target.runtimeTargetSelection.selectedEphemeralVmRecipeId,
     selectedRepoAgentLaunchPlatform: target.runtimeTargetSelection.selectedRepoAgentLaunchPlatform,
     selectedRepoExecutionHostId: target.runtimeTargetSelection.selectedRepoExecutionHostId,

@@ -199,6 +199,9 @@ export function stubTerminalCreateEnvironment(mocks: WebRuntimeSessionMocks): vo
     settings: {
       activeRuntimeEnvironmentId: ENVIRONMENT_ID
     },
+    runtimeStatusByEnvironmentId: new Map([
+      [ENVIRONMENT_ID, { status: { capabilities: [] }, checkedAt: 1 }]
+    ]),
     activeWorktreeId: WORKTREE_ID,
     browserPagesByWorkspace: {},
     remoteBrowserPageHandlesByPageId: {},

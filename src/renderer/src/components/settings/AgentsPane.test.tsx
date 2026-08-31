@@ -171,6 +171,12 @@ describe('AgentsPane', () => {
     expect(detectedAgentsMock.lastTarget).toEqual({ kind: 'local' })
   })
 
+  it('offers duplicate-as-custom for built-in agents', () => {
+    const markup = renderPane(getDefaultSettings('/tmp'))
+
+    expect(markup).toContain('Duplicate Claude as custom agent')
+  })
+
   it('scopes agent detection to the active remote server', () => {
     // Repro for the "Remote Server lists local agents" bug: with an Active
     // Server selected, the Installed list must probe that server's PATH.

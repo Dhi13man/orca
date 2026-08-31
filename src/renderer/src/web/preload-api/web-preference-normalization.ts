@@ -21,6 +21,7 @@ import {
   normalizeTuiAgentEnvRecord
 } from '../../../../shared/tui-agent-launch-defaults'
 import { normalizeDisabledTuiAgents } from '../../../../shared/tui-agent-selection'
+import { normalizeCustomAgentProfiles } from '../../../../shared/custom-agent-profile'
 import { normalizeUiLanguage } from '../../../../shared/ui-language'
 import { normalizeUsagePercentageDisplay } from '../../../../shared/usage-percentage-display'
 import { mergeWorkspaceCleanupUIState } from '../../../../shared/workspace-cleanup-ui-state'
@@ -139,6 +140,9 @@ export function mergeSettings(
     } as GlobalSettings['githubProjects'],
     disabledTuiAgents: normalizeDisabledTuiAgents(
       updates.disabledTuiAgents ?? base.disabledTuiAgents
+    ),
+    customAgentProfiles: normalizeCustomAgentProfiles(
+      updates.customAgentProfiles ?? base.customAgentProfiles
     ),
     agentDefaultArgs: normalizeTuiAgentArgsRecord(
       updates.agentDefaultArgs ?? base.agentDefaultArgs

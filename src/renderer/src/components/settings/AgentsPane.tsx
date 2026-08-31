@@ -1,5 +1,6 @@
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import { Info } from 'lucide-react'
+import { toast } from 'sonner'
 import type { GlobalSettings } from '../../../../shared/global-settings-types'
 import type { TuiAgent } from '../../../../shared/tui-agent'
 import { getAgentCatalog } from '@/lib/agent-catalog'
@@ -46,6 +47,21 @@ import {
 import { AgentAvailabilityControl, type AgentCatalogRowProps } from './AgentCatalogRow'
 import { AgentDefaultSetting } from './AgentDefaultSetting'
 import { AgentDetectionCatalog } from './AgentDetectionCatalog'
+import {
+  CUSTOM_AGENT_PROFILES_MAX,
+  normalizeCustomAgentProfiles
+} from '../../../../shared/custom-agent-profile'
+import { duplicateBuiltInAgentAsCustom } from './custom-agent-profile-draft'
+import {
+  CustomAgentProfilesSection,
+  type CustomAgentProfilesSectionHandle
+} from './CustomAgentProfilesSection'
+import { CLIENT_PLATFORM } from '@/lib/new-workspace'
+import {
+  resolveLocalWindowsAgentStartupShell,
+  resolveWindowsShellStartupFamily
+} from '../../../../shared/windows-terminal-shell'
+import { resolveStartupShell } from '../../../../shared/tui-agent-startup-shell'
 
 export {
   buildAgentAvailabilitySettingsUpdate,
@@ -57,6 +73,7 @@ export {
 type AgentsPaneProps = {
   settings: GlobalSettings
   updateSettings: (updates: Partial<GlobalSettings>) => void | Promise<void>
+  updateSettingsOrThrow?: (updates: Partial<GlobalSettings>) => Promise<void>
   wslSupportedPlatform?: boolean
   wslAvailable?: boolean
   wslDistros?: string[]
@@ -141,11 +158,13 @@ export function AgentPermissionsSetting({
 export function AgentsPane({
   settings,
   updateSettings,
+  updateSettingsOrThrow,
   wslSupportedPlatform,
   wslAvailable,
   wslDistros,
   wslCapabilitiesLoading
 }: AgentsPaneProps): React.JSX.Element {
+  const customProfilesRef = useRef<CustomAgentProfilesSectionHandle | null>(null)
   const activeServerEnvironmentId = settings.activeRuntimeEnvironmentId?.trim() || null
   const agentDetectionTarget = useMemo<AgentDetectionTarget>(
     () =>
@@ -178,6 +197,7 @@ export function AgentsPane({
   const agentDefaultArgs = settings.agentDefaultArgs ?? {}
   const agentDefaultEnv = settings.agentDefaultEnv ?? {}
   const disabledAgents = normalizeDisabledTuiAgents(settings.disabledTuiAgents)
+  const customAgentProfiles = normalizeCustomAgentProfiles(settings.customAgentProfiles)
   const detectedAgents =
     detectedIds === null ? [] : catalog.filter((agent) => detectedIds.has(agent.id))
   const enabledDetectedAgents = detectedAgents.filter((agent) =>
@@ -229,6 +249,67 @@ export function AgentsPane({
       updateSettings({ agentDefaultArgs: { ...agentDefaultArgs, [agent.id]: value } }),
     onSaveEnv: (value) =>
       updateSettings({ agentDefaultEnv: { ...agentDefaultEnv, [agent.id]: value } }),
+    onDuplicateAsCustom: () => {
+      if (customAgentProfiles.length >= CUSTOM_AGENT_PROFILES_MAX) {
+        toast.error(
+          translate(
+            'auto.components.settings.AgentsPane.customAgentLimit',
+            'Custom agents are limited to {{value0}} profiles.',
+            { value0: String(CUSTOM_AGENT_PROFILES_MAX) }
+          )
+        )
+        return
+      }
+      const activeServerStatus = activeServerEnvironmentId
+        ? useAppStore.getState().runtimeStatusByEnvironmentId.get(activeServerEnvironmentId)?.status
+        : null
+      const duplicateShell = activeServerEnvironmentId
+        ? activeServerStatus?.hostPlatform
+          ? resolveStartupShell(
+              activeServerStatus.hostPlatform,
+              activeServerStatus.hostPlatform === 'win32'
+                ? resolveWindowsShellStartupFamily(activeServerStatus.terminalWindowsShell)
+                : undefined
+            )
+          : null
+        : resolveStartupShell(
+            CLIENT_PLATFORM,
+            resolveLocalWindowsAgentStartupShell({
+              platform: CLIENT_PLATFORM,
+              isRemote: false,
+              terminalWindowsShell: settings.terminalWindowsShell
+            })
+          )
+      if (!duplicateShell) {
+        toast.error(
+          translate(
+            'auto.components.settings.AgentsPane.duplicateHostUnavailable',
+            'Reconnect or update the selected Orca host before duplicating this agent.'
+          )
+        )
+        return
+      }
+      const draft = duplicateBuiltInAgentAsCustom({
+        agent,
+        command: cmdOverrides[agent.id] ?? agent.cmd,
+        launchArgs: resolveTuiAgentLaunchArgs(agent.id, agentDefaultArgs),
+        shell: duplicateShell,
+        reservedNames: [
+          ...catalog.map((entry) => entry.label),
+          ...customAgentProfiles.map((profile) => profile.name)
+        ]
+      })
+      if (!draft) {
+        toast.error(
+          translate(
+            'auto.components.settings.AgentsPane.duplicateCommandError',
+            'This command override contains shell syntax. Create the custom agent manually.'
+          )
+        )
+        return
+      }
+      customProfilesRef.current?.openProfile(draft)
+    },
     sessionSourceHome:
       isDetected && agent.id === 'codex'
         ? buildCodexSessionSourceHomeControl(settings, updateSettings)
@@ -265,6 +346,15 @@ export function AgentsPane({
         onChange={(mode) =>
           updateSettings(applyAgentPermissionMode({ mode, agentDefaultArgs, agentDefaultEnv }))
         }
+      />
+      <CustomAgentProfilesSection
+        ref={customProfilesRef}
+        profiles={customAgentProfiles}
+        catalog={catalog}
+        onProfilesChange={(profiles) =>
+          (updateSettingsOrThrow ?? updateSettings)({ customAgentProfiles: profiles })
+        }
+        codexSessionSourceHome={buildCodexSessionSourceHomeControl(settings, updateSettings)}
       />
       <AgentDetectionCatalog
         detectedAgents={detectedAgents}

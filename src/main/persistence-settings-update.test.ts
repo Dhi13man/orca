@@ -441,6 +441,49 @@ describe('Store', () => {
     expect(updated.disabledTuiAgents).toEqual(['gemini', 'opencode'])
   })
 
+  it('normalizes custom agent profiles on load and update', async () => {
+    writeFileSync(
+      join(testState.dir, 'orca-data.json'),
+      JSON.stringify({
+        settings: {
+          customAgentProfiles: [
+            {
+              id: 'luna',
+              name: 'Codex Luna',
+              kind: 'derived',
+              baseAgent: 'codex',
+              executable: 'codex',
+              args: ['--model', 'luna']
+            },
+            { id: 'bad', name: 'Codex', kind: 'generic', executable: 'other', args: [] }
+          ]
+        }
+      })
+    )
+    const store = await createStore()
+
+    expect(store.getSettings().customAgentProfiles).toEqual([
+      {
+        id: 'luna',
+        name: 'Codex Luna',
+        kind: 'derived',
+        baseAgent: 'codex',
+        executable: 'codex',
+        args: ['--model', 'luna']
+      }
+    ])
+
+    const updated = store.updateSettings({
+      customAgentProfiles: [
+        { id: 'tool', name: 'Dhimanex', kind: 'generic', executable: 'dhimanex', args: [''] },
+        { id: 'bad', name: 'Bad', kind: 'generic', executable: 'bad\u0000', args: [] }
+      ] as never
+    })
+    expect(updated.customAgentProfiles).toEqual([
+      { id: 'tool', name: 'Dhimanex', kind: 'generic', executable: 'dhimanex', args: [''] }
+    ])
+  })
+
   it('enables Claude Agent Teams by default for fresh installs', async () => {
     const store = await createStore()
 

@@ -18,6 +18,7 @@ type QuickCreationExecutionInput = Pick<
   | 'prepareQuickSubmit'
   | 'resetForNextCreate'
   | 'resolvedInitialWorkspaceStatus'
+  | 'runtimeStatusByEnvironmentId'
   | 'selectedEphemeralVmRecipeId'
   | 'selectedRepoAgentLaunchPlatform'
   | 'selectedRepoExecutionHostId'
@@ -34,7 +35,9 @@ type QuickCreationExecutionInput = Pick<
 
 import { useCallback } from 'react'
 import type { Repo } from '../../../../shared/repo-types'
-import type { TuiAgent } from '../../../../shared/tui-agent'
+import type { AgentLaunchSelection } from '../../../../shared/custom-agent-profile'
+import { parseExecutionHostId } from '../../../../shared/execution-host'
+import { CUSTOM_AGENT_TERMINAL_LAUNCH_RUNTIME_CAPABILITY } from '../../../../shared/protocol-version'
 import type { WorktreeCreationRequest } from '@/lib/pending-worktree-creation'
 import { useAppStore } from '@/store'
 import { settleComposerSubmit } from '@/lib/composer-submit-cancellation'
@@ -65,6 +68,7 @@ export function useQuickCreationExecution(input: QuickCreationExecutionInput) {
     prepareQuickSubmit,
     resetForNextCreate,
     resolvedInitialWorkspaceStatus,
+    runtimeStatusByEnvironmentId,
     selectedEphemeralVmRecipeId,
     selectedRepoAgentLaunchPlatform,
     selectedRepoExecutionHostId,
@@ -82,7 +86,7 @@ export function useQuickCreationExecution(input: QuickCreationExecutionInput) {
   const executeQuickCreation = useCallback(
     async (
       smartGitHubResolution: PendingSmartGitHubSubmitResolution,
-      requestedAgent: TuiAgent | null,
+      requestedSelection: AgentLaunchSelection | null,
       workspaceNameSeed: string,
       workspaceRunContext: WorktreeCreationRequest['workspaceRunContext'],
       repoId: string,
@@ -90,7 +94,7 @@ export function useQuickCreationExecution(input: QuickCreationExecutionInput) {
     ): Promise<void> => {
       const prepared = await prepareQuickSubmit(
         smartGitHubResolution,
-        requestedAgent,
+        requestedSelection,
         workspaceNameSeed
       )
 
@@ -100,6 +104,7 @@ export function useQuickCreationExecution(input: QuickCreationExecutionInput) {
 
       const {
         submitLinkedWorkItem,
+        launchSelection,
         agent,
         submitLinkedIssueNumber,
         submitLinkedPR,
@@ -119,20 +124,39 @@ export function useQuickCreationExecution(input: QuickCreationExecutionInput) {
         trimmedNote
       } = prepared
 
-      const promptLinkedWorkItem = agent === null ? null : submitLinkedWorkItem
+      const promptLinkedWorkItem = launchSelection === null ? null : submitLinkedWorkItem
 
       const { prompt: quickPrompt, draftPrompt: quickDraftPrompt } =
         resolveQuickCreateLinkedWorkItemPrompt(promptLinkedWorkItem, trimmedNote)
 
+      const selectedExecutionHost = parseExecutionHostId(selectedRepoExecutionHostId)
+      if (
+        launchSelection?.kind === 'custom' &&
+        selectedExecutionHost?.kind === 'runtime' &&
+        !runtimeStatusByEnvironmentId
+          .get(selectedExecutionHost.environmentId)
+          ?.status?.capabilities?.includes(CUSTOM_AGENT_TERMINAL_LAUNCH_RUNTIME_CAPABILITY)
+      ) {
+        throw new Error(
+          translate(
+            'auto.hooks.useComposerState.customAgentHostUpdateRequired',
+            'Launching a custom agent here requires a newer Orca server. Update the server and try again.'
+          )
+        )
+      }
+
       const {
+        launchAgent,
         startupPlan,
         backendStartup,
-        telemetry: quickTelemetry
+        telemetry: quickTelemetry,
+        genericDraftPrompt
       } = buildQuickComposerStartup({
         agent,
+        customProfileId: launchSelection?.kind === 'custom' ? launchSelection.profileId : undefined,
         prompt: quickPrompt,
         draftPrompt: quickDraftPrompt,
-        settings,
+        settings: launchSelection?.kind === 'custom' ? useAppStore.getState().settings : settings,
         repoConnectionId: selectedRepo.connectionId,
         platform: selectedRepoAgentLaunchPlatform,
         shell: selectedRepoStartupShell,
@@ -214,7 +238,7 @@ export function useQuickCreationExecution(input: QuickCreationExecutionInput) {
         linkedIssue: submitLinkedIssueNumber,
         linkedPR: submitLinkedPR,
         pushTarget: submitPushTarget,
-        agent,
+        agent: launchAgent,
         linkedLinearIssue,
         linkedLinearIssueWorkspaceId,
         linkedLinearIssueOrganizationUrlKey,
@@ -229,6 +253,7 @@ export function useQuickCreationExecution(input: QuickCreationExecutionInput) {
         pendingFirstAgentMessageRename,
         note: trimmedNote,
         startupPlan,
+        customAgentDraftPrompt: genericDraftPrompt,
         quickPrompt,
         launchDraftPrompt: quickDraftPrompt,
         quickTelemetry,
@@ -268,6 +293,7 @@ export function useQuickCreationExecution(input: QuickCreationExecutionInput) {
       prepareQuickSubmit,
       resetForNextCreate,
       resolvedInitialWorkspaceStatus,
+      runtimeStatusByEnvironmentId,
       selectedEphemeralVmRecipeId,
       selectedRepoAgentLaunchPlatform,
       selectedRepoExecutionHostId,

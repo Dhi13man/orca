@@ -22,6 +22,7 @@ import {
 } from '../../../shared/tui-agent-selection'
 import type { RuntimeStatus } from '../../../shared/runtime-types'
 import type { TuiAgent } from '../../../shared/tui-agent'
+import type { CustomAgentProfile } from '../../../shared/custom-agent-profile'
 import { NewWorkspaceComposerAdvancedSection } from './new-workspace/NewWorkspaceComposerAdvancedSection'
 import { NewWorkspaceComposerAgentSection } from './new-workspace/NewWorkspaceComposerAgentSection'
 import { NewWorkspaceComposerFooter } from './new-workspace/NewWorkspaceComposerFooter'
@@ -36,6 +37,8 @@ import {
 } from './new-workspace/new-workspace-composer-card-props'
 import { getSshStatusLabel } from './new-workspace/new-workspace-composer-ssh-status'
 import { useComposerFileDragOver } from './new-workspace/use-composer-file-drag-over'
+
+const EMPTY_CUSTOM_AGENT_PROFILES: readonly CustomAgentProfile[] = []
 
 export default function NewWorkspaceComposerCard(
   props: NewWorkspaceComposerCardProps
@@ -74,6 +77,9 @@ export default function NewWorkspaceComposerCard(
     (state) => state.settings?.disabledTuiAgents ?? DEFAULT_DISABLED_TUI_AGENTS
   )
   const updateSettings = useAppStore((state) => state.updateSettings)
+  const customAgentProfiles = useAppStore(
+    (state) => state.settings?.customAgentProfiles ?? EMPTY_CUSTOM_AGENT_PROFILES
+  )
   const projects = useAppStore((state) => state.projects)
   const repos = useAppStore((state) => state.repos)
   const nameInputFocusFrameRef = React.useRef<number | null>(null)
@@ -297,6 +303,7 @@ export default function NewWorkspaceComposerCard(
           visibleQuickAgents={visibleQuickAgents}
           defaultTuiAgent={defaultTuiAgent}
           handleSetDefaultAgent={handleSetDefaultAgent}
+          customAgentProfiles={customAgentProfiles}
         />
         <NewWorkspaceComposerAdvancedSection
           {...props}

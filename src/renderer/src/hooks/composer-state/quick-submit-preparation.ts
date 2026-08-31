@@ -17,7 +17,7 @@ import type { SetupDecision } from '../../../../shared/worktree/create-types'
 import { buildTrustedComposerIssueCommand } from '@/lib/composer-issue-command'
 import { resolveComposerBranchNameOverrideForCreate } from '../composer-branch-selection'
 import { resolveWorktreeCreateBaseBranch } from '@/runtime/worktree-create-base'
-import type { TuiAgent } from '../../../../shared/tui-agent'
+import type { AgentLaunchSelection } from '../../../../shared/custom-agent-profile'
 import type { PendingSmartGitHubSubmitResolution } from './source-selection-decisions'
 
 export function useQuickSubmitPreparation(input: QuickSubmitPreparationInput) {
@@ -50,12 +50,12 @@ export function useQuickSubmitPreparation(input: QuickSubmitPreparationInput) {
   const prepareQuickSubmit = useCallback(
     async (
       smartGitHubResolution: PendingSmartGitHubSubmitResolution,
-      requestedAgent: TuiAgent | null,
+      requestedSelection: AgentLaunchSelection | null,
       workspaceNameSeed: string
     ) => {
       const source = prepareQuickSubmitSource(
         smartGitHubResolution,
-        requestedAgent,
+        requestedSelection,
         workspaceNameSeed
       )
       if (!source) {
@@ -63,7 +63,7 @@ export function useQuickSubmitPreparation(input: QuickSubmitPreparationInput) {
       }
       const {
         submitLinkedWorkItem,
-        agent,
+        launchSelection,
         submitLinkedIssueNumber,
         submitTitleName,
         nameIsAutoManaged,
@@ -242,7 +242,7 @@ export function useQuickSubmitPreparation(input: QuickSubmitPreparationInput) {
         selectedRepoIsGit &&
         settings?.autoRenameBranchFromWork === true &&
         !name.trim() &&
-        Boolean(agent) &&
+        Boolean(launchSelection) &&
         !effectiveBranchNameOverride &&
         !createDisplayName
 

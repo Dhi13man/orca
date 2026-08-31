@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createWebRuntimeSessionTerminal } from './web-runtime-session'
+import {
+  createWebRuntimeGenericAgentTerminal,
+  createWebRuntimeSessionTerminal
+} from './web-runtime-session'
 import { resetWebSessionCloseIntentForTests } from './web-session-close-intent'
 import {
   ENVIRONMENT_ID,
@@ -8,6 +11,7 @@ import {
   resetTerminalCreateEnvironment,
   stubTerminalCreateEnvironment
 } from './web-runtime-session-test-harness'
+import { CUSTOM_AGENT_TERMINAL_LAUNCH_RUNTIME_CAPABILITY } from '../../../shared/protocol-version'
 
 const mocks = vi.hoisted(() => ({
   getState: vi.fn(),
@@ -129,6 +133,142 @@ describe('createWebRuntimeSessionTerminal', () => {
       'session.tabs.createTerminal',
       'session.tabs.list'
     ])
+  })
+
+  it('keeps a custom profile command out of host-authority reconstruction', async () => {
+    const runtimeCall = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: 'legacy-create',
+        ok: true,
+        result: {
+          tab: { id: 'host-tab-2' },
+          publicationEpoch: 'epoch-1',
+          snapshotVersion: 2
+        }
+      })
+      .mockResolvedValueOnce({ id: 'list', ok: true, result: makeSnapshot() })
+    vi.stubGlobal('window', { api: { runtimeEnvironments: { call: runtimeCall } } })
+
+    await createWebRuntimeSessionTerminal({
+      worktreeId: WORKTREE_ID,
+      command: "codex '--model' 'luna'",
+      launchAgent: 'codex',
+      launchConfig: { agentCommand: "codex '--model' 'luna'", agentArgs: '', agentEnv: {} },
+      preserveExactCommand: true,
+      activate: true
+    })
+
+    expect(runtimeCall.mock.calls.map(([request]) => request.method)).toEqual([
+      'session.tabs.createTerminal',
+      'session.tabs.list'
+    ])
+    expect(runtimeCall).toHaveBeenNthCalledWith(1, {
+      selector: ENVIRONMENT_ID,
+      method: 'session.tabs.createTerminal',
+      params: expect.objectContaining({
+        command: "codex '--model' 'luna'",
+        launchAgent: 'codex',
+        launchConfig: { agentCommand: "codex '--model' 'luna'", agentArgs: '', agentEnv: {} }
+      }),
+      timeoutMs: 15_000
+    })
+  })
+
+  it('lets a capable host quote a structured custom profile for its workspace runtime', async () => {
+    const state = mocks.getState()
+    mocks.getState.mockReturnValue({
+      ...state,
+      runtimeStatusByEnvironmentId: new Map([
+        [
+          ENVIRONMENT_ID,
+          {
+            status: { capabilities: [CUSTOM_AGENT_TERMINAL_LAUNCH_RUNTIME_CAPABILITY] },
+            checkedAt: 1
+          }
+        ]
+      ])
+    })
+    const runtimeCall = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: 'legacy-create',
+        ok: true,
+        result: {
+          tab: { id: 'host-tab-2' },
+          publicationEpoch: 'epoch-1',
+          snapshotVersion: 2
+        }
+      })
+      .mockResolvedValueOnce({ id: 'list', ok: true, result: makeSnapshot() })
+    vi.stubGlobal('window', { api: { runtimeEnvironments: { call: runtimeCall } } })
+    const profile = {
+      id: 'codex-luna',
+      name: 'Codex Luna',
+      kind: 'derived' as const,
+      baseAgent: 'codex' as const,
+      executable: 'codex',
+      args: ['--model', 'luna']
+    }
+
+    await createWebRuntimeSessionTerminal({
+      worktreeId: WORKTREE_ID,
+      command: "'wrong-client-command'",
+      launchAgent: 'codex',
+      customAgentProfile: profile,
+      customAgentProfileSnapshot: {
+        id: profile.id,
+        name: profile.name,
+        baseAgent: profile.baseAgent
+      },
+      prompt: 'Inspect this',
+      promptDelivery: 'draft',
+      preserveExactCommand: true,
+      activate: true
+    })
+
+    const params = runtimeCall.mock.calls[0][0].params
+    expect(params).toMatchObject({
+      customAgentProfile: profile,
+      customAgentPrompt: 'Inspect this',
+      customAgentPromptDelivery: 'draft',
+      launchAgent: 'codex'
+    })
+    expect(params).not.toHaveProperty('command')
+    expect(params).not.toHaveProperty('launchConfig')
+  })
+
+  it('creates a generic custom profile without built-in agent identity', async () => {
+    const runtimeCall = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: 'legacy-create',
+        ok: true,
+        result: {
+          tab: { id: 'host-tab-2' },
+          publicationEpoch: 'epoch-1',
+          snapshotVersion: 2
+        }
+      })
+      .mockResolvedValueOnce({ id: 'list', ok: true, result: makeSnapshot() })
+    vi.stubGlobal('window', { api: { runtimeEnvironments: { call: runtimeCall } } })
+
+    await expect(
+      createWebRuntimeGenericAgentTerminal({
+        worktreeId: WORKTREE_ID,
+        command: "'dhimanex' '--fast'",
+        preserveExactCommand: true,
+        activate: true
+      })
+    ).resolves.toEqual({ outcome: { status: 'created' }, promptDelivered: false })
+
+    const createRequest = runtimeCall.mock.calls[0][0]
+    expect(createRequest.method).toBe('session.tabs.createTerminal')
+    expect(createRequest.params).toEqual(
+      expect.objectContaining({ command: "'dhimanex' '--fast'" })
+    )
+    expect(createRequest.params).not.toHaveProperty('agent')
+    expect(createRequest.params).not.toHaveProperty('launchAgent')
   })
 
   it('can create a terminal without selecting the target worktree', async () => {

@@ -43,6 +43,7 @@ import {
 } from './web-runtime-session-workspace-selection'
 import { createdTerminalLeafId } from './web-runtime-terminal-identity'
 import { settleWebRuntimeTerminalPlacement } from './web-runtime-terminal-placement-settlement'
+import { buildWebRuntimeCustomAgentLaunchParams } from './web-runtime-custom-agent-launch'
 
 export async function createWebRuntimeSessionTerminalResult(
   args: CreateWebRuntimeSessionTerminalArgs
@@ -64,6 +65,7 @@ export async function createWebRuntimeSessionTerminalResult(
   }
   const intentOwner = captureWebSessionIntentOwner(environmentId)
   const callEnvironment = captureRuntimeEnvironmentCall(environmentId, intentOwner.pairingRevision)
+  const legacyLaunchCommandParams = buildWebRuntimeCustomAgentLaunchParams(environmentId, args)
 
   let workspaceSelectionRollback: WebRuntimeSessionWorkspaceSelectionRollback | null = null
   if (args.selectWorktree !== false) {
@@ -88,7 +90,7 @@ export async function createWebRuntimeSessionTerminalResult(
       let legacyAlreadyPlacedInGroup = false
       // Why: structured creation cannot yet express afterTabId; keep the exact legacy placement contract until it can.
       // Why: focus belongs to the paired client; a headless execution host has no renderer to focus.
-      const hostAuthority = args.afterTabId
+      const hostAuthority = args.afterTabId || args.preserveExactCommand
         ? undefined
         : args.agentSessionKind === 'resume'
           ? args.providerSession
@@ -158,15 +160,14 @@ export async function createWebRuntimeSessionTerminalResult(
               worktree: toRuntimeWorktreeSelector(args.worktreeId),
               afterTabId: args.afterTabId ? toHostSessionTabId(args.afterTabId) : undefined,
               targetGroupId: args.targetGroupId,
-              command: args.command,
+              ...legacyLaunchCommandParams,
               cwd: args.cwd,
-              ...(args.env ? { env: args.env } : {}),
-              ...(args.envToDelete ? { envToDelete: args.envToDelete } : {}),
-              startupCommandDelivery: args.startupCommandDelivery,
-              ...(args.launchConfig ? { launchConfig: args.launchConfig } : {}),
               ...(args.launchToken ? { launchToken: args.launchToken } : {}),
               ...(args.agent ? { agent: args.agent } : {}),
               ...(args.launchAgent ? { launchAgent: args.launchAgent } : {}),
+              ...(args.customAgentProfileSnapshot
+                ? { customAgentProfileSnapshot: args.customAgentProfileSnapshot }
+                : {}),
               ...(args.viewMode ? { viewMode: args.viewMode } : {}),
               // Why: old hosts understand activate:false; new hosts use select/navigation for caller-local focus.
               activate: false,
@@ -211,12 +212,11 @@ export async function createWebRuntimeSessionTerminalResult(
           worktree: toRuntimeWorktreeSelector(args.worktreeId),
           afterTabId: args.afterTabId ? toHostSessionTabId(args.afterTabId) : undefined,
           targetGroupId: args.targetGroupId,
-          command: args.command,
+          ...legacyLaunchCommandParams,
           cwd: args.cwd,
-          ...(args.env ? { env: args.env } : {}),
-          ...(args.envToDelete ? { envToDelete: args.envToDelete } : {}),
-          startupCommandDelivery: args.startupCommandDelivery,
-          ...(args.launchConfig ? { launchConfig: args.launchConfig } : {}),
+          ...(args.customAgentProfileSnapshot
+            ? { customAgentProfileSnapshot: args.customAgentProfileSnapshot }
+            : {}),
           ...(args.launchToken ? { launchToken: args.launchToken } : {}),
           ...(args.viewMode ? { viewMode: args.viewMode } : {}),
           // Why: old hosts understand activate:false; new hosts use select/navigation for caller-local focus.

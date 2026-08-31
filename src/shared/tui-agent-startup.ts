@@ -46,6 +46,8 @@ export function buildAgentStartupPlan(args: {
   allowEmptyPromptLaunch?: boolean
   agentArgs?: string | null
   agentEnv?: Record<string, string> | null
+  /** Pre-quoted exact command for a user-owned derived launch profile. */
+  agentCommand?: string | null
   sessionOptions?: Record<string, SessionOptionValue>
   sessionOptionsOverrideAgentArgs?: boolean
   /** Why: SSH remotes deploy the CLI shim as plain `orca`, so the Linux-only
@@ -57,21 +59,30 @@ export function buildAgentStartupPlan(args: {
   const trimmedPrompt = prompt.trim()
   const config = TUI_AGENT_CONFIG[agent]
   const usesQuery = config.promptInjectionMode === 'hermes-query' && Boolean(trimmedPrompt)
-  const baseCommand = resolveAgentLaunchCommand({
-    agent,
-    cmdOverrides,
-    platform,
-    shell,
-    agentArgs: usesQuery ? null : args.agentArgs,
-    sessionOptions: args.sessionOptions,
-    sessionOptionsOverrideAgentArgs: args.sessionOptionsOverrideAgentArgs,
-    isRemote: args.isRemote
-  })
+  const exactCommand = args.agentCommand?.trim()
+  const baseCommand = exactCommand
+    ? ({
+        ok: true,
+        command: exactCommand,
+        commandWithoutSessionOptions: exactCommand,
+        appliedSessionOptions: {}
+      } as const)
+    : resolveAgentLaunchCommand({
+        agent,
+        cmdOverrides,
+        platform,
+        shell,
+        agentArgs: usesQuery ? null : args.agentArgs,
+        sessionOptions: args.sessionOptions,
+        sessionOptionsOverrideAgentArgs: args.sessionOptionsOverrideAgentArgs,
+        isRemote: args.isRemote
+      })
   if (!baseCommand.ok) {
     return null
   }
   const launchConfig = buildSleepingAgentLaunchConfig({
     ...args,
+    ...(exactCommand ? { agentArgs: null } : {}),
     // Why: picker flags are a one-time launch choice; a resumed provider
     // session restores its own state and must retain only explicit user args.
     agentCommand: baseCommand.commandWithoutSessionOptions
@@ -199,6 +210,8 @@ export function buildAgentDraftLaunchPlan(args: {
   shell?: AgentStartupShell
   agentArgs?: string | null
   agentEnv?: Record<string, string> | null
+  /** Pre-quoted exact command for a user-owned derived launch profile. */
+  agentCommand?: string | null
   sessionOptions?: Record<string, SessionOptionValue>
   /** Why: see buildAgentStartupPlan — remote launches use the plain `orca` shim. */
   isRemote?: boolean
@@ -210,20 +223,29 @@ export function buildAgentDraftLaunchPlan(args: {
   if (!trimmed) {
     return null
   }
-  const baseCommand = resolveAgentLaunchCommand({
-    agent,
-    cmdOverrides,
-    platform,
-    shell,
-    agentArgs: args.agentArgs,
-    sessionOptions: args.sessionOptions,
-    isRemote: args.isRemote
-  })
+  const exactCommand = args.agentCommand?.trim()
+  const baseCommand = exactCommand
+    ? ({
+        ok: true,
+        command: exactCommand,
+        commandWithoutSessionOptions: exactCommand,
+        appliedSessionOptions: {}
+      } as const)
+    : resolveAgentLaunchCommand({
+        agent,
+        cmdOverrides,
+        platform,
+        shell,
+        agentArgs: args.agentArgs,
+        sessionOptions: args.sessionOptions,
+        isRemote: args.isRemote
+      })
   if (!baseCommand.ok) {
     return null
   }
   const launchConfig = buildSleepingAgentLaunchConfig({
     ...args,
+    ...(exactCommand ? { agentArgs: null } : {}),
     // Why: see the new-session path above — resume must not replay picker flags.
     agentCommand: baseCommand.commandWithoutSessionOptions
   })

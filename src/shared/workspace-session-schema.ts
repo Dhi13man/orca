@@ -34,6 +34,10 @@ import { persistedClientHostedBrowserPageSchema } from './client-hosted-browser-
 import { persistedOpenFileSchema } from './workspace-session-editor-schema'
 import { sleepingAgentSessionsByPaneKeySchema } from './workspace-session-sleeping-agents'
 import {
+  normalizeCustomAgentProfileSnapshot,
+  type CustomAgentProfileSnapshot
+} from './custom-agent-profile'
+import {
   tabContentTypeSchema,
   workspaceVisibleTabTypeSchema
 } from './workspace-session-tab-type-schema'
@@ -76,6 +80,11 @@ const terminalLayoutSnapshotSchema = z.object({
   titlesByLeafId: salvagedOptional('titlesByLeafId', leafStringsSchema)
 })
 
+const customAgentProfileSnapshotSchema = z.preprocess(
+  (raw) => normalizeCustomAgentProfileSnapshot(raw) ?? undefined,
+  z.custom<CustomAgentProfileSnapshot>().optional()
+)
+
 // ─── Terminal tab (legacy) ──────────────────────────────────────────
 
 const terminalTabSchema = z.object({
@@ -109,7 +118,8 @@ const terminalTabSchema = z.object({
   launchAgent: z
     .custom<TuiAgent>((v) => isTuiAgent(v))
     .optional()
-    .catch(undefined)
+    .catch(undefined),
+  customAgentProfileSnapshot: customAgentProfileSnapshotSchema.optional().catch(undefined)
 })
 
 // ─── Unified tab model ──────────────────────────────────────────────

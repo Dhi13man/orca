@@ -1,12 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { toast } from 'sonner'
 import type { TuiAgent } from '../../../../shared/tui-agent'
-import { translate } from '@/i18n/i18n'
 import { focusTerminalTabSurface } from '@/lib/focus-terminal-tab-surface'
-import {
-  launchAgentInNewTab,
-  shouldQueueTerminalFocusAfterMenuClose
-} from '@/lib/launch-agent-in-new-tab'
 import type { WindowsTerminalCapabilities } from '@/lib/windows-terminal-capabilities'
 import { useAppStore } from '../../store'
 import type { TabAgentLaunchOption } from './tab-agent-launch-options'
@@ -20,6 +14,10 @@ import type {
   getProjectRuntimeShellMenuMode,
   resolveWindowsPowerShellImplementationSetting
 } from './use-tab-bar-runtime-model'
+import {
+  launchBuiltInAgentFromTabMenu,
+  launchCustomAgentFromTabMenu
+} from './tab-agent-launch-actions'
 
 const NEW_TAB_MENU_TERMINAL_FOCUS_RETRY_MS = 50
 const NEW_TAB_MENU_TERMINAL_FOCUS_TIMEOUT_MS = 5000
@@ -32,6 +30,7 @@ export type TabBarCreateMenuController = {
   windowsShellEntries: WindowsShellMenuEntry[] | undefined
   handleSelectCreateMenuOption: (option: TabCreateMenuOption) => void
   launchAgentFromNewTabEntry: (agent: TuiAgent) => void
+  launchCustomAgentFromNewTabEntry: (profileId: string) => void
   runPendingNewTabMenuFocusAfterClose: () => void
   clearPendingNewTabMenuFocusOnUnmount: (node: HTMLDivElement | null) => void
   queueNewActiveTerminalFocusAfterNewTabMenuClose: () => void
@@ -221,30 +220,23 @@ export function useTabBarCreateMenuController({
     }
   }
   const launchAgentFromNewTabEntry = (agent: TuiAgent): void => {
-    const option = agentLaunchOptions.find((candidate) => candidate.agent === agent)
-    const result = launchAgentInNewTab({
+    launchBuiltInAgentFromTabMenu({
       agent,
+      options: agentLaunchOptions,
       worktreeId,
       groupId: resolvedGroupId,
-      launchSource: 'tab_bar_quick_launch'
+      onLocalTab: queueTerminalTabFocusAfterNewTabMenuClose,
+      onRemoteTab: queueNewActiveTerminalFocusAfterNewTabMenuClose
     })
-    if (!result) {
-      toast.error(
-        translate(
-          'auto.components.tab.bar.TabBar.ab589350e5',
-          'Could not build launch command for {{value0}}.',
-          { value0: option?.label ?? agent }
-        )
-      )
-      return
-    }
-    if (result.tabId) {
-      queueTerminalTabFocusAfterNewTabMenuClose(result.tabId)
-      return
-    }
-    if (shouldQueueTerminalFocusAfterMenuClose(result)) {
-      queueNewActiveTerminalFocusAfterNewTabMenuClose()
-    }
+  }
+  const launchCustomAgentFromNewTabEntry = (profileId: string): void => {
+    launchCustomAgentFromTabMenu({
+      profileId,
+      worktreeId,
+      groupId: resolvedGroupId,
+      onLocalTab: queueTerminalTabFocusAfterNewTabMenuClose,
+      onRemoteTab: queueNewActiveTerminalFocusAfterNewTabMenuClose
+    })
   }
   const runPendingNewTabMenuFocusAfterClose = (): void => {
     const pendingFocus = pendingNewTabMenuFocusRef.current
@@ -296,6 +288,7 @@ export function useTabBarCreateMenuController({
     windowsShellEntries,
     handleSelectCreateMenuOption,
     launchAgentFromNewTabEntry,
+    launchCustomAgentFromNewTabEntry,
     runPendingNewTabMenuFocusAfterClose,
     clearPendingNewTabMenuFocusOnUnmount,
     queueNewActiveTerminalFocusAfterNewTabMenuClose,

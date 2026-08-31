@@ -100,6 +100,8 @@ export type WorktreeCreationRequest = {
   /** Renderer-side launch plan used to seed the first terminal when the backend
    *  did not already spawn it. Null for blank-shell creates. */
   startupPlan: AgentStartupPlan | null
+  /** Unsent prompt for a generic custom-agent startup, delivered after its terminal is ready. */
+  customAgentDraftPrompt?: string
   quickPrompt: string
   /** Launch context delivered only as an unsent TUI-input draft (argv prefill or
    *  startup paste); completion seeds the chat-composer copy from it. */

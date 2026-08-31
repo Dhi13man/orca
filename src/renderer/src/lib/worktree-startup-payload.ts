@@ -6,6 +6,10 @@ import type {
   SleepingAgentLaunchConfig
 } from '../../../shared/agent-session-resume'
 import type { SessionOptionValue } from '../../../shared/native-chat-session-options'
+import type {
+  CustomAgentProfile,
+  CustomAgentProfileSnapshot
+} from '../../../shared/custom-agent-profile'
 
 /** Telemetry threaded from the launch site to `pty:spawn`; main fires `agent_started`
  *  only after the spawn succeeds. See telemetry-plan.md§Agent launch semantics. */
@@ -19,6 +23,11 @@ export type WorktreeStartupPayload = {
   resumeProviderSession?: AgentProviderSessionMetadata
   launchToken?: string
   launchAgent?: TuiAgent
+  customAgentProfile?: CustomAgentProfile
+  customAgentProfileSnapshot?: CustomAgentProfileSnapshot
+  customAgentPrompt?: string
+  customAgentPromptDelivery?: 'auto-submit' | 'draft'
+  quickCommandLabel?: string
   draftPrompt?: string
   /**
    * The unsent launch context, for the initial view-mode decision ONLY.

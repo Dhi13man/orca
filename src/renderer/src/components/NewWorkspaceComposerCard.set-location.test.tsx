@@ -145,8 +145,8 @@ function renderCard(
   act(() => {
     root.render(
       <NewWorkspaceComposerCard
-        quickAgent={null}
-        onQuickAgentChange={() => {}}
+        quickAgentSelection={null}
+        onQuickAgentSelectionChange={() => {}}
         eligibleRepos={[]}
         repoId="repo-a"
         projectOptions={projectOptions}

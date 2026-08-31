@@ -20,7 +20,7 @@ type QuickSubmitSourcePreparationInput = Pick<
 import { useCallback } from 'react'
 import { isTuiAgentEnabled } from '../../../../shared/tui-agent-selection'
 import { getLinkedWorkItemWorkspaceName } from '@/lib/new-workspace'
-import type { TuiAgent } from '../../../../shared/tui-agent'
+import type { AgentLaunchSelection } from '../../../../shared/custom-agent-profile'
 import type { PendingSmartGitHubSubmitResolution } from './source-selection-decisions'
 
 export function useQuickSubmitSourcePreparation(input: QuickSubmitSourcePreparationInput) {
@@ -44,7 +44,7 @@ export function useQuickSubmitSourcePreparation(input: QuickSubmitSourcePreparat
   const prepareQuickSubmitSource = useCallback(
     (
       smartGitHubResolution: PendingSmartGitHubSubmitResolution,
-      requestedAgent: TuiAgent | null,
+      requestedSelection: AgentLaunchSelection | null,
       workspaceNameSeed: string
     ) => {
       const submitLinkedWorkItem =
@@ -52,10 +52,12 @@ export function useQuickSubmitSourcePreparation(input: QuickSubmitSourcePreparat
           ? linkedWorkItem
           : smartGitHubResolution.linkedWorkItem
 
-      const agent =
-        requestedAgent && isTuiAgentEnabled(requestedAgent, disabledTuiAgents)
-          ? requestedAgent
-          : null
+      const launchSelection =
+        requestedSelection?.kind === 'builtin' &&
+        !isTuiAgentEnabled(requestedSelection.agent, disabledTuiAgents)
+          ? null
+          : requestedSelection
+      const agent = launchSelection?.kind === 'builtin' ? launchSelection.agent : null
 
       const submitLinkedIssueNumber =
         smartGitHubResolution.kind === 'none'
@@ -130,6 +132,7 @@ export function useQuickSubmitSourcePreparation(input: QuickSubmitSourcePreparat
 
       return {
         submitLinkedWorkItem,
+        launchSelection,
         agent,
         submitLinkedIssueNumber,
         submitLinkedPR,

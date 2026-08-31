@@ -160,6 +160,8 @@ export const AUTOMATION_OWNER_FENCING_UPDATE_REQUIRED_MESSAGE =
   'Editing automations on this host requires a newer Orca server. Update the HUB and try again.'
 export const AUTOMATION_CREATE_IDEMPOTENCY_RUNTIME_CAPABILITY =
   'automation.create-idempotency.v1' as const
+export const CUSTOM_AGENT_TERMINAL_LAUNCH_RUNTIME_CAPABILITY =
+  'terminal.custom-agent-launch.v1' as const
 
 // Generic native clients include the CLI and must not claim Electron-only page
 // placement support.
@@ -216,6 +218,7 @@ export const RUNTIME_CAPABILITIES = [
   TERMINAL_QUERY_REPLY_INPUT_RUNTIME_CAPABILITY,
   TERMINAL_PAIRED_PARKING_RUNTIME_CAPABILITY,
   TERMINAL_QUICK_COMMANDS_RUNTIME_CAPABILITY,
+  CUSTOM_AGENT_TERMINAL_LAUNCH_RUNTIME_CAPABILITY,
   WORKTREE_CREATE_IDEMPOTENCY_RUNTIME_CAPABILITY,
   TERMINAL_CREATE_IDEMPOTENCY_RUNTIME_CAPABILITY,
   SESSION_TAB_CLOSE_INTENT_RUNTIME_CAPABILITY,

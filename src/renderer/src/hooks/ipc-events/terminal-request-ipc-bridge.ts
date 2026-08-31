@@ -58,6 +58,12 @@ export function registerTerminalRequestIpcBridge(unsubs: (() => void)[]): void {
           ? {
               ...(shouldActivate ? {} : { activate: false, recordInteraction: false }),
               launchAgent: data.launchAgent,
+              ...(data.customAgentProfileSnapshot
+                ? {
+                    customAgentProfileSnapshot: data.customAgentProfileSnapshot,
+                    quickCommandLabel: data.customAgentProfileSnapshot.name
+                  }
+                : {}),
               ...(data.viewMode
                 ? { viewMode: data.viewMode }
                 : initialAgentTabViewModeProps(store.settings, {
@@ -69,13 +75,25 @@ export function registerTerminalRequestIpcBridge(unsubs: (() => void)[]): void {
               ...(data.cwd ? { startupCwd: data.cwd } : {})
             }
           : shouldActivate
-            ? data.cwd
-              ? { startupCwd: data.cwd }
-              : undefined
+            ? {
+                ...(data.cwd ? { startupCwd: data.cwd } : {}),
+                ...(data.customAgentProfileSnapshot
+                  ? {
+                      customAgentProfileSnapshot: data.customAgentProfileSnapshot,
+                      quickCommandLabel: data.customAgentProfileSnapshot.name
+                    }
+                  : {})
+              }
             : {
                 activate: false,
                 recordInteraction: false,
-                ...(data.cwd ? { startupCwd: data.cwd } : {})
+                ...(data.cwd ? { startupCwd: data.cwd } : {}),
+                ...(data.customAgentProfileSnapshot
+                  ? {
+                      customAgentProfileSnapshot: data.customAgentProfileSnapshot,
+                      quickCommandLabel: data.customAgentProfileSnapshot.name
+                    }
+                  : {})
               }
         const tab = store.createTab(worktreeId, data.targetGroupId, undefined, tabOptions)
         if (!shouldActivate) {

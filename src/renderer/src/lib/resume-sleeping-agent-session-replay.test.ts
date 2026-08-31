@@ -96,6 +96,25 @@ describe('resumeSleepingAgentSessionsForWorktree replay protection', () => {
     })
   })
 
+  it('restores the captured profile name without consulting current settings', () => {
+    const record = makeRecord({
+      customAgentProfileSnapshot: {
+        id: 'codex-luna',
+        name: 'Codex Luna',
+        baseAgent: 'codex'
+      }
+    })
+    useAppStore.setState({
+      tabsByWorktree: { 'wt-1': [] },
+      sleepingAgentSessionsByPaneKey: { [record.paneKey]: record }
+    } as never)
+
+    expect(resumeSleepingAgentSessionsForWorktree('wt-1')).toBe(1)
+    const resumedTab = useAppStore.getState().tabsByWorktree['wt-1']![0]!
+    expect(resumedTab.quickCommandLabel).toBe('Codex Luna')
+    expect(resumedTab.customAgentProfileSnapshot).toEqual(record.customAgentProfileSnapshot)
+  })
+
   it('does not fork a provider session that is already queued', () => {
     const record = makeRecord()
     useAppStore.setState({

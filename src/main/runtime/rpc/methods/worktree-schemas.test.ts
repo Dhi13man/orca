@@ -3,6 +3,68 @@ import { WorktreeCreate } from './worktree-create-schemas'
 import { WorktreeActivate, WorktreeSet } from './worktree-schemas'
 
 describe('worktree RPC schemas', () => {
+  it('rejects custom startup commands that bypass host-authoritative quoting', () => {
+    const profile = {
+      id: 'dhimanex',
+      name: 'Dhimanex',
+      kind: 'generic',
+      executable: 'dhimanex',
+      args: ['--fast']
+    }
+
+    expect(
+      WorktreeCreate.safeParse({
+        repo: 'repo-1',
+        name: 'custom-startup',
+        startupCommand: 'dhimanex --wrong',
+        startupCustomAgentProfile: profile
+      }).success
+    ).toBe(false)
+  })
+
+  it('binds custom profile identity to the profile kind and base agent', () => {
+    const genericProfile = {
+      id: 'dhimanex',
+      name: 'Dhimanex',
+      kind: 'generic',
+      executable: 'dhimanex',
+      args: []
+    }
+    const derivedProfile = {
+      id: 'codex-luna',
+      name: 'Codex Luna',
+      kind: 'derived',
+      baseAgent: 'codex',
+      executable: 'codex',
+      args: ['--model', 'luna']
+    }
+
+    expect(
+      WorktreeCreate.safeParse({
+        repo: 'repo-1',
+        name: 'generic-startup',
+        startupCustomAgentProfile: genericProfile,
+        createdWithAgent: 'codex'
+      }).success
+    ).toBe(false)
+    expect(
+      WorktreeCreate.safeParse({
+        repo: 'repo-1',
+        name: 'derived-startup',
+        startupCustomAgentProfile: derivedProfile,
+        startupAgent: 'claude'
+      }).success
+    ).toBe(false)
+    expect(
+      WorktreeCreate.safeParse({
+        repo: 'repo-1',
+        name: 'derived-startup',
+        startupCustomAgentProfile: derivedProfile,
+        createdWithAgent: 'codex'
+      }).success
+    ).toBe(true)
+  })
+
   it('validates additive navigation intent', () => {
     expect(WorktreeActivate.parse({ worktree: 'id:wt-1', navigation: 'clients' }).navigation).toBe(
       'clients'

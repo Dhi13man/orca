@@ -79,6 +79,7 @@ export function renderTabBarSurface({
     windowsShellEntries,
     handleSelectCreateMenuOption,
     launchAgentFromNewTabEntry,
+    launchCustomAgentFromNewTabEntry,
     runPendingNewTabMenuFocusAfterClose,
     clearPendingNewTabMenuFocusOnUnmount,
     queueNewActiveTerminalFocusAfterNewTabMenuClose,
@@ -246,6 +247,7 @@ export function renderTabBarSurface({
                 menuOptions={createMenuOptions}
                 agentOptions={agentLaunchOptions}
                 onLaunchAgent={launchAgentFromNewTabEntry}
+                onLaunchCustomAgent={launchCustomAgentFromNewTabEntry}
                 onOpenDefaultTerminal={() => {
                   queueNewActiveTerminalFocusAfterNewTabMenuClose()
                   onNewTerminalTab()

@@ -119,12 +119,27 @@ export function buildRuntimeWorktreeCreateParams(
     ...(options?.startupDraft ? { startupDraft: options.startupDraft } : {}),
     ...(startup
       ? {
-          startupCommand: startup.command,
-          ...(startup.env ? { startupEnv: startup.env } : {}),
-          ...(startup.launchConfig ? { startupLaunchConfig: startup.launchConfig } : {}),
-          ...(startup.startupCommandDelivery
-            ? { startupCommandDelivery: startup.startupCommandDelivery }
-            : {}),
+          ...(startup.customAgentProfile
+            ? {
+                startupCustomAgentProfile: startup.customAgentProfile,
+                ...(startup.customAgentProfileSnapshot
+                  ? { startupCustomAgentProfileSnapshot: startup.customAgentProfileSnapshot }
+                  : {}),
+                ...(startup.customAgentPrompt
+                  ? { startupCustomAgentPrompt: startup.customAgentPrompt }
+                  : {}),
+                ...(startup.customAgentPromptDelivery
+                  ? { startupCustomAgentPromptDelivery: startup.customAgentPromptDelivery }
+                  : {})
+              }
+            : {
+                startupCommand: startup.command,
+                ...(startup.env ? { startupEnv: startup.env } : {}),
+                ...(startup.launchConfig ? { startupLaunchConfig: startup.launchConfig } : {}),
+                ...(startup.startupCommandDelivery
+                  ? { startupCommandDelivery: startup.startupCommandDelivery }
+                  : {})
+              }),
           activate: true
         }
       : {})

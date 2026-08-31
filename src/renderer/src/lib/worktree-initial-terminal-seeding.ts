@@ -183,6 +183,12 @@ export function ensureWorktreeHasInitialTerminal(
           })
         }
       : {}),
+    ...(sequencedStartup?.quickCommandLabel
+      ? { quickCommandLabel: sequencedStartup.quickCommandLabel }
+      : {}),
+    ...(sequencedStartup?.customAgentProfileSnapshot
+      ? { customAgentProfileSnapshot: sequencedStartup.customAgentProfileSnapshot }
+      : {}),
     ...(opts?.activateCreatedTabs === false ? { activate: false } : {})
   })
   if (opts?.activateCreatedTabs !== false) {

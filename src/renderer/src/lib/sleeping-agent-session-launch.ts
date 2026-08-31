@@ -100,6 +100,12 @@ export function launchSleepingAgentSession(
 
   const tab = state.createTab(record.worktreeId, undefined, undefined, {
     launchAgent: record.agent,
+    ...(record.customAgentProfileSnapshot
+      ? {
+          customAgentProfileSnapshot: record.customAgentProfileSnapshot,
+          quickCommandLabel: record.customAgentProfileSnapshot.name
+        }
+      : {}),
     pendingStartup: {
       command: startupPlan.launchCommand,
       ...(startupPlan.env ? { env: startupPlan.env } : {}),

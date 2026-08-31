@@ -1,30 +1,45 @@
 import type { AgentType } from './agent-status-types'
+import type { TuiAgent } from './tui-agent'
 
 // Shared so the desktop renderer and the mobile app show the same agent name
 // (e.g. native chat's empty state on both surfaces) from one source of truth.
-const WELL_KNOWN_LABELS: Record<string, string> = {
+export const TUI_AGENT_LABELS: Record<TuiAgent, string> = {
   claude: 'Claude',
+  'claude-agent-teams': 'Claude Agent Teams',
   openclaude: 'OpenClaude',
   codex: 'Codex',
-  gemini: 'Gemini',
-  antigravity: 'Antigravity',
-  amp: 'Amp',
-  copilot: 'GitHub Copilot',
+  autohand: 'Autohand Code',
   opencode: 'OpenCode',
   'mimo-code': 'MiMo Code',
-  cursor: 'Cursor',
-  aider: 'Aider',
   pi: 'Pi',
   omp: 'OMP',
-  'prime-agent': 'Prime Agent',
-  droid: 'Droid',
+  gemini: 'Gemini',
+  antigravity: 'Antigravity',
+  aider: 'Aider',
+  goose: 'Goose',
+  amp: 'Amp',
+  kilo: 'Kilocode',
+  kiro: 'Kiro',
+  crush: 'Charm',
+  aug: 'Auggie',
+  cline: 'Cline',
+  codebuff: 'Codebuff',
   'command-code': 'Command Code',
-  grok: 'Grok',
+  continue: 'Continue',
+  cursor: 'Cursor',
+  droid: 'Droid',
+  kimi: 'Kimi',
+  'mistral-vibe': 'Mistral Vibe',
+  'qwen-code': 'Qwen Code',
+  rovo: 'Rovo Dev',
   hermes: 'Hermes',
+  openclaw: 'OpenClaw',
+  copilot: 'GitHub Copilot',
+  'prime-agent': 'Prime Agent',
+  grok: 'Grok',
   devin: 'Devin',
   ante: 'Ante',
-  trae: 'Trae',
-  kimi: 'Kimi'
+  trae: 'Trae'
 }
 
 export function formatAgentTypeLabel(agentType: AgentType | null | undefined): string {
@@ -32,5 +47,5 @@ export function formatAgentTypeLabel(agentType: AgentType | null | undefined): s
     return 'Agent'
   }
   // Capitalize well-known names nicely; pass through custom names as-is
-  return WELL_KNOWN_LABELS[agentType] ?? agentType
+  return TUI_AGENT_LABELS[agentType as TuiAgent] ?? agentType
 }

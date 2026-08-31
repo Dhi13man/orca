@@ -452,6 +452,11 @@ import type {
   AgentProviderSessionMetadata,
   SleepingAgentLaunchConfig
 } from '../../shared/agent-session-resume'
+import type {
+  CustomAgentProfile,
+  CustomAgentProfileSnapshot
+} from '../../shared/custom-agent-profile'
+import { buildCustomAgentStartupPlan } from '../../shared/custom-agent-startup'
 import type { ExactWorkerProviderSession } from '../../shared/orchestration-worker-output'
 import { applyBrowserSessionTabSelection } from './browser-session-tab-selection-snapshot'
 import type { BrowserSessionTabSelectionOptions } from './browser-tab-create-publication'
@@ -1703,6 +1708,7 @@ type TerminalCreateOptions = {
   resumeProviderSession?: AgentProviderSessionMetadata
   launchToken?: string
   launchAgent?: TuiAgent
+  customAgentProfileSnapshot?: CustomAgentProfileSnapshot
   // Why: agent ids are not shell commands (`cursor` is the Cursor desktop app; its
   // CLI is `cursor-agent`). Callers that know the agent name it here instead of
   // guessing a command, and the runtime builds the configured launch.
@@ -2390,6 +2396,7 @@ type RuntimeNotifier = {
       launchConfig?: SleepingAgentLaunchConfig
       launchToken?: string
       launchAgent?: TuiAgent
+      customAgentProfileSnapshot?: CustomAgentProfileSnapshot
       viewMode?: 'terminal' | 'chat'
       activate?: boolean
       presentation?: RuntimeTerminalPresentation
@@ -3329,6 +3336,7 @@ export class OrcaRuntimeService {
       /** Resolved agent launch command, kept so a settle over a bare renderer
        *  PTY can still deliver the launch instead of succeeding silently (STA-3214). */
       startupCommand?: string
+      customAgentProfileSnapshot?: CustomAgentProfileSnapshot
     }
   >()
   private mobileSessionTabListeners = new Set<{
@@ -8555,6 +8563,7 @@ export class OrcaRuntimeService {
       selectIfNoActiveTab?: boolean
       startupCwd?: string
       viewMode?: 'terminal' | 'chat'
+      customAgentProfileSnapshot?: CustomAgentProfileSnapshot
       split?: { splitFromLeafId: string; direction: 'horizontal' | 'vertical' }
       notify?: boolean
     }
@@ -8604,6 +8613,15 @@ export class OrcaRuntimeService {
           candidate.parentTabId === args.tabId &&
           candidate.viewMode !== undefined
       )?.viewMode
+    const customAgentProfileSnapshot =
+      args.customAgentProfileSnapshot ??
+      existingTab?.customAgentProfileSnapshot ??
+      existing?.tabs.find(
+        (candidate): candidate is RuntimeMobileSessionTerminalTab =>
+          candidate.type === 'terminal' &&
+          candidate.parentTabId === args.tabId &&
+          candidate.customAgentProfileSnapshot !== undefined
+      )?.customAgentProfileSnapshot
     const tab: RuntimeMobileSessionTerminalTab = {
       type: 'terminal',
       id: `${args.tabId}::${args.leafId}`,
@@ -8612,6 +8630,12 @@ export class OrcaRuntimeService {
       ptyId: pty.ptyId,
       title,
       ...(pty.launchAgent ? { launchAgent: pty.launchAgent } : {}),
+      ...(customAgentProfileSnapshot
+        ? {
+            quickCommandLabel: customAgentProfileSnapshot.name,
+            customAgentProfileSnapshot: { ...customAgentProfileSnapshot }
+          }
+        : {}),
       ...(args.startupCwd ? { startupCwd: args.startupCwd } : {}),
       ...(viewMode ? { viewMode } : {}),
       parentLayout,
@@ -8987,6 +9011,14 @@ export class OrcaRuntimeService {
               ...(ptyId ? { ptyId } : {}),
               ...(tab.startupCwd ? { startupCwd: tab.startupCwd } : {}),
               ...(tab.launchAgent ? { launchAgent: tab.launchAgent } : {}),
+              ...(tab.customAgentProfileSnapshot
+                ? {
+                    quickCommandLabel: tab.customAgentProfileSnapshot.name,
+                    customAgentProfileSnapshot: { ...tab.customAgentProfileSnapshot }
+                  }
+                : tab.quickCommandLabel?.trim()
+                  ? { quickCommandLabel: tab.quickCommandLabel.trim() }
+                  : {}),
               ...(layout ? { parentLayout: this.cloneTerminalLayoutSnapshot(layout) } : {}),
               ...(tab.color != null ? { color: tab.color } : {}),
               ...(tab.isPinned ? { isPinned: true } : {}),
@@ -24043,6 +24075,25 @@ export class OrcaRuntimeService {
     return isWslUncPath(scope.path) ? 'linux' : process.platform
   }
 
+  private getCustomAgentLaunchPlatform(
+    scope: { connectionId?: string | null },
+    localPlatform: () => NodeJS.Platform
+  ): NodeJS.Platform {
+    if (!scope.connectionId) {
+      return localPlatform()
+    }
+    const remotePlatform = getRegisteredSshState(scope.connectionId)?.remotePlatform
+    if (!remotePlatform) {
+      throw new Error('Reconnect the SSH target before launching a custom agent.')
+    }
+    if (remotePlatform === 'win32') {
+      throw new Error(
+        'Custom agents cannot launch over Windows SSH because the remote shell cannot be determined safely.'
+      )
+    }
+    return remotePlatform
+  }
+
   async getRepoSlug(repoSelector: string): Promise<GitHubOwnerRepo | null> {
     const repo = await this.resolveRepoSelector(repoSelector)
     const options = this.getHostedReviewExecutionOptions(repo)
@@ -26616,7 +26667,12 @@ export class OrcaRuntimeService {
       requestedAgent !== undefined
         ? isTuiAgentEnabled(requestedAgent, createSettings.disabledTuiAgents)
         : false
-    if ((args.startup || args.startupAgent) && requestedAgent && !requestedAgentEnabled) {
+    if (
+      (args.startup || args.startupAgent) &&
+      requestedAgent &&
+      !requestedAgentEnabled &&
+      !args.startup?.customAgentProfile
+    ) {
       throw new Error('Selected agent is disabled. Choose an enabled agent before creating.')
     }
     if (
@@ -26639,14 +26695,78 @@ export class OrcaRuntimeService {
       !args.startup && !agentStartup && args.startupDraft
         ? await this.buildStartupForDraft(repo, args.startupDraft, requestedAgent)
         : null
-    const effectiveStartup = args.startup ?? agentStartup?.startup ?? draftStartup?.startup
-    const effectiveStartupFollowup = agentStartup?.followup
+    const customAgentPlatform = args.startup?.customAgentProfile
+      ? this.getCustomAgentLaunchPlatform(repo, () => this.getAgentLaunchPlatformForRepo(repo))
+      : null
+    const customAgentStartup =
+      args.startup?.customAgentProfile && customAgentPlatform
+        ? buildCustomAgentStartupPlan({
+            profile: args.startup.customAgentProfile,
+            platform: customAgentPlatform,
+            shell: resolveLocalWindowsAgentStartupShell({
+              platform: customAgentPlatform,
+              isRemote: repoIsRemote(repo),
+              terminalWindowsShell: createSettings.terminalWindowsShell
+            }),
+            isRemote: repoIsRemote(repo),
+            ...(args.startup.customAgentProfile.kind === 'derived'
+              ? {
+                  agentEnv: resolveTuiAgentLaunchEnv(
+                    args.startup.customAgentProfile.baseAgent,
+                    createSettings.agentDefaultEnv
+                  )
+                }
+              : {}),
+            ...(args.startup.customAgentPrompt ? { prompt: args.startup.customAgentPrompt } : {}),
+            ...(args.startup.customAgentPromptDelivery
+              ? { promptDelivery: args.startup.customAgentPromptDelivery }
+              : {})
+          })
+        : null
+    if (args.startup?.customAgentProfile && !customAgentStartup) {
+      throw new Error(`Could not build launch command for ${args.startup.customAgentProfile.name}.`)
+    }
+    const resolvedCustomStartup =
+      args.startup && customAgentStartup
+        ? {
+            command: customAgentStartup.command,
+            customAgentProfileSnapshot: customAgentStartup.customAgentProfileSnapshot,
+            ...(customAgentStartup.env ? { env: customAgentStartup.env } : {}),
+            ...(customAgentStartup.launchConfig
+              ? { launchConfig: customAgentStartup.launchConfig }
+              : {}),
+            ...(customAgentStartup.launchAgent
+              ? { launchAgent: customAgentStartup.launchAgent }
+              : {}),
+            ...(customAgentStartup.startupCommandDelivery
+              ? { startupCommandDelivery: customAgentStartup.startupCommandDelivery }
+              : {}),
+            ...(args.startup.launchToken ? { launchToken: args.startup.launchToken } : {}),
+            ...(args.startup.viewMode ? { viewMode: args.startup.viewMode } : {}),
+            ...(args.startup.telemetry ? { telemetry: args.startup.telemetry } : {})
+          }
+        : null
+    const effectiveStartup =
+      resolvedCustomStartup ?? args.startup ?? agentStartup?.startup ?? draftStartup?.startup
+    const effectiveStartupFollowup =
+      customAgentStartup?.afterStartPrompt?.delivery === 'submit'
+        ? {
+            expectedProcess: customAgentStartup.afterStartPrompt.expectedProcess,
+            prompt: customAgentStartup.afterStartPrompt.content
+          }
+        : agentStartup?.followup
     const effectiveCreatedWithAgent = args.startup
-      ? args.createdWithAgent
+      ? (customAgentStartup?.launchAgent ?? args.createdWithAgent)
       : (agentStartup?.agent ??
         draftStartup?.agent ??
         (requestedAgentEnabled ? requestedAgent : undefined))
-    const effectiveDraftPaste = args.startupDraftPaste ?? draftStartup?.draftPaste
+    const effectiveDraftPaste =
+      customAgentStartup?.afterStartPrompt?.delivery === 'draft'
+        ? {
+            agent: customAgentStartup.afterStartPrompt.agent,
+            content: customAgentStartup.afterStartPrompt.content
+          }
+        : (args.startupDraftPaste ?? draftStartup?.draftPaste)
     if (isFolderRepo(repo)) {
       const now = Date.now()
       const settings = createSettings
@@ -26724,6 +26844,9 @@ export class OrcaRuntimeService {
               ? { launchConfig: effectiveStartup.launchConfig }
               : {}),
             ...(effectiveCreatedWithAgent ? { launchAgent: effectiveCreatedWithAgent } : {}),
+            ...(effectiveStartup.customAgentProfileSnapshot
+              ? { customAgentProfileSnapshot: effectiveStartup.customAgentProfileSnapshot }
+              : {}),
             ...(effectiveStartup.viewMode ? { viewMode: effectiveStartup.viewMode } : {}),
             startupCommandDelivery: effectiveStartup.startupCommandDelivery,
             telemetry: effectiveStartup.telemetry,
@@ -27532,6 +27655,9 @@ export class OrcaRuntimeService {
           env: sequencedStartup.env,
           ...(sequencedStartup.launchConfig ? { launchConfig: sequencedStartup.launchConfig } : {}),
           ...(effectiveCreatedWithAgent ? { launchAgent: effectiveCreatedWithAgent } : {}),
+          ...(sequencedStartup.customAgentProfileSnapshot
+            ? { customAgentProfileSnapshot: sequencedStartup.customAgentProfileSnapshot }
+            : {}),
           ...(sequencedStartup.viewMode ? { viewMode: sequencedStartup.viewMode } : {}),
           startupCommandDelivery: sequencedStartup.startupCommandDelivery,
           telemetry: sequencedStartup.telemetry,
@@ -27879,6 +28005,9 @@ export class OrcaRuntimeService {
           env: sequencedStartup.env,
           ...(sequencedStartup.launchConfig ? { launchConfig: sequencedStartup.launchConfig } : {}),
           ...(args.createdWithAgent ? { launchAgent: args.createdWithAgent } : {}),
+          ...(sequencedStartup.customAgentProfileSnapshot
+            ? { customAgentProfileSnapshot: sequencedStartup.customAgentProfileSnapshot }
+            : {}),
           ...(sequencedStartup.viewMode ? { viewMode: sequencedStartup.viewMode } : {}),
           startupCommandDelivery: sequencedStartup.startupCommandDelivery,
           telemetry: sequencedStartup.telemetry,
@@ -30710,6 +30839,9 @@ export class OrcaRuntimeService {
             // metadata from an already-owned renderer pane; don't select it on mobile.
             selectIfNoActiveTab: presentation !== 'background',
             ...(launchOpts.viewMode ? { viewMode: launchOpts.viewMode } : {}),
+            ...(launchOpts.customAgentProfileSnapshot
+              ? { customAgentProfileSnapshot: launchOpts.customAgentProfileSnapshot }
+              : {}),
             ...(cwd !== workspace.path ? { startupCwd: cwd } : {})
           })
         }
@@ -30728,6 +30860,9 @@ export class OrcaRuntimeService {
               ...(effectiveLaunchConfig ? { launchConfig: effectiveLaunchConfig } : {}),
               ...(launchToken ? { launchToken } : {}),
               ...(launchOpts.launchAgent ? { launchAgent: launchOpts.launchAgent } : {}),
+              ...(launchOpts.customAgentProfileSnapshot
+                ? { customAgentProfileSnapshot: launchOpts.customAgentProfileSnapshot }
+                : {}),
               ...(launchOpts.viewMode ? { viewMode: launchOpts.viewMode } : {}),
               activate: presentation === 'focused',
               ...(presentation ? { presentation } : {}),
@@ -30817,6 +30952,9 @@ export class OrcaRuntimeService {
           : {}),
         ...(launchOpts.launchToken ? { launchToken: launchOpts.launchToken } : {}),
         ...(launchOpts.launchAgent ? { launchAgent: launchOpts.launchAgent } : {}),
+        ...(launchOpts.customAgentProfileSnapshot
+          ? { customAgentProfileSnapshot: launchOpts.customAgentProfileSnapshot }
+          : {}),
         ...(launchOpts.viewMode ? { viewMode: launchOpts.viewMode } : {}),
         startupCommandDelivery: launchOpts.startupCommandDelivery,
         title: launchOpts.title,
@@ -31025,6 +31163,10 @@ export class OrcaRuntimeService {
       agentPrompt?: string
       launchConfig?: SleepingAgentLaunchConfig
       launchAgent?: TuiAgent
+      customAgentProfileSnapshot?: CustomAgentProfileSnapshot
+      customAgentProfile?: CustomAgentProfile
+      customAgentPrompt?: string
+      customAgentPromptDelivery?: 'auto-submit' | 'draft'
       viewMode?: 'terminal' | 'chat'
       activate?: boolean
       select?: boolean
@@ -31095,6 +31237,10 @@ export class OrcaRuntimeService {
       agentPrompt?: string
       launchConfig?: SleepingAgentLaunchConfig
       launchAgent?: TuiAgent
+      customAgentProfileSnapshot?: CustomAgentProfileSnapshot
+      customAgentProfile?: CustomAgentProfile
+      customAgentPrompt?: string
+      customAgentPromptDelivery?: 'auto-submit' | 'draft'
       viewMode?: 'terminal' | 'chat'
       activate?: boolean
       clientNavigationId?: string
@@ -31118,6 +31264,8 @@ export class OrcaRuntimeService {
       afterDesktopTabId = anchor.type === 'terminal' ? anchor.parentTabId : anchor.id
     }
     const startupCommand = await this.resolveMobileSessionTerminalCommand(workspace, opts)
+    const customAgentProfileSnapshot =
+      startupCommand.customAgentProfileSnapshot ?? opts.customAgentProfileSnapshot
     this.assertStableReadyGraph(graphEpoch)
     if (opts.signal?.aborted) {
       throw new Error('client_disconnected')
@@ -31135,6 +31283,7 @@ export class OrcaRuntimeService {
           envToDelete: startupCommand.envToDelete,
           startupCommandDelivery: startupCommand.startupCommandDelivery,
           launchAgent: startupCommand.launchAgent,
+          customAgentProfileSnapshot,
           viewMode: opts.viewMode,
           targetGroupId: opts.targetGroupId,
           launchConfig: startupCommand.launchConfig,
@@ -31193,6 +31342,7 @@ export class OrcaRuntimeService {
           ...(startupCommand.envToDelete ? { envToDelete: startupCommand.envToDelete } : {}),
           ...(startupCommand.launchConfig ? { launchConfig: startupCommand.launchConfig } : {}),
           ...(startupCommand.launchAgent ? { launchAgent: startupCommand.launchAgent } : {}),
+          ...(customAgentProfileSnapshot ? { customAgentProfileSnapshot } : {}),
           ...(opts.viewMode ? { viewMode: opts.viewMode } : {}),
           startupCommandDelivery: startupCommand.startupCommandDelivery,
           source: 'runtime-session',
@@ -31215,6 +31365,7 @@ export class OrcaRuntimeService {
         paired: pairedCreate,
         selectIfNoActiveTab: true,
         ...(startupCommand.command ? { startupCommand: startupCommand.command } : {}),
+        ...(customAgentProfileSnapshot ? { customAgentProfileSnapshot } : {}),
         ...(opts.viewMode ? { viewMode: opts.viewMode } : {})
       })
       try {
@@ -31260,6 +31411,7 @@ export class OrcaRuntimeService {
             startupCommandDelivery: startupCommand.startupCommandDelivery,
             identity: { tabId: pendingSurface.tab.parentTabId, leafId: pendingSurface.tab.leafId },
             launchAgent: startupCommand.launchAgent,
+            customAgentProfileSnapshot,
             viewMode: opts.viewMode,
             targetGroupId: opts.targetGroupId,
             launchConfig: startupCommand.launchConfig,
@@ -31304,6 +31456,9 @@ export class OrcaRuntimeService {
       agentPrompt?: string
       launchConfig?: SleepingAgentLaunchConfig
       launchAgent?: TuiAgent
+      customAgentProfile?: CustomAgentProfile
+      customAgentPrompt?: string
+      customAgentPromptDelivery?: 'auto-submit' | 'draft'
     }
   ): Promise<{
     command?: string
@@ -31312,7 +31467,59 @@ export class OrcaRuntimeService {
     startupCommandDelivery?: WorktreeStartupLaunch['startupCommandDelivery']
     launchConfig?: SleepingAgentLaunchConfig
     launchAgent?: TuiAgent
+    customAgentProfileSnapshot?: CustomAgentProfileSnapshot
   }> {
+    if (opts.customAgentProfile) {
+      if (!this.store) {
+        throw new Error('runtime_unavailable')
+      }
+      const settings = this.store.getSettings()
+      const platform = this.getCustomAgentLaunchPlatform(workspace, () =>
+        this.getAgentLaunchPlatformForWorkspace(workspace)
+      )
+      const isRemote = workspace.repo
+        ? repoIsRemote(workspace.repo)
+        : Boolean(workspace.connectionId)
+      const shell = resolveLocalWindowsAgentStartupShell({
+        platform,
+        isRemote,
+        terminalWindowsShell: settings.terminalWindowsShell
+      })
+      const baseAgent =
+        opts.customAgentProfile.kind === 'derived' ? opts.customAgentProfile.baseAgent : undefined
+      const startupPlan = buildCustomAgentStartupPlan({
+        profile: opts.customAgentProfile,
+        platform,
+        shell,
+        isRemote,
+        ...(baseAgent
+          ? { agentEnv: resolveTuiAgentLaunchEnv(baseAgent, settings.agentDefaultEnv) }
+          : {}),
+        ...(opts.customAgentPrompt ? { prompt: opts.customAgentPrompt } : {}),
+        ...(opts.customAgentPromptDelivery
+          ? { promptDelivery: opts.customAgentPromptDelivery }
+          : {})
+      })
+      if (!startupPlan) {
+        throw new Error(`Could not build launch command for ${opts.customAgentProfile.name}.`)
+      }
+      if (startupPlan.afterStartPrompt) {
+        throw new Error(
+          `${startupPlan.afterStartPrompt.agent} requires prompt delivery after launch.`
+        )
+      }
+      if (baseAgent) {
+        await this.markWorkspaceTrustedForAgent(baseAgent, workspace.connectionId, workspace.path)
+      }
+      return {
+        command: startupPlan.command,
+        env: startupPlan.env,
+        launchConfig: startupPlan.launchConfig,
+        launchAgent: startupPlan.launchAgent,
+        startupCommandDelivery: startupPlan.startupCommandDelivery,
+        customAgentProfileSnapshot: startupPlan.customAgentProfileSnapshot
+      }
+    }
     if (opts.command || !opts.agent) {
       return {
         command: opts.command,
@@ -31381,6 +31588,7 @@ export class OrcaRuntimeService {
       startupCommandDelivery?: WorktreeStartupLaunch['startupCommandDelivery']
       identity?: { tabId: string; leafId: string; sessionId?: string }
       launchAgent?: TuiAgent
+      customAgentProfileSnapshot?: CustomAgentProfileSnapshot
       viewMode?: 'terminal' | 'chat'
       targetGroupId?: string
       launchConfig?: SleepingAgentLaunchConfig
@@ -31449,6 +31657,12 @@ export class OrcaRuntimeService {
       title: terminal.title ?? livePty.pty.title ?? 'Terminal',
       ...(cwd ? { startupCwd: cwd } : {}),
       ...(opts.launchAgent ? { launchAgent: opts.launchAgent } : {}),
+      ...(opts.customAgentProfileSnapshot
+        ? {
+            quickCommandLabel: opts.customAgentProfileSnapshot.name,
+            customAgentProfileSnapshot: { ...opts.customAgentProfileSnapshot }
+          }
+        : {}),
       ...(opts.viewMode ? { viewMode: opts.viewMode } : {}),
       parentLayout,
       isActive: activate
@@ -31635,7 +31849,10 @@ export class OrcaRuntimeService {
       title: null,
       activate: pending.activate,
       selectIfNoActiveTab: pending.selectIfNoActiveTab,
-      ...(pending.viewMode ? { viewMode: pending.viewMode } : {})
+      ...(pending.viewMode ? { viewMode: pending.viewMode } : {}),
+      ...(pending.customAgentProfileSnapshot
+        ? { customAgentProfileSnapshot: pending.customAgentProfileSnapshot }
+        : {})
     })
     // Why: check closures normally drain only inside syncWindowGraph; a main-side publish must drain them too or the pending wait misses the insertion.
     for (const cb of [...this.graphSyncCallbacks]) {
@@ -36481,6 +36698,10 @@ export class OrcaRuntimeService {
         ...(tab.ptyId ? { ptyId: tab.ptyId } : {}),
         ...(tab.terminalTheme ? { terminalTheme: tab.terminalTheme } : {}),
         ...(launchAgent ? { launchAgent } : {}),
+        ...(tab.quickCommandLabel ? { quickCommandLabel: tab.quickCommandLabel } : {}),
+        ...(tab.customAgentProfileSnapshot
+          ? { customAgentProfileSnapshot: { ...tab.customAgentProfileSnapshot } }
+          : {}),
         ...clientAgentStatus,
         ...(turnCompletedAt !== undefined ? { turnCompletedAt } : {}),
         ...(tab.parentLayout ? { parentLayout: tab.parentLayout } : {}),

@@ -21,6 +21,7 @@ import { shouldAllowComposerEnterSubmitTarget } from '@/lib/new-workspace-enter-
 import { isScreenSubmitShortcut } from '@/lib/screen-submit-shortcut'
 import type { GitHubWorkItem } from '../../../shared/github/work-item-types'
 import type { TuiAgent } from '../../../shared/tui-agent'
+import type { AgentLaunchSelection } from '../../../shared/custom-agent-profile'
 import type { WorkspaceSource as WorkspaceCreateTelemetrySource } from '../../../shared/workspace-source'
 import type { WorkspaceStatus } from '../../../shared/worktree/types'
 import type { TaskSourceContext } from '../../../shared/task-source-context'
@@ -157,35 +158,58 @@ function QuickTabBody({
   // override rather than an effect that mirrors a prop into state — deriving
   // during render keeps the selection in sync with the detected set without
   // triggering an extra commit.
-  const [quickAgentOverride, setQuickAgentOverride] = useState<TuiAgent | null | undefined>(
-    undefined
-  )
+  const [quickAgentSelectionOverride, setQuickAgentSelectionOverride] = useState<
+    AgentLaunchSelection | null | undefined
+  >(undefined)
   const preferredQuickAgent = useMemo<TuiAgent | null>(() => {
     const pref = settings?.defaultTuiAgent
     // Why: detection can still be pending when quick-create submits; keep the
     // prior catalog fallback while filtering disabled agents out of that choice.
     return pickQuickWorkspaceAgent(pref, cardProps.detectedAgentIds, settings?.disabledTuiAgents)
   }, [cardProps.detectedAgentIds, settings?.defaultTuiAgent, settings?.disabledTuiAgents])
-  const resolvedQuickAgentSelection = resolveQuickWorkspaceAgentSelection({
-    quickAgentOverride,
+  const builtinOverride =
+    quickAgentSelectionOverride?.kind === 'builtin'
+      ? quickAgentSelectionOverride.agent
+      : quickAgentSelectionOverride === null
+        ? null
+        : undefined
+  const resolvedBuiltinSelection = resolveQuickWorkspaceAgentSelection({
+    quickAgentOverride: builtinOverride,
     preferredQuickAgent,
     detectedAgentIds: cardProps.detectedAgentIds,
     disabledTuiAgents: settings?.disabledTuiAgents
   })
-  if (resolvedQuickAgentSelection.quickAgentOverride !== quickAgentOverride) {
+  if (
+    quickAgentSelectionOverride?.kind !== 'custom' &&
+    resolvedBuiltinSelection.quickAgentOverride !== builtinOverride
+  ) {
     // Why: detection/settings changes can invalidate a user-picked agent; repair
     // before the child selector renders an unavailable option for one commit.
-    setQuickAgentOverride(resolvedQuickAgentSelection.quickAgentOverride)
+    setQuickAgentSelectionOverride(
+      resolvedBuiltinSelection.quickAgentOverride === null
+        ? null
+        : resolvedBuiltinSelection.quickAgentOverride
+          ? { kind: 'builtin', agent: resolvedBuiltinSelection.quickAgentOverride }
+          : undefined
+    )
   }
-  const quickAgent = resolvedQuickAgentSelection.quickAgent
+  const quickAgentSelection = useMemo<AgentLaunchSelection | null>(
+    () =>
+      quickAgentSelectionOverride?.kind === 'custom'
+        ? quickAgentSelectionOverride
+        : resolvedBuiltinSelection.quickAgent
+          ? { kind: 'builtin', agent: resolvedBuiltinSelection.quickAgent }
+          : null,
+    [quickAgentSelectionOverride, resolvedBuiltinSelection.quickAgent]
+  )
 
-  const handleQuickAgentChange = useCallback((agent: TuiAgent | null) => {
-    setQuickAgentOverride(agent)
+  const handleQuickAgentSelectionChange = useCallback((selection: AgentLaunchSelection | null) => {
+    setQuickAgentSelectionOverride(selection)
   }, [])
 
   const handleCreate = useCallback(async (): Promise<void> => {
-    await submitQuick(quickAgent)
-  }, [quickAgent, submitQuick])
+    await submitQuick(quickAgentSelection)
+  }, [quickAgentSelection, submitQuick])
   // Why: Add Project layers over the composer as a nested dialog instead of
   // replacing it in the activeModal slot — closing the composer mid-flow (and
   // losing the typed name/prompt) was the old, abrupt behavior. Once opened it
@@ -299,8 +323,8 @@ function QuickTabBody({
         composerRef={composerRef}
         onComposerNodeChange={onComposerNodeChange}
         nameInputRef={nameInputRef}
-        quickAgent={quickAgent}
-        onQuickAgentChange={handleQuickAgentChange}
+        quickAgentSelection={quickAgentSelection}
+        onQuickAgentSelectionChange={handleQuickAgentSelectionChange}
         {...cardProps}
         primaryActionLabel={primaryActionLabel}
         onOpenAgentSettings={() => setAgentSettingsOpen(true)}

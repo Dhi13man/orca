@@ -1198,7 +1198,11 @@ function buildMirroredTerminalTabs(
       surfaces
         .map((surface) => existingById.get(toWebTerminalSurfaceTabId(surface.id)))
         .find((tab): tab is TerminalTab => Boolean(tab))
+    const customAgentProfileSnapshot =
+      activeSurface.customAgentProfileSnapshot ??
+      surfaces.find((surface) => surface.customAgentProfileSnapshot)?.customAgentProfileSnapshot
     const quickCommandLabel =
+      customAgentProfileSnapshot?.name ||
       activeSurface.quickCommandLabel?.trim() ||
       surfaces.find((surface) => surface.quickCommandLabel?.trim())?.quickCommandLabel?.trim() ||
       existing?.quickCommandLabel?.trim()
@@ -1233,6 +1237,9 @@ function buildMirroredTerminalTabs(
         ...(viewMode ? { viewMode } : {}),
         sortOrder: sortOffset + index,
         createdAt: existing?.createdAt ?? now + index,
+        ...(customAgentProfileSnapshot
+          ? { customAgentProfileSnapshot: { ...customAgentProfileSnapshot } }
+          : {}),
         // Why: launchAgent is host-owned lifecycle metadata; once the host omits it, don't resurrect stale startup intent.
         ...(launchAgent ? { launchAgent } : {})
       },
@@ -2464,6 +2471,9 @@ function terminalTabEqual(a: TerminalTab, b: TerminalTab): boolean {
     a.generation === b.generation &&
     a.shellOverride === b.shellOverride &&
     a.launchAgent === b.launchAgent &&
+    a.customAgentProfileSnapshot?.id === b.customAgentProfileSnapshot?.id &&
+    a.customAgentProfileSnapshot?.name === b.customAgentProfileSnapshot?.name &&
+    a.customAgentProfileSnapshot?.baseAgent === b.customAgentProfileSnapshot?.baseAgent &&
     a.pendingActivationSpawn === b.pendingActivationSpawn
   )
 }

@@ -177,6 +177,63 @@ describe('AgentCombobox', () => {
     expect(markup).not.toContain('Blank Terminal')
   })
 
+  it('selects a custom profile by discriminated ID from a separate group', () => {
+    const onValueChange = vi.fn()
+    render(
+      <AgentCombobox
+        agents={AGENT_CATALOG.slice(0, 2)}
+        launchSelection={{
+          value: { kind: 'builtin', agent: 'claude' },
+          profiles: [
+            {
+              id: 'codex-luna',
+              name: 'Codex Luna',
+              kind: 'derived',
+              baseAgent: 'codex',
+              executable: 'codex',
+              args: ['--model', 'luna']
+            }
+          ],
+          onValueChange
+        }}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('combobox'))
+    expect(screen.getByText('Custom agents')).not.toBeNull()
+    fireEvent.click(screen.getByRole('option', { name: 'Codex Luna' }))
+
+    expect(onValueChange).toHaveBeenCalledWith({ kind: 'custom', profileId: 'codex-luna' })
+  })
+
+  it('searches custom profiles by executable and base provider', () => {
+    render(
+      <AgentCombobox
+        agents={[]}
+        launchSelection={{
+          value: null,
+          profiles: [
+            {
+              id: 'luna',
+              name: 'Nightly',
+              kind: 'derived',
+              baseAgent: 'codex',
+              executable: 'codex-preview',
+              args: []
+            }
+          ],
+          onValueChange: vi.fn()
+        }}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('combobox'))
+    const search = screen.getByPlaceholderText('Search agents...')
+    fireEvent.change(search, { target: { value: 'codex-preview' } })
+
+    expect(screen.getByRole('option', { name: 'Nightly' })).not.toBeNull()
+  })
+
   it('uses the bundled OpenClaude favicon crop instead of Claude or GitHub artwork', () => {
     const markup = renderToStaticMarkup(<AgentIcon agent="openclaude" />)
 

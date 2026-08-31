@@ -17,6 +17,11 @@ import {
   CliWorkspaceProvenanceRequest,
   OptionalTuiAgent
 } from './worktree-schemas'
+import {
+  CustomAgentProfileSchema,
+  CustomAgentProfileSnapshotSchema
+} from './custom-agent-profile-schemas'
+import { MAX_QUICK_COMMAND_AGENT_PROMPT_LENGTH } from '../../../../shared/terminal-quick-commands'
 
 export const WorktreeCreate = z
   .object({
@@ -105,6 +110,16 @@ export const WorktreeCreate = z
     startupEnv: z.record(z.string(), z.string()).optional(),
     startupLaunchConfig: sleepingAgentLaunchConfigSchema,
     startupCommandDelivery: z.enum(['fast', 'shell-ready']).optional(),
+    startupCustomAgentProfile: CustomAgentProfileSchema.optional(),
+    startupCustomAgentProfileSnapshot: CustomAgentProfileSnapshotSchema.optional(),
+    startupCustomAgentPrompt: z
+      .string()
+      .max(MAX_QUICK_COMMAND_AGENT_PROMPT_LENGTH)
+      .refine((value) => value.trim().length > 0, {
+        message: 'Custom agent prompt cannot be empty'
+      })
+      .optional(),
+    startupCustomAgentPromptDelivery: z.enum(['auto-submit', 'draft']).optional(),
     // Why: CLI clients should not hardcode agent launch quoting because SSH
     // workspaces execute in a different shell than the client process.
     startupAgent: OptionalTuiAgent,
@@ -140,6 +155,59 @@ export const WorktreeCreate = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'startupPrompt requires startupAgent'
+      })
+    }
+    if (params.startupCustomAgentProfile !== undefined && params.startupCommand !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['startupCommand'],
+        message: 'Custom agent profile cannot be combined with a startup command'
+      })
+    }
+    const customProfileBaseAgent =
+      params.startupCustomAgentProfile?.kind === 'derived'
+        ? params.startupCustomAgentProfile.baseAgent
+        : undefined
+    if (
+      params.startupCustomAgentProfile?.kind === 'generic' &&
+      (params.startupAgent !== undefined || params.createdWithAgent !== undefined)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['startupCustomAgentProfile'],
+        message: 'Generic custom agent profiles cannot declare a built-in agent identity'
+      })
+    }
+    if (
+      customProfileBaseAgent &&
+      ((params.startupAgent !== undefined && params.startupAgent !== customProfileBaseAgent) ||
+        (params.createdWithAgent !== undefined &&
+          params.createdWithAgent !== customProfileBaseAgent))
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['startupCustomAgentProfile'],
+        message: 'Derived custom agent identity must match its base agent'
+      })
+    }
+    if (
+      params.startupCustomAgentPrompt !== undefined &&
+      params.startupCustomAgentProfile?.kind !== 'derived'
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['startupCustomAgentPrompt'],
+        message: 'Custom agent prompt requires a derived custom agent profile'
+      })
+    }
+    if (
+      params.startupCustomAgentPromptDelivery !== undefined &&
+      params.startupCustomAgentPrompt === undefined
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['startupCustomAgentPromptDelivery'],
+        message: 'Custom agent prompt delivery requires a prompt'
       })
     }
   })

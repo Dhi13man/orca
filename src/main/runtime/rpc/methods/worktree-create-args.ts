@@ -17,6 +17,10 @@ export function buildManagedWorktreeCreateArgs(
   provenance: CreateProvenance,
   origin: { clientKind?: 'mobile' | 'runtime' } = {}
 ): ManagedWorktreeCreateArgs {
+  const customProfileBaseAgent =
+    params.startupCustomAgentProfile?.kind === 'derived'
+      ? params.startupCustomAgentProfile.baseAgent
+      : undefined
   return {
     repoSelector: params.repo,
     name: params.name ?? '',
@@ -63,19 +67,38 @@ export function buildManagedWorktreeCreateArgs(
         : {})
     }),
     setupDecision: params.setupDecision,
-    createdWithAgent: params.createdWithAgent ?? params.startupAgent,
+    createdWithAgent:
+      customProfileBaseAgent ??
+      (params.startupCustomAgentProfile
+        ? undefined
+        : (params.createdWithAgent ?? params.startupAgent)),
     ...provenance,
-    startup: params.startupCommand
-      ? {
-          command: params.startupCommand,
-          ...(params.startupEnv ? { env: params.startupEnv } : {}),
-          ...(params.startupLaunchConfig ? { launchConfig: params.startupLaunchConfig } : {}),
-          ...(params.startupCommandDelivery
-            ? { startupCommandDelivery: params.startupCommandDelivery }
-            : {})
-        }
-      : undefined,
-    ...(params.startupAgent ? { startupAgent: params.startupAgent } : {}),
+    startup:
+      params.startupCommand || params.startupCustomAgentProfile
+        ? {
+            command: params.startupCommand ?? params.startupCustomAgentProfile!.executable,
+            ...(params.startupEnv ? { env: params.startupEnv } : {}),
+            ...(params.startupLaunchConfig ? { launchConfig: params.startupLaunchConfig } : {}),
+            ...(params.startupCommandDelivery
+              ? { startupCommandDelivery: params.startupCommandDelivery }
+              : {}),
+            ...(params.startupCustomAgentProfile
+              ? { customAgentProfile: params.startupCustomAgentProfile }
+              : {}),
+            ...(params.startupCustomAgentProfileSnapshot
+              ? { customAgentProfileSnapshot: params.startupCustomAgentProfileSnapshot }
+              : {}),
+            ...(params.startupCustomAgentPrompt
+              ? { customAgentPrompt: params.startupCustomAgentPrompt }
+              : {}),
+            ...(params.startupCustomAgentPromptDelivery
+              ? { customAgentPromptDelivery: params.startupCustomAgentPromptDelivery }
+              : {})
+          }
+        : undefined,
+    ...(!params.startupCustomAgentProfile && params.startupAgent
+      ? { startupAgent: params.startupAgent }
+      : {}),
     ...(params.startupPrompt !== undefined ? { startupPrompt: params.startupPrompt } : {}),
     startupDraft: params.startupDraft,
     lineage: {

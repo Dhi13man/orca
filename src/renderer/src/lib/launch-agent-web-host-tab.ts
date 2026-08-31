@@ -12,6 +12,10 @@ import type { TuiAgent } from '../../../shared/tui-agent'
 import type { AgentPromptDelivery } from '../../../shared/agent-session-host-authority'
 import { translate } from '@/i18n/i18n'
 import { toAgentLaunchPreferences } from '@/runtime/agent-session-create-operation'
+import type {
+  CustomAgentProfile,
+  CustomAgentProfileSnapshot
+} from '../../../shared/custom-agent-profile'
 
 function removeStaleLocalAgentTabsForWebHostLaunch(worktreeId: string): void {
   const state = useAppStore.getState()
@@ -46,6 +50,9 @@ export function launchAgentInWebHostTab(args: {
   agentArgs?: string | null
   viewMode?: Tab['viewMode']
   onPromptDelivered?: () => void
+  preserveExactCommand?: boolean
+  customAgentProfile?: CustomAgentProfile
+  customAgentProfileSnapshot?: CustomAgentProfileSnapshot
 }): Promise<{ delivered: boolean; failureNotified: boolean }> {
   const {
     agent,
@@ -60,7 +67,10 @@ export function launchAgentInWebHostTab(args: {
     submitPastedPrompt,
     agentArgs,
     viewMode,
-    onPromptDelivered
+    onPromptDelivered,
+    preserveExactCommand = false,
+    customAgentProfile,
+    customAgentProfileSnapshot
   } = args
   const hasPrompt = prompt.length > 0
   const launchPreferences = toAgentLaunchPreferences(startupPlan.sessionOptions)
@@ -75,7 +85,7 @@ export function launchAgentInWebHostTab(args: {
     ...(cwd?.trim() ? { cwd } : {}),
     ...(viewMode ? { viewMode } : {}),
     agentSessionKind: 'fresh',
-    ...(hasPrompt
+    ...(hasPrompt || preserveExactCommand
       ? {
           launchAgent: agent,
           command: startupPlan.launchCommand,
@@ -91,7 +101,10 @@ export function launchAgentInWebHostTab(args: {
       ? { promptDelivery: structuredPromptDelivery }
       : {}),
     ...(agentArgs !== undefined ? { agentArgs } : {}),
-    ...(launchPreferences ? { launchPreferences } : {})
+    ...(launchPreferences ? { launchPreferences } : {}),
+    ...(preserveExactCommand ? { preserveExactCommand: true } : {}),
+    ...(customAgentProfile ? { customAgentProfile } : {}),
+    ...(customAgentProfileSnapshot ? { customAgentProfileSnapshot } : {})
   } as const
 
   const handleCreation = ({

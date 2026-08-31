@@ -11,6 +11,7 @@ import type { TabGroupLayoutNode } from './tab-types'
 import type { TerminalExitCause } from './terminal-exit-cause'
 import type { TerminalPaneLayoutNode } from './terminal-tab-types'
 import type { TuiAgent } from './tui-agent'
+import type { CustomAgentProfileSnapshot } from './custom-agent-profile'
 
 export type RuntimeTerminalSummary = {
   handle: string
@@ -233,6 +234,7 @@ type RuntimeTerminalCreateBaseRequestPayload = {
   resumeProviderSession?: AgentProviderSessionMetadata
   launchToken?: string
   launchAgent?: TuiAgent
+  customAgentProfileSnapshot?: CustomAgentProfileSnapshot
   viewMode?: 'terminal' | 'chat'
   startupCommandDelivery?: StartupCommandDelivery
   title?: string

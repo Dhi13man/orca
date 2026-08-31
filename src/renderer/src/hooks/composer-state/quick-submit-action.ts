@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import type { TuiAgent } from '../../../../shared/tui-agent'
+import type { AgentLaunchSelection } from '../../../../shared/custom-agent-profile'
 import type { WorktreeCreationRequest } from '@/lib/pending-worktree-creation'
 import { findPendingLinkedWorkItemCreationId } from '@/lib/pending-worktree-creation'
 import { useAppStore } from '@/store'
@@ -66,9 +66,9 @@ export function useQuickSubmitAction(input: QuickSubmitActionInput) {
   } = input
 
   const submitQuick = useCallback(
-    async (requestedAgent: TuiAgent | null): Promise<void> => {
+    async (requestedSelection: AgentLaunchSelection | null): Promise<void> => {
       if (isProjectGroupTarget) {
-        await submitFolderTarget(requestedAgent)
+        await submitFolderTarget(requestedSelection)
         return
       }
 
@@ -140,7 +140,7 @@ export function useQuickSubmitAction(input: QuickSubmitActionInput) {
         }
         await executeQuickCreation(
           smartGitHubSettlement.value,
-          requestedAgent,
+          requestedSelection,
           workspaceNameSeed,
           workspaceRunContext,
           repoId,

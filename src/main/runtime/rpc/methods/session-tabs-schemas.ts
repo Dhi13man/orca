@@ -6,6 +6,10 @@ import { sleepingAgentLaunchConfigSchema } from '../../../../shared/workspace-se
 import { RUNTIME_NAVIGATION_TARGETS } from '../../../../shared/runtime-navigation'
 import { TAB_ACTIVATION_INTENTS } from '../../../../shared/tab-activation-intent'
 import { OptionalBoolean } from '../schemas'
+import {
+  CustomAgentProfileSchema,
+  CustomAgentProfileSnapshotSchema
+} from './custom-agent-profile-schemas'
 
 export const WorktreeTabSelector = z.object({
   worktree: z
@@ -160,6 +164,14 @@ export const CreateTerminalTab = WorktreeTabSelector.extend({
       message: 'Unknown launch agent'
     })
     .optional(),
+  customAgentProfileSnapshot: CustomAgentProfileSnapshotSchema.optional(),
+  customAgentProfile: CustomAgentProfileSchema.optional(),
+  customAgentPrompt: z
+    .string()
+    .max(MAX_QUICK_COMMAND_AGENT_PROMPT_LENGTH)
+    .refine((value) => value.trim().length > 0, { message: 'Custom agent prompt cannot be empty' })
+    .optional(),
+  customAgentPromptDelivery: z.enum(['auto-submit', 'draft']).optional(),
   viewMode: z.enum(['terminal', 'chat']).optional(),
   activate: z.boolean().optional(),
   select: z.boolean().optional(),
@@ -180,6 +192,27 @@ export const CreateTerminalTab = WorktreeTabSelector.extend({
       code: 'custom',
       path: ['agentPrompt'],
       message: 'Agent prompt cannot be combined with a startup command'
+    })
+  }
+  if (value.customAgentProfile !== undefined && value.command !== undefined) {
+    context.addIssue({
+      code: 'custom',
+      path: ['command'],
+      message: 'Custom agent profile cannot be combined with a startup command'
+    })
+  }
+  if (value.customAgentPrompt !== undefined && value.customAgentProfile?.kind !== 'derived') {
+    context.addIssue({
+      code: 'custom',
+      path: ['customAgentPrompt'],
+      message: 'Custom agent prompt requires a derived custom agent profile'
+    })
+  }
+  if (value.customAgentPromptDelivery !== undefined && value.customAgentPrompt === undefined) {
+    context.addIssue({
+      code: 'custom',
+      path: ['customAgentPromptDelivery'],
+      message: 'Custom agent prompt delivery requires a prompt'
     })
   }
 })

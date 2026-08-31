@@ -337,6 +337,23 @@ describe('setActiveWorktree', () => {
     )
   })
 
+  it('captures custom profile display identity on the terminal tab', () => {
+    const store = createTestStore()
+    const wt = 'repo1::/path/wt1'
+    seedStore(store, {
+      worktreesByRepo: { repo1: [makeWorktree({ id: wt, repoId: 'repo1', path: '/path/wt1' })] }
+    })
+    const snapshot = { id: 'dhimanex', name: 'Dhimanex' }
+
+    const tab = store.getState().createTab(wt, undefined, undefined, {
+      customAgentProfileSnapshot: snapshot,
+      quickCommandLabel: snapshot.name
+    })
+
+    expect(tab.customAgentProfileSnapshot).toEqual(snapshot)
+    expect(tab).not.toHaveProperty('launchAgent')
+  })
+
   it('stores terminal startup cwd exactly and omits empty values', () => {
     const store = createTestStore()
     const wt = 'repo1::/path/wt1'

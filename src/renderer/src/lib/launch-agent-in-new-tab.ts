@@ -3,7 +3,6 @@ import type { AgentStartupPlan } from '@/lib/tui-agent-startup'
 import { planLaunchAgentStartupPrompt } from '@/lib/launch-agent-startup-prompt-plan'
 import { CLIENT_PLATFORM } from '@/lib/new-workspace'
 import { getAgentLaunchPlatformForRepo } from '@/lib/agent-launch-platform'
-import { reconcileTabOrder } from '@/components/tab-bar/reconcile-order'
 import { tuiAgentToAgentKind } from '@/lib/telemetry'
 import { createPasteReadinessTimeoutNotice } from '@/lib/launch-agent-paste-timeout-notice'
 import {
@@ -31,6 +30,11 @@ import { resolveInitialNativeChatSessionOptions } from '@/components/native-chat
 import { seedNativeChatAppliedSessionOptions } from '@/components/native-chat/native-chat-session-option-cache'
 import { canUseStructuredNativeChat } from '@/lib/structured-native-chat-availability'
 import { startStructuredCodexLaunch } from '@/lib/structured-agent-session-launch'
+import { appendTerminalTabToOrder } from '@/lib/append-terminal-tab-to-order'
+import type {
+  CustomAgentProfile,
+  CustomAgentProfileSnapshot
+} from '../../../shared/custom-agent-profile'
 
 export type LaunchAgentInNewTabArgs = {
   agent: TuiAgent
@@ -52,6 +56,11 @@ export type LaunchAgentInNewTabArgs = {
   launchPlatform?: NodeJS.Platform
   /** Called after the prompt is actually delivered to the agent input path. */
   onPromptDelivered?: () => void
+  agentCommand?: string | null
+  customAgentName?: string
+  customAgentProfile?: CustomAgentProfile
+  customAgentProfileSnapshot?: CustomAgentProfileSnapshot
+  customAgentLaunchEnv?: Record<string, string>
 }
 
 export type LaunchAgentInNewTabResult = {
@@ -67,6 +76,22 @@ export function shouldQueueTerminalFocusAfterMenuClose(
   result: NonNullable<LaunchAgentInNewTabResult>
 ): boolean {
   return result.tabId === null && result.focusAfterMenuClose !== 'structured-session'
+}
+
+export function shouldLaunchDirectStructuredChat(args: {
+  agent: TuiAgent
+  agentCommand?: string | null
+  hasPrompt: boolean
+  experimentalNativeChat: boolean
+  structuredChatAvailable: boolean
+}): boolean {
+  return (
+    args.agent === 'codex' &&
+    !args.agentCommand &&
+    !args.hasPrompt &&
+    args.experimentalNativeChat &&
+    args.structuredChatAvailable
+  )
 }
 
 /**
@@ -91,7 +116,12 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
     launchSource,
     quickCommandLabel,
     launchPlatform,
-    onPromptDelivered
+    onPromptDelivered,
+    agentCommand,
+    customAgentName,
+    customAgentProfile,
+    customAgentProfileSnapshot,
+    customAgentLaunchEnv
   } = args
   const store = useAppStore.getState()
   const worktree = store.allWorktrees?.().find((entry: { id: string }) => entry.id === worktreeId)
@@ -112,11 +142,15 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
     terminalWindowsShell: store.settings?.terminalWindowsShell
   })
   const cmdOverrides = store.settings?.agentCmdOverrides ?? {}
-  const effectiveAgentArgs =
-    agentArgs !== undefined
+  const effectiveAgentArgs = agentCommand
+    ? null
+    : agentArgs !== undefined
       ? agentArgs
       : resolveTuiAgentLaunchArgs(agent, store.settings?.agentDefaultArgs)
-  const agentEnv = resolveTuiAgentLaunchEnv(agent, store.settings?.agentDefaultEnv)
+  const resolvedAgentEnv = resolveTuiAgentLaunchEnv(agent, store.settings?.agentDefaultEnv)
+  const agentEnv = customAgentLaunchEnv
+    ? { ...resolvedAgentEnv, ...customAgentLaunchEnv }
+    : resolvedAgentEnv
   const trimmedPrompt = prompt?.trim() ?? ''
   const hasPrompt = trimmedPrompt.length > 0
   const isFollowupPath = TUI_AGENT_CONFIG[agent].promptInjectionMode === 'stdin-after-start'
@@ -131,7 +165,9 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
       getConnectionIdFromState(store, worktreeId)
     )
   }
-  const initialViewModeProps = initialAgentTabViewModeProps(store.settings, initialViewModeOptions)
+  const initialViewModeProps = agentCommand
+    ? { viewMode: 'terminal' as const }
+    : initialAgentTabViewModeProps(store.settings, initialViewModeOptions)
   const startupPlanBase = {
     agent,
     cmdOverrides,
@@ -140,7 +176,14 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
     isRemote,
     agentArgs: effectiveAgentArgs,
     agentEnv,
-    sessionOptions: resolveInitialNativeChatSessionOptions(store.settings, initialViewModeOptions)
+    ...(agentCommand
+      ? { agentCommand }
+      : {
+          sessionOptions: resolveInitialNativeChatSessionOptions(
+            store.settings,
+            initialViewModeOptions
+          )
+        })
   }
   const { startupPlan, pasteDraftAfterLaunch, submitPastedPrompt } = planLaunchAgentStartupPrompt({
     base: startupPlanBase,
@@ -171,7 +214,10 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
       // Why: omission means terminal locally, but would let a paired host apply
       // its own default; send the client's resolved terminal choice explicitly.
       viewMode: initialViewModeProps.viewMode ?? 'terminal',
-      onPromptDelivered
+      onPromptDelivered,
+      preserveExactCommand: Boolean(agentCommand),
+      ...(customAgentProfile ? { customAgentProfile } : {}),
+      ...(customAgentProfileSnapshot ? { customAgentProfileSnapshot } : {})
     })
     return {
       tabId: null,
@@ -183,11 +229,13 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
     }
   }
 
-  const launchDirectStructuredChat =
-    agent === 'codex' &&
-    !hasPrompt &&
-    store.settings?.experimentalNativeChat === true &&
-    canUseStructuredNativeChat(store, worktreeId)
+  const launchDirectStructuredChat = shouldLaunchDirectStructuredChat({
+    agent,
+    agentCommand,
+    hasPrompt,
+    experimentalNativeChat: store.settings?.experimentalNativeChat === true,
+    structuredChatAvailable: canUseStructuredNativeChat(store, worktreeId)
+  })
   if (launchDirectStructuredChat) {
     startStructuredCodexLaunch(worktreeId)
     return {
@@ -202,7 +250,8 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
   // Why: followup path pastes an unsubmitted draft, so gate the initial chat view like a draft launch, not auto-submit.
   const tab = store.createTab(worktreeId, groupId, undefined, {
     launchAgent: agent,
-    quickCommandLabel,
+    quickCommandLabel: customAgentProfileSnapshot?.name ?? customAgentName ?? quickCommandLabel,
+    ...(customAgentProfileSnapshot ? { customAgentProfileSnapshot } : {}),
     ...initialViewModeProps
   })
   seedNativeChatAppliedSessionOptions(tab.id, agent, startupPlan.sessionOptions)
@@ -275,20 +324,7 @@ export function launchAgentInNewTab(args: LaunchAgentInNewTabArgs): LaunchAgentI
   // Why: without setActiveTabType('terminal') a worktree showing an editor keeps rendering it and the new tab stays hidden.
   store.setActiveTabType('terminal')
 
-  // Why: persist tab-bar order so reconcileTabOrder doesn't fall back to terminals-first and jump the new tab to index 0.
-  const fresh = useAppStore.getState()
-  const termIds = (fresh.tabsByWorktree[worktreeId] ?? []).map((t) => t.id)
-  const editorIds = fresh.openFiles.filter((f) => f.worktreeId === worktreeId).map((f) => f.id)
-  const browserIds = (fresh.browserTabsByWorktree?.[worktreeId] ?? []).map((t) => t.id)
-  const base = reconcileTabOrder(
-    fresh.tabBarOrderByWorktree[worktreeId],
-    termIds,
-    editorIds,
-    browserIds
-  )
-  const order = base.filter((id) => id !== tab.id)
-  order.push(tab.id)
-  fresh.setTabBarOrder(worktreeId, order)
+  appendTerminalTabToOrder(worktreeId, tab.id)
 
   return {
     tabId: tab.id,

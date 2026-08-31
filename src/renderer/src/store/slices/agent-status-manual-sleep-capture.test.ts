@@ -110,6 +110,34 @@ describe('manual sleep agent session capture', () => {
     expect(records['tab-1:stale']).toMatchObject({ state: 'working', updatedAt: NOW })
   })
 
+  it('freezes the custom profile label into the sleeping resume record', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW)
+    const store = createTestStore()
+    seedTabs(store)
+    store.setState((state) => ({
+      tabsByWorktree: {
+        ...state.tabsByWorktree,
+        'wt-1': state.tabsByWorktree['wt-1'].map((tab) => ({
+          ...tab,
+          quickCommandLabel: 'Codex Luna',
+          customAgentProfileSnapshot: {
+            id: 'codex-luna',
+            name: 'Codex Luna',
+            baseAgent: 'codex'
+          }
+        }))
+      },
+      agentStatusByPaneKey: { 'tab-1:leaf-1': makeAgentEntry() }
+    }))
+
+    store.getState().captureSleepingAgentSessionsByWorktree('wt-1')
+
+    expect(
+      store.getState().sleepingAgentSessionsByPaneKey['tab-1:leaf-1']?.customAgentProfileSnapshot
+    ).toEqual({ id: 'codex-luna', name: 'Codex Luna', baseAgent: 'codex' })
+  })
+
   it('marks finished panes for tab-open-only restore so a mobile wake cannot respawn them all', () => {
     vi.useFakeTimers()
     vi.setSystemTime(NOW)

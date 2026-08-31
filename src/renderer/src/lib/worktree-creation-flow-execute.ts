@@ -18,6 +18,7 @@ import {
 import type { CreateWorktreeResult } from '../../../shared/worktree/create-types'
 import type { WorktreeCreationRequest } from '@/lib/pending-worktree-creation'
 import { createBrowserUuid } from '@/lib/browser-uuid'
+import { deliverCustomAgentDraftAfterWorktreeCreate } from '@/lib/worktree-creation-custom-agent-draft'
 import { seedAgentTabStateAfterWorktreeCreate } from '@/lib/worktree-creation-agent-seeds'
 import { resolveBackendDraftStartup } from '@/lib/worktree-draft-startup-view-mode'
 import { buildWorktreeCreationStartupOpt } from '@/lib/worktree-creation-flow-startup'
@@ -215,6 +216,14 @@ export async function executeWorktreeCreation(
     startupTerminalTabId: result.startupTerminal?.tabId,
     backendSpawned
   })
+  if (preparedRequest.customAgentDraftPrompt) {
+    deliverCustomAgentDraftAfterWorktreeCreate({
+      worktreeId: worktree.id,
+      primaryTabId,
+      startupTerminalTabId: result.startupTerminal?.tabId,
+      content: preparedRequest.customAgentDraftPrompt
+    })
+  }
   if (preparedRequest.startupPlan && !backendSpawned) {
     void ensureAgentStartupInTerminal({
       worktreeId: worktree.id,

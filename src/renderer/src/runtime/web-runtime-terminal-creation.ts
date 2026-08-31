@@ -5,6 +5,7 @@ import {
 } from '../lib/agent-launch-prompt-delivery'
 import { createWebRuntimeSessionTerminalResult } from './web-runtime-terminal-create-operation'
 import { toWebTerminalSurfaceTabId } from './web-terminal-surface-id'
+import { pasteDraftWhenAgentReady } from '../lib/agent-paste-draft'
 import type {
   CreateWebRuntimeSessionTerminalArgs,
   WebRuntimeTerminalCreateOutcome
@@ -62,4 +63,25 @@ export async function createWebRuntimeAgentSessionTerminalWithLaunchDraft(
     })
   }
   return created.outcome
+}
+
+export async function createWebRuntimeGenericAgentTerminal(
+  args: CreateWebRuntimeSessionTerminalArgs & {
+    promptAfterReady?: string
+    submitPrompt?: boolean
+  }
+): Promise<{
+  outcome: WebRuntimeTerminalCreateOutcome
+  promptDelivered: boolean
+}> {
+  const created = await createWebRuntimeSessionTerminalResult(args)
+  let promptDelivered = false
+  if (created.outcome.status !== 'failed' && created.hostTabId && args.promptAfterReady?.trim()) {
+    promptDelivered = await pasteDraftWhenAgentReady({
+      tabId: toWebTerminalSurfaceTabId(created.hostTabId),
+      content: args.promptAfterReady.trim(),
+      submit: args.submitPrompt === true
+    })
+  }
+  return { outcome: created.outcome, promptDelivered }
 }

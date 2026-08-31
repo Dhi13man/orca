@@ -1,6 +1,7 @@
 import type { AgentHookSource } from './agent-hook-relay'
 import type { AgentStatusState } from './agent-status-types'
 import type { TuiAgent } from './tui-agent'
+import type { CustomAgentProfileSnapshot } from './custom-agent-profile'
 
 export const RESUMABLE_TUI_AGENTS = [
   'claude',
@@ -57,6 +58,8 @@ export type SleepingAgentSessionRecord = {
   interrupted?: boolean
   connectionId?: string | null
   launchConfig?: SleepingAgentLaunchConfig
+  /** Immutable display identity retained even if the source profile changes or is deleted. */
+  customAgentProfileSnapshot?: CustomAgentProfileSnapshot
   /** How the record was captured. Worktree-sleep records (legacy records have
    *  no origin) are consumed by worktree activation, which opens a fresh tab.
    *  Quit/live records describe panes that still exist in the restored session,
