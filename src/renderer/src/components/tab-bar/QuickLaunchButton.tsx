@@ -21,7 +21,10 @@ import {
 } from '../../../../shared/tui-agent-selection'
 import { translate } from '@/i18n/i18n'
 import { useStructuredCodexLaunchStatus } from '@/lib/structured-agent-session-launch'
-import { normalizeCustomAgentProfiles } from '../../../../shared/custom-agent-profile'
+import {
+  isCustomAgentProfileEnabled,
+  normalizeCustomAgentProfiles
+} from '../../../../shared/custom-agent-profile'
 
 export type QuickLaunchAgentMenuItemsProps = {
   worktreeId: string
@@ -140,11 +143,18 @@ function QuickLaunchAgentMenuItemsInner({
   const newAgentShortcut = useOptionalShortcutLabel('tab.newAgent')
   const structuredCodexLaunchStatus = useStructuredCodexLaunchStatus(worktreeId)
   const rawCustomProfiles = useAppStore((s) => s.settings?.customAgentProfiles)
-  const customProfiles = React.useMemo(
-    () => normalizeCustomAgentProfiles(rawCustomProfiles),
-    [rawCustomProfiles]
-  )
-  const launchableCustomProfiles = prompt === undefined ? customProfiles : []
+  const customProfiles = normalizeCustomAgentProfiles(rawCustomProfiles)
+  const defaultCustomAgent = customProfiles.find((profile) => profile.isDefault) ?? null
+  const enabledCustomProfiles = customProfiles.filter(isCustomAgentProfileEnabled)
+  const launchableCustomProfiles =
+    prompt !== undefined
+      ? []
+      : defaultCustomAgent
+        ? [
+            defaultCustomAgent,
+            ...enabledCustomProfiles.filter((profile) => profile.id !== defaultCustomAgent.id)
+          ]
+        : enabledCustomProfiles
 
   const openAgentSettings = useCallback(() => {
     openSettingsTarget({ pane: 'agents', repoId: null })
@@ -196,10 +206,8 @@ function QuickLaunchAgentMenuItemsInner({
     if (!result) {
       return
     }
-    if (result.tabId) {
-      onFocusTerminal(result.tabId)
-      watchTerminalLaunch(result.tabId, worktreeId, label)
-    }
+    onFocusTerminal(result.tabId)
+    watchTerminalLaunch(result.tabId, worktreeId, label)
   }
 
   return (
@@ -224,7 +232,10 @@ function QuickLaunchAgentMenuItemsInner({
           agent === 'codex' && structuredCodexLaunchStatus === 'pending'
         const menuLabel = isStructuredCodexPending ? 'Starting Codex chat…' : label
         const showsDefaultAgentShortcut =
-          newAgentShortcut !== null && defaultAgent !== 'blank' && agent === defaultAgent
+          newAgentShortcut !== null &&
+          !defaultCustomAgent &&
+          defaultAgent !== 'blank' &&
+          agent === defaultAgent
         return (
           <DropdownMenuItem
             key={agent}
@@ -258,13 +269,16 @@ function QuickLaunchAgentMenuItemsInner({
           onSelect={() => runCustomLaunch(profile.id, profile.name)}
           className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 font-medium"
           title={translate(
-            'auto.components.tab.bar.QuickLaunchButton.customLaunchTitle',
+            'auto.components.tab.bar.QuickLaunchButton.ec2adf093e',
             'Launch {{value0}} in a new terminal',
             { value0: profile.name }
           )}
         >
           <Terminal className="size-3.5" />
           <span className="flex-1">{profile.name}</span>
+          {newAgentShortcut !== null && profile.id === defaultCustomAgent?.id ? (
+            <DropdownMenuShortcut>{newAgentShortcut}</DropdownMenuShortcut>
+          ) : null}
         </DropdownMenuItem>
       ))}
       <DropdownMenuItem
