@@ -53,7 +53,6 @@ export async function launchAgentBackgroundSession(
   if (!worktree) {
     throw new Error('The target workspace is no longer available.')
   }
-  const cmdOverrides = store.settings?.agentCmdOverrides ?? {}
   const agentArgs = resolveTuiAgentLaunchArgs(agent, store.settings?.agentDefaultArgs)
   const agentEnv = resolveTuiAgentLaunchEnv(agent, store.settings?.agentDefaultEnv)
   // Folder launch ownership cannot be derived from a repo row (#2989).
@@ -89,7 +88,7 @@ export async function launchAgentBackgroundSession(
   const startupPlan = buildAutomationAgentStartupPlan({
     agent,
     prompt: hasPrompt && !isFollowupPath ? trimmedPrompt : '',
-    cmdOverrides,
+    cmdOverrides: store.settings?.agentCmdOverrides ?? {},
     agentArgs,
     agentEnv,
     platform: launchPlatform,
