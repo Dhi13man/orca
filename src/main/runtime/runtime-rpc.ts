@@ -199,6 +199,9 @@ function webClientPathForEndpoint(pathname: string): string {
 
 const MOBILE_RPC_METHOD_ALLOWLIST = new Set([
   'client.capabilities.set',
+  'agentSession.history',
+  'agentSession.subscribe',
+  'agentSession.unsubscribe',
   'accounts.list',
   'accounts.consumeCodexResetCredit',
   'accounts.selectClaude',

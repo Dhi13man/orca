@@ -4,6 +4,7 @@ import {
   type TerminalSnapshotState
 } from './rpc-client-terminal-binary-frame'
 import {
+  buildStreamUnsubscribe,
   buildTerminalUnsubscribeParams,
   updateTerminalSubscriptionViewport
 } from './rpc-client-terminal-subscription'
@@ -22,6 +23,7 @@ type StreamRecord = {
   streamIds: Set<number>
   subscriptionId?: string
   cancelled: boolean
+  sent: boolean
 }
 
 type StreamManagerOptions = {
@@ -51,7 +53,8 @@ export class MobileRelayRpcStreams {
       listener,
       onBinaryFrame: subscribeOptions?.onBinaryFrame,
       streamIds: new Set(),
-      cancelled: false
+      cancelled: false,
+      sent: false
     }
     this.streams.set(id, stream)
     void this.options
@@ -60,6 +63,8 @@ export class MobileRelayRpcStreams {
         if (!stream.cancelled) {
           if (!this.options.sendFrame({ id, method, params: stream.params })) {
             this.fail(id, stream, 'Connection interrupted')
+          } else {
+            stream.sent = true
           }
         }
       })
@@ -136,6 +141,10 @@ export class MobileRelayRpcStreams {
       return
     }
     stream.cancelled = true
+    if (!stream.sent) {
+      this.remove(id)
+      return
+    }
     if (stream.method === 'terminal.subscribe') {
       const params = buildTerminalUnsubscribeParams(stream.params)
       if (params) {
@@ -145,12 +154,22 @@ export class MobileRelayRpcStreams {
           params
         })
       }
-    } else if (stream.subscriptionId) {
-      this.options.sendFrame({
-        id: this.options.nextId(),
-        method: stream.method.replace(/\.subscribe$/, '.unsubscribe'),
-        params: { subscriptionId: stream.subscriptionId }
-      })
+    } else {
+      if (stream.subscriptionId) {
+        this.options.sendFrame({
+          id: this.options.nextId(),
+          method: stream.method.replace(/\.subscribe$/, '.unsubscribe'),
+          params: { subscriptionId: stream.subscriptionId }
+        })
+      } else if (
+        stream.method === 'session.tabs.subscribeAll' ||
+        stream.method === 'agentSession.subscribe'
+      ) {
+        const targeted = buildStreamUnsubscribe(stream.method, stream.params, id)
+        if (targeted) {
+          this.options.sendFrame({ id: this.options.nextId(), ...targeted })
+        }
+      }
     }
     this.remove(id)
   }

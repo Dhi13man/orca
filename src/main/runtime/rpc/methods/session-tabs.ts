@@ -156,10 +156,7 @@ export const SESSION_TAB_METHODS: RpcAnyMethod[] = [
   defineStreamingMethod({
     name: 'session.tabs.subscribeAll',
     params: null,
-    handler: async (_params, context, emit) => {
-      await restoreStructuredTabsIfSupported(context.runtime, context.clientCapabilities)
-      return subscribeSessionTabsInventory(context, emit)
-    }
+    handler: async (_params, context, emit) => subscribeSessionTabsInventory(context, emit)
   }),
   defineMethod({
     name: 'session.tabs.unsubscribeAll',

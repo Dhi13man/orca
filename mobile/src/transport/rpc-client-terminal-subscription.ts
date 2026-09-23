@@ -38,10 +38,20 @@ export function updateTerminalSubscriptionViewport(
  *  the per-method echo logic out of the rpc-client teardown closure. */
 export function buildStreamUnsubscribe(
   method: string | undefined,
-  params: unknown
+  params: unknown,
+  requestId: string
 ): { method: string; params: Record<string, unknown> } | null {
+  if (method === 'session.tabs.subscribeAll') {
+    return { method: 'session.tabs.unsubscribeAll', params: { subscriptionId: requestId } }
+  }
   if (!params || typeof params !== 'object') {
     return null
+  }
+  if (method === 'agentSession.subscribe') {
+    const sessionId = (params as { sessionId?: unknown }).sessionId
+    return typeof sessionId === 'string'
+      ? { method: 'agentSession.unsubscribe', params: { sessionId, subscriptionId: requestId } }
+      : null
   }
   if (method === 'session.tabs.subscribe') {
     const worktree = (params as { worktree?: unknown }).worktree

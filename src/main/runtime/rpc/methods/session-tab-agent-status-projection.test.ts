@@ -95,7 +95,7 @@ describe('projectSessionTabAgentStatus', () => {
       projectSessionTabAgentStatus(snapshot, 'mobile', [
         STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY
       ])
-    ).toEqual(oldClient)
+    ).toBe(snapshot)
 
     const capable = projectSessionTabAgentStatus(snapshot, 'runtime', [
       STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY

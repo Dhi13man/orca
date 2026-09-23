@@ -18,9 +18,8 @@ export function projectSessionTabAgentStatus<TPayload extends SessionTabsPayload
   clientCapabilities: readonly RuntimeCapability[] | undefined
 ): TPayload {
   const structuredVisible =
-    clientKind !== 'mobile' &&
-    (clientKind === undefined ||
-      (clientCapabilities?.includes(STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY) ?? false))
+    clientKind === undefined ||
+    (clientCapabilities?.includes(STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY) ?? false)
   let projected = structuredVisible ? payload : projectAgentSessionTabsOut(payload, () => true)
   if (structuredVisible && clientKind !== undefined) {
     projected = projectAgentSessionTabsOut(projected, (tab) => tab.agent !== 'codex')

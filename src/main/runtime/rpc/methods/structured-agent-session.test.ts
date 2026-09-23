@@ -178,6 +178,26 @@ afterEach(() => {
 })
 
 describe('capability gating', () => {
+  it('admits mobile history only after structured capability negotiation', async () => {
+    const params = { sessionId: SESSION, direction: 'tail', limit: 20 }
+    const refused = await call('agentSession.history', params, {
+      clientKind: 'mobile',
+      clientCapabilities: []
+    })
+    expect(refused).toMatchObject({
+      ok: false,
+      error: { message: expect.stringContaining('structured_agent_session_unsupported') }
+    })
+    expect(hostCalls.history).not.toHaveBeenCalled()
+    const accepted = await call('agentSession.history', params, {
+      ...STRUCTURED_CLIENT,
+      clientKind: 'mobile'
+    })
+    expect(accepted).toMatchObject({ ok: true })
+    expect(hostCalls.history).toHaveBeenCalledExactlyOnceWith(params)
+    expect(hostCalls.send).not.toHaveBeenCalled()
+  })
+
   it('advertises the capability without bumping the protocol version', () => {
     expect(RUNTIME_CAPABILITIES).toContain(STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY)
     expect(RUNTIME_CAPABILITIES).toContain(STRUCTURED_AGENT_SESSION_HOLD_RUNTIME_CAPABILITY)

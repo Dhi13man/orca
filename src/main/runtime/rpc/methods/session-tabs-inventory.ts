@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from 'node:util'
+import { restoreStructuredTabsIfSupported } from './structured-session-tab-restore'
 import { SESSION_TABS_AUTHORITATIVE_INVENTORY_RUNTIME_CAPABILITY } from '../../../../shared/protocol-version'
 import type { RuntimeMobileSessionTabsResult } from '../../../../shared/runtime-types'
 import type { RpcContext } from '../core'
@@ -225,6 +226,13 @@ export async function subscribeSessionTabsInventory(
   }
   let collected: Awaited<ReturnType<typeof collectSessionTabsInventory>> | undefined
   try {
+    const restoration = restoreStructuredTabsIfSupported(runtime, context.clientCapabilities)
+    if (restoration) {
+      await restoration
+    }
+    if (closed) {
+      return
+    }
     for (let attempt = 1; !collected; attempt += 1) {
       censusInvalidated = false
       const candidate = await collectSessionTabsInventory(

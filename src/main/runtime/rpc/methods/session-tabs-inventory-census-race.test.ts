@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { SESSION_TABS_AUTHORITATIVE_INVENTORY_RUNTIME_CAPABILITY } from '../../../../shared/protocol-version'
 import type { RuntimeMobileSessionTabsSnapshot } from '../../../../shared/runtime-session-contracts'
 import type { RuntimeMobileSessionTabsResult } from '../../../../shared/runtime-types'
-import { OrcaRuntimeService } from '../../orca-runtime'
+import type { OrcaRuntimeService } from '../../orca-runtime'
+import { createSessionTabsTestRuntime } from './session-tabs-runtime-test-fixture'
 import { subscribeSessionTabsInventory } from './session-tabs-inventory'
 
 const runningBaselineOracle = process.env.ORCA_TEST_BASELINE_SESSION_TABS_CENSUS_ORACLE === '1'
@@ -115,7 +116,7 @@ function deferredPtyInventory(): {
 }
 
 function createRuntimeHarness(initialSnapshots: RuntimeMobileSessionTabsSnapshot[] = []) {
-  const runtime = new OrcaRuntimeService()
+  const runtime = createSessionTabsTestRuntime()
   runtime.syncWindowGraph(0, { tabs: [], leaves: [], mobileSessionTabs: initialSnapshots })
   const census = deferredPtyInventory()
   const internals = runtime as unknown as RuntimeInventoryInternals
@@ -400,7 +401,7 @@ describe.skipIf(runningBaselineOracle)('real runtime session tabs census boundar
   })
 
   it('preserves caller-only follow intent when a later shared snapshot is buffered', async () => {
-    const runtime = new OrcaRuntimeService()
+    const runtime = createSessionTabsTestRuntime()
     runtime.syncWindowGraph(0, { tabs: [], leaves: [], mobileSessionTabs: [] })
     const census = deferredInventory()
     vi.spyOn(runtime, 'listAllMobileSessionTabsInventoryWithChangeSequence').mockImplementation(
@@ -465,7 +466,7 @@ describe.skipIf(runningBaselineOracle)('real runtime session tabs census boundar
   })
 
   it('subsumes pre-boundary follow intent into the census selection', async () => {
-    const runtime = new OrcaRuntimeService()
+    const runtime = createSessionTabsTestRuntime()
     runtime.syncWindowGraph(0, { tabs: [], leaves: [], mobileSessionTabs: [] })
     const census = deferredInventory()
     vi.spyOn(runtime, 'listAllMobileSessionTabsInventoryWithChangeSequence').mockImplementation(
@@ -494,7 +495,7 @@ describe.skipIf(runningBaselineOracle)('real runtime session tabs census boundar
   })
 
   it('uses one change sequence across subscribers without duplicate fanout', async () => {
-    const runtime = new OrcaRuntimeService()
+    const runtime = createSessionTabsTestRuntime()
     const created = runtimeSnapshot('wt-census-race', 1)
     const first: number[] = []
     const second: number[] = []
@@ -515,7 +516,7 @@ describe.skipIf(runningBaselineOracle)('real runtime session tabs census boundar
   })
 
   it('aborts the census and removes the real runtime listener on disconnect', async () => {
-    const runtime = new OrcaRuntimeService()
+    const runtime = createSessionTabsTestRuntime()
     runtime.syncWindowGraph(0, { tabs: [], leaves: [], mobileSessionTabs: [] })
     const census = deferredPtyInventory()
     const internals = runtime as unknown as RuntimeInventoryInternals

@@ -142,9 +142,9 @@ describe('mobile RPC allowlist', () => {
     ).toEqual([])
   })
 
-  it('does not expose structured agent sessions to mobile credentials', () => {
+  it('exposes only structured reads and cleanup to mobile credentials', () => {
     expect(
-      [...mobileRpcAllowlist()].filter((method) => method.startsWith('agentSession.'))
-    ).toEqual([])
+      [...mobileRpcAllowlist()].filter((method) => method.startsWith('agentSession.')).sort()
+    ).toEqual(['agentSession.history', 'agentSession.subscribe', 'agentSession.unsubscribe'])
   })
 })
