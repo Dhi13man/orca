@@ -30,6 +30,7 @@ import {
 import { useAllHostClients } from './use-all-host-clients'
 import { useRelayRecoveryStatus } from './client-context-connection-metrics'
 import { selectHomeAutoConnectHostIds } from './home-host-auto-connect'
+import { getHostClientProcessOwner } from './host-client-process-owner'
 
 type FakeClient = RpcClient & {
   emitState: (state: ConnectionState) => void
@@ -146,6 +147,48 @@ beforeEach(() => {
 })
 
 describe('useHostClient', () => {
+  it('shares a pending open with a background lifetime and preserves it after UI unmount', async () => {
+    let resolveHosts: ((hosts: (typeof HOST)[]) => void) | null = null
+    const hostLookup = new Promise<(typeof HOST)[]>((resolve) => {
+      resolveHosts = resolve
+    })
+    const client = makeFakeClient('connected')
+    connectMock.mockReturnValue(client)
+    loadHostsMock.mockReturnValue(hostLookup)
+    const owner = getHostClientProcessOwner()
+    const releaseBackgroundLifetime = owner.retainLifetime()
+    const backgroundAcquisition = {}
+    let renderer: ReactTestRenderer | null = null
+
+    function Probe(): null {
+      useHostClient(HOST.id)
+      return null
+    }
+
+    try {
+      expect(owner.acquire(HOST.id, backgroundAcquisition)).toBeNull()
+      act(() => {
+        renderer = create(createElement(RpcClientProvider, null, createElement(Probe)))
+      })
+      expect(loadHostsMock).toHaveBeenCalledOnce()
+      await act(async () => {
+        resolveHosts?.([HOST])
+        await hostLookup
+      })
+      expect(connectMock).toHaveBeenCalledOnce()
+      expect(owner.getAllClients()).toEqual([{ hostId: HOST.id, client }])
+
+      act(() => renderer?.unmount())
+      expect(client.closeMock).not.toHaveBeenCalled()
+      expect(owner.getAllClients()).toEqual([{ hostId: HOST.id, client }])
+    } finally {
+      act(() => renderer?.unmount())
+      owner.release(HOST.id, backgroundAcquisition)
+      releaseBackgroundLifetime()
+    }
+    expect(client.closeMock).toHaveBeenCalledOnce()
+  })
+
   it('rebinds when Expo reuses a screen between two connected cached hosts', async () => {
     const host2 = { ...HOST, id: 'host-2', name: 'Host 2' }
     const client1 = makeFakeClient('connected')
