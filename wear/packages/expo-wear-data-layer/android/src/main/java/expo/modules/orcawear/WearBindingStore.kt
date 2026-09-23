@@ -15,7 +15,8 @@ internal data class StoredWearBinding(
     val peerNodeId: String,
     val wrappedKey: ByteArray,
     val state: String,
-    val removalDeadlineAt: Long?
+    val removalDeadlineAt: Long?,
+    val issuedAt: Long
 )
 
 internal class WearBindingStore(context: Context) : SQLiteOpenHelper(
@@ -36,7 +37,8 @@ internal class WearBindingStore(context: Context) : SQLiteOpenHelper(
             wrapped_key BLOB NOT NULL CHECK(length(wrapped_key)=60),
             state TEXT NOT NULL CHECK(state IN ('pending','active','revoked')),
             next_nonce INTEGER NOT NULL DEFAULT 0 CHECK(next_nonce>=0),
-            removal_deadline_at INTEGER
+            removal_deadline_at INTEGER,
+            issued_at INTEGER NOT NULL
         )""")
     }
 
@@ -55,11 +57,13 @@ internal class WearBindingStore(context: Context) : SQLiteOpenHelper(
         id
     }
 
-    fun insertPending(id: String, role: CompanionRole, peerInstallId: String, peerNodeId: String, wrappedKey: ByteArray) {
+    fun insertPending(id: String, role: CompanionRole, peerInstallId: String, peerNodeId: String,
+        wrappedKey: ByteArray, issuedAt: Long = System.currentTimeMillis()) {
         requireUuid(id)
         requireUuid(peerInstallId)
         require(peerNodeId.isNotBlank() && peerNodeId.toByteArray(Charsets.UTF_8).size <= 256)
         require(wrappedKey.size == 60)
+        require(issuedAt in 0..9_007_199_254_620_991L)
         transaction { db ->
             db.insertOrThrow("bindings", null, ContentValues().apply {
                 put("id", id)
@@ -68,6 +72,7 @@ internal class WearBindingStore(context: Context) : SQLiteOpenHelper(
                 put("peer_node_id", peerNodeId)
                 put("wrapped_key", wrappedKey)
                 put("state", "pending")
+                put("issued_at", issuedAt)
             })
         }
     }
@@ -75,12 +80,12 @@ internal class WearBindingStore(context: Context) : SQLiteOpenHelper(
     fun find(id: String): StoredWearBinding? {
         requireUuid(id)
         return readableDatabase.rawQuery(
-            "SELECT role,peer_install_id,peer_node_id,wrapped_key,state,removal_deadline_at FROM bindings WHERE id=?",
+            "SELECT role,peer_install_id,peer_node_id,wrapped_key,state,removal_deadline_at,issued_at FROM bindings WHERE id=?",
             arrayOf(id)
         ).use {
             if (!it.moveToFirst()) null else StoredWearBinding(
                 id, CompanionRole.valueOf(it.getString(0)), it.getString(1), it.getString(2),
-                it.getBlob(3), it.getString(4), if (it.isNull(5)) null else it.getLong(5)
+                it.getBlob(3), it.getString(4), if (it.isNull(5)) null else it.getLong(5), it.getLong(6)
             )
         }
     }
@@ -89,10 +94,26 @@ internal class WearBindingStore(context: Context) : SQLiteOpenHelper(
         operation(find(id) ?: error("wear_binding_missing"))
     }
 
-    fun activate(id: String, peerNodeId: String) = transaction { db ->
+    fun pendingForPeer(peerNodeId: String, now: Long): List<StoredWearBinding> = transaction { db ->
+        require(now >= 0)
+        db.delete("bindings", "state='pending' AND issued_at<=?", arrayOf((now - 120_000).toString()))
+        val ids = db.rawQuery("SELECT id FROM bindings WHERE peer_node_id=? AND state='pending'",
+            arrayOf(peerNodeId)).use { cursor ->
+            buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }
+        }
+        ids.map { requireNotNull(find(it)) }
+    }
+
+    fun discardPendingForPeer(peerNodeId: String) = transaction { db ->
+        db.delete("bindings", "peer_node_id=? AND state='pending'", arrayOf(peerNodeId))
+    }
+
+    fun activate(id: String, peerNodeId: String, now: Long = System.currentTimeMillis()) = transaction { db ->
         requireUuid(id)
+        require(now >= 0)
         val changed = db.update("bindings", ContentValues().apply { put("state", "active") },
-            "id=? AND peer_node_id=? AND state IN ('pending','active')", arrayOf(id, peerNodeId))
+            "id=? AND peer_node_id=? AND (state='active' OR (state='pending' AND issued_at>?))",
+            arrayOf(id, peerNodeId, (now - 120_000).toString()))
         check(changed == 1) { "wear_binding_not_pending" }
     }
 
@@ -113,7 +134,7 @@ internal class WearBindingStore(context: Context) : SQLiteOpenHelper(
             CompanionRole.valueOf(it.getString(0)) to it.getLong(1)
         }
         check(pair.second < Long.MAX_VALUE) { "wear_binding_nonce_exhausted" }
-        db.execSQL("UPDATE bindings SET next_nonce=? WHERE id=?", arrayOf(pair.second + 1, id))
+        db.execSQL("UPDATE bindings SET next_nonce=? WHERE id=?", arrayOf<Any>(pair.second + 1, id))
         ByteBuffer.allocate(12).putInt(pair.first.ordinal + 1).putLong(pair.second).array()
     }
 
