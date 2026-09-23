@@ -20,6 +20,7 @@ function dashboard(): WearDashboard {
         provider: 'claude',
         identityConfidence: 'unverified',
         sourceHostIds: ['host-1'],
+        readingHostId: 'host-1',
         providerUsage: {
           status: 'ok',
           session: { usedPercent: 18.5, windowMinutes: 300, resetsAt: now + 300_000 },
@@ -115,6 +116,12 @@ describe('Wear dashboard admission', () => {
       'wrong source host reference',
       (value: WearDashboard) => {
         value.usageGroups[0].sourceHostIds = ['host-2']
+      }
+    ],
+    [
+      'reading outside group',
+      (value: WearDashboard) => {
+        value.usageGroups[0].readingHostId = 'host-2'
       }
     ],
     [

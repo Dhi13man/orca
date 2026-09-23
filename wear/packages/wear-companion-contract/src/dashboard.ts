@@ -18,6 +18,7 @@ export type WearUsageGroup = {
   provider: 'claude' | 'codex'
   identityConfidence: 'verified' | 'unverified'
   sourceHostIds: string[]
+  readingHostId: string
   providerUsage: WearProviderUsage
 }
 
@@ -109,6 +110,7 @@ function usageGroup(value: unknown): value is WearUsageGroup {
       'provider',
       'identityConfidence',
       'sourceHostIds',
+      'readingHostId',
       'providerUsage'
     ]) &&
     groupKey(value.groupKey) &&
@@ -118,6 +120,8 @@ function usageGroup(value: unknown): value is WearUsageGroup {
     value.sourceHostIds.length > 0 &&
     value.sourceHostIds.every(id) &&
     new Set(value.sourceHostIds).size === value.sourceHostIds.length &&
+    id(value.readingHostId) &&
+    value.sourceHostIds.includes(value.readingHostId) &&
     (value.identityConfidence === 'verified' || value.sourceHostIds.length === 1) &&
     providerUsage(value.providerUsage)
   )
