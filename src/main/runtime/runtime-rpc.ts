@@ -198,6 +198,7 @@ function webClientPathForEndpoint(pathname: string): string {
 }
 
 const MOBILE_RPC_METHOD_ALLOWLIST = new Set([
+  'client.capabilities.set',
   'accounts.list',
   'accounts.consumeCodexResetCredit',
   'accounts.selectClaude',
@@ -1804,6 +1805,7 @@ export class OrcaRuntimeRpcServer {
         // Why: gates the mobile-only payload diet so full-screen web/desktop clients aren't truncated.
         clientKind: device.scope,
         clientCapabilities: authenticatedSocket?.clientCapabilities,
+        setClientCapabilities: authenticatedSocket?.setClientCapabilities,
         pairing: pairingContext,
         signal: abortRegistration?.signal,
         sendBinary,

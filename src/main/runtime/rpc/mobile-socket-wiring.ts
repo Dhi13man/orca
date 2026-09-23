@@ -38,6 +38,9 @@ export type AuthenticatedMobileSocket = {
   connectionId: string
   device: E2EEAuthenticatedDevice
   clientCapabilities: readonly RuntimeCapability[]
+  setClientCapabilities: (
+    capabilities: readonly RuntimeCapability[]
+  ) => readonly RuntimeCapability[]
   transport: MobileSocketTransportMetadata
 }
 
@@ -161,11 +164,28 @@ export class MobileSocketWiring {
           return toAuthenticatedDevice(device)
         },
         onReady: (channel, device) => {
-          const socket = {
+          let declared = channel.clientCapabilities.length > 0
+          const socket: AuthenticatedMobileSocket = {
             ws,
             connectionId,
             device,
-            clientCapabilities: channel.clientCapabilities,
+            clientCapabilities: Object.freeze([...new Set(channel.clientCapabilities)].sort()),
+            setClientCapabilities: (capabilities) => {
+              if (this.authenticatedSockets.get(ws) !== socket) {
+                throw new Error('client_capabilities_connection_closed')
+              }
+              const next = [...new Set(capabilities)].sort()
+              if (
+                declared &&
+                (next.length !== socket.clientCapabilities.length ||
+                  next.some((value, index) => value !== socket.clientCapabilities[index]))
+              ) {
+                throw new Error('client_capabilities_already_declared')
+              }
+              socket.clientCapabilities = Object.freeze(next)
+              declared = true
+              return socket.clientCapabilities
+            },
             transport: metadata
           }
           this.authenticatedSockets.set(ws, socket)

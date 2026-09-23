@@ -77,6 +77,9 @@ export type RpcContext = {
   clientKind?: 'mobile' | 'runtime'
   // Why: negotiation is bound to the authenticated socket, never asserted by a destructive request.
   clientCapabilities?: readonly RuntimeCapability[]
+  setClientCapabilities?: (
+    capabilities: readonly RuntimeCapability[]
+  ) => readonly RuntimeCapability[]
   // Why: Dispatch authority rides in the authenticated RPC envelope, never in user payload fields.
   orchestrationCapability?: string
   // Why: long-lived mutations such as ask can durably expose acceptance before their waiter settles.

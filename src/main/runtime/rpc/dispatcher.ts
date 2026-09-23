@@ -30,7 +30,7 @@ import { createDispatcherStreamingFeatureEmitter } from './dispatcher-streaming-
 export type DispatcherOptions = { runtime: OrcaRuntimeService; methods?: readonly RpcAnyMethod[] }
 
 // oxfmt-ignore
-type DispatchCallOptions = Pick<RpcDispatchStreamingOptions, 'signal' | 'connectionId' | 'clientId' | 'clientKind' | 'clientCapabilities' | 'authenticatedCallerFingerprint'>
+type DispatchCallOptions = Pick<RpcDispatchStreamingOptions, 'signal' | 'connectionId' | 'clientId' | 'clientKind' | 'clientCapabilities' | 'setClientCapabilities' | 'authenticatedCallerFingerprint'>
 
 export class RpcDispatcher {
   private readonly runtime: OrcaRuntimeService
@@ -114,7 +114,6 @@ export class RpcDispatcher {
           ? this.orchestrationMutations.getLocalAuthenticatedCallerFingerprint()
           : undefined)
       const invoke = (mutation?: DurableMutationInvocation) => {
-        const legacyCoordinatorRunId = legacyCoordinator?.revalidate()
         return method.handler(effectiveParams, {
           runtime: this.runtime,
           signal: options?.signal,
@@ -123,12 +122,13 @@ export class RpcDispatcher {
           clientId: options?.clientId,
           clientKind: options?.clientKind,
           clientCapabilities: options?.clientCapabilities,
+          setClientCapabilities: options?.setClientCapabilities,
           orchestrationCapability: request.orchestrationCapability,
           authenticatedCallerFingerprint:
             mutation?.identity.callerFingerprint ?? authenticatedCallerFingerprint,
           recordMutationReceipt: mutation?.recordReceipt,
           orchestrationMutation: mutation?.identity,
-          legacyCoordinatorRunId,
+          legacyCoordinatorRunId: legacyCoordinator?.revalidate(),
           legacyCoordinatorAuthority: legacyCoordinator?.authority,
           revalidateLegacyCoordinator: legacyCoordinator?.revalidate,
           orchestrationCompatibilityCallerAuthority:
@@ -237,6 +237,7 @@ export class RpcDispatcher {
             pairedDeviceId: options?.pairedDeviceId,
             clientKind: options?.clientKind,
             clientCapabilities: options?.clientCapabilities,
+            setClientCapabilities: options?.setClientCapabilities,
             orchestrationCapability: request.orchestrationCapability,
             authenticatedCallerFingerprint:
               mutation?.identity.callerFingerprint ?? authenticatedCallerFingerprint,
@@ -293,6 +294,7 @@ export class RpcDispatcher {
           pairedDeviceId: options?.pairedDeviceId,
           clientKind: options?.clientKind,
           clientCapabilities: options?.clientCapabilities,
+          setClientCapabilities: options?.setClientCapabilities,
           orchestrationCapability: request.orchestrationCapability,
           pairing: options?.pairing,
           sendBinary: options?.sendBinary,
