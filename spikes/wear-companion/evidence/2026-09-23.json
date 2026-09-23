@@ -1,6 +1,6 @@
 {
   "date": "2026-09-23",
-  "scope": "Credential-free emulator spike; no production actions or physical-device claims",
+  "scope": "Credential-free emulator and physical companion spike; no production actions",
   "baseCommit": "da3d208b373b54d24a9a8b28cef033a22d57514e",
   "phone": {
     "avd": "orca_spike_phone31_codex",
@@ -450,8 +450,8 @@
     "Force-stop delivery is image-specific; not a general availability guarantee.",
     "Native replay detection is process-local and bounded to 32 IDs; headless replay invokes JavaScript again.",
     "No durable inbox, production mutation, encrypted binding, or runtime socket exercised.",
-    "No physical Samsung, other phone API, battery/latency budget, release/Play signing, or multi-node isolation tested.",
-    "Headless uses Expo-generated minSdk 24 and targetSdk 36, exercised only on API 31; it is not the product manifest contract.",
+    "Emulator results above cover only those images; physical observations are separately bounded in physical. Battery/latency budgets, release/Play signing and multi-node isolation remain untested.",
+    "Headless uses Expo-generated minSdk 24 and targetSdk 36, exercised on emulator API 31; physical build/install API 36 recorded separately; it is not the product manifest contract.",
     "Unhandled-path timeout is not evidence for an offline durable queue."
   ],
   "extractionSmoke": {
@@ -463,5 +463,168 @@
     "resolvedModule": "expo.modules.companionprobe.CompanionProbeModule",
     "resolvedSource": "modules/companion-probe/android inside isolated copy",
     "compiledCopiedTree": false
+  },
+  "physical": {
+    "baseCommit": "3662d7c97c1dcd0085492ddc54233e2c8dab3fb5",
+    "phone": {
+      "model": "SM-S928B",
+      "api": 36,
+      "serial": "100.93.15.88:45379",
+      "node": "43a477ff"
+    },
+    "watch": {
+      "model": "SM-L500",
+      "api": 36,
+      "serial": "192.168.68.114:45277",
+      "node": "4ec247c9"
+    },
+    "native": {
+      "artifacts": "Same native phone/watch APK hashes and certificate as artifacts.phone and artifacts.watch",
+      "cases": [
+        {
+          "case": "phone-to-watch",
+          "requestId": "orca-spike-real-phone-to-watch",
+          "outcome": "acknowledged",
+          "pairedReceiverEvidence": true
+        },
+        {
+          "case": "watch-to-phone",
+          "requestId": "orca-spike-physical-reverse-20260923",
+          "outcome": "acknowledged",
+          "pairedReceiverEvidence": true
+        },
+        {
+          "case": "distinct-id",
+          "requestId": "orca-spike-physical-reverse-b-20260923",
+          "outcome": "acknowledged",
+          "pairedReceiverEvidence": true
+        },
+        {
+          "case": "valid-path-recovery-watch",
+          "requestId": "orca-spike-physical-restored-20260923",
+          "outcome": "acknowledged",
+          "pairedReceiverEvidence": true
+        },
+        {
+          "case": "force-stop-delivery",
+          "requestId": "orca-spike-physical-stopped-20260923",
+          "outcome": "acknowledged",
+          "pairedReceiverEvidence": true
+        },
+        {
+          "case": "valid-path-recovery-phone",
+          "requestId": "orca-spike-physical-phone-recovery-20260923",
+          "outcome": "acknowledged",
+          "pairedReceiverEvidence": true
+        },
+        {
+          "case": "nonadjacent-replay",
+          "requestId": "orca-spike-physical-reverse-20260923",
+          "outcome": "acknowledged-again",
+          "duplicateLogged": true
+        }
+      ],
+      "background": "Phone mLastPausedActivity was the probe and isSleeping=true; screen off/keyguard showing during reverse requests.",
+      "forceStop": {
+        "package": "com.orcaspike.companion",
+        "stoppedBefore": true,
+        "stoppedAfter": false,
+        "oldPid": 22197,
+        "newPid": 27418
+      },
+      "timeout": {
+        "outcome": "not-proved",
+        "requests": [
+          "orca-spike-physical-unhandled-20260923",
+          "orca-spike-physical-phone-timeout-20260923"
+        ],
+        "observation": "SEND_ACCEPTED but no reply or ACK_TIMEOUT captured; later LOCAL_NODE log shows sender activity recreation. MainActivity.onDestroy removes pending callbacks, so silence is not timeout proof."
+      },
+      "phoneLog": [
+        "09-23 21:00:03.754 22197 22197 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-real-phone-to-watch peer=4ec247c9 correlated=true",
+        "09-23 21:03:35.912 22197 25113 I OrcaSpikeListener: native listener woken: PING received, requestId=orca-spike-physical-reverse-20260923, source=4ec247c9",
+        "09-23 21:03:35.916 22197 22197 I OrcaSpikeListener: PONG accepted for delivery to 4ec247c9 requestId=orca-spike-physical-reverse-20260923",
+        "09-23 21:03:48.823 22197 25140 I OrcaSpikeListener: native listener woken: PING received, requestId=orca-spike-physical-reverse-b-20260923, source=4ec247c9",
+        "09-23 21:03:48.834 22197 22197 I OrcaSpikeListener: PONG accepted for delivery to 4ec247c9 requestId=orca-spike-physical-reverse-b-20260923",
+        "09-23 21:04:16.194 22197 25217 I OrcaSpikeListener: native listener woken: PING received, requestId=orca-spike-physical-reverse-20260923, source=4ec247c9",
+        "09-23 21:04:16.195 22197 25217 I OrcaSpikeListener: duplicate PING for requestId=orca-spike-physical-reverse-20260923 -- acking again without re-processing",
+        "09-23 21:04:16.198 22197 22197 I OrcaSpikeListener: PONG accepted for delivery to 4ec247c9 requestId=orca-spike-physical-reverse-20260923",
+        "09-23 21:04:58.822 22197 27399 I OrcaSpikeListener: native listener woken: PING received, requestId=orca-spike-physical-restored-20260923, source=4ec247c9",
+        "09-23 21:04:58.829 22197 22197 I OrcaSpikeListener: PONG accepted for delivery to 4ec247c9 requestId=orca-spike-physical-restored-20260923",
+        "09-23 21:05:00.014 27418 27433 I OrcaSpikeListener: native listener woken: PING received, requestId=orca-spike-physical-stopped-20260923, source=4ec247c9",
+        "09-23 21:05:00.063 27418 27418 I OrcaSpikeListener: PONG accepted for delivery to 4ec247c9 requestId=orca-spike-physical-stopped-20260923",
+        "09-23 21:05:25.095 27418 27418 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-physical-phone-timeout-20260923 peer=4ec247c9",
+        "09-23 21:06:00.862 27418 27418 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-physical-phone-recovery-20260923 peer=4ec247c9",
+        "09-23 21:06:01.322 27418 27418 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-physical-phone-recovery-20260923 peer=4ec247c9 correlated=true"
+      ],
+      "watchLog": [
+        "09-23 21:00:03.484  9920 11134 I OrcaSpikeListener: native listener woken: PING received, requestId=orca-spike-real-phone-to-watch, source=43a477ff",
+        "09-23 21:00:03.515  9920  9920 I OrcaSpikeListener: PONG accepted for delivery to 43a477ff requestId=orca-spike-real-phone-to-watch",
+        "09-23 21:03:35.326  9920  9920 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-physical-reverse-20260923 peer=43a477ff",
+        "09-23 21:03:35.741  9920  9920 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-physical-reverse-20260923 peer=43a477ff correlated=true",
+        "09-23 21:03:48.423  9920  9920 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-physical-reverse-b-20260923 peer=43a477ff",
+        "09-23 21:03:48.639  9920  9920 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-physical-reverse-b-20260923 peer=43a477ff correlated=true",
+        "09-23 21:04:15.868  9920  9920 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-physical-reverse-20260923 peer=43a477ff",
+        "09-23 21:04:16.019  9920  9920 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-physical-reverse-20260923 peer=43a477ff correlated=true",
+        "09-23 21:04:16.112  9920  9920 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-physical-unhandled-20260923 peer=43a477ff",
+        "09-23 21:04:58.550  9920  9920 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-physical-restored-20260923 peer=43a477ff",
+        "09-23 21:04:58.632  9920  9920 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-physical-restored-20260923 peer=43a477ff correlated=true",
+        "09-23 21:04:59.463  9920  9920 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-physical-stopped-20260923 peer=43a477ff",
+        "09-23 21:04:59.941  9920  9920 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-physical-stopped-20260923 peer=43a477ff correlated=true",
+        "09-23 21:06:01.087  9920 11806 I OrcaSpikeListener: native listener woken: PING received, requestId=orca-spike-physical-phone-recovery-20260923, source=43a477ff",
+        "09-23 21:06:01.095  9920  9920 I OrcaSpikeListener: PONG accepted for delivery to 43a477ff requestId=orca-spike-physical-phone-recovery-20260923"
+      ]
+    },
+    "headless": {
+      "buildCommand": "./android/gradlew.bat -p android -I ../short-path-build.gradle :app:assembleRelease -PreactNativeArchitectures=arm64-v8a --console=plain",
+      "buildExitCode": 0,
+      "durationSeconds": 32,
+      "tasksExecuted": 21,
+      "tasksUpToDate": 256,
+      "buildEnvironment": "JDK 17; ANDROID_HOME and ANDROID_SDK_ROOT aligned to local Android/Sdk for this process only; NODE_ENV=production",
+      "firstAttempt": "Failed during configuration because inherited SDK environment variables disagreed; aligned both before retry.",
+      "apk": "build/physical-arm64-20260923/app-release-arm64-v8a.apk",
+      "sha256": "5a16fc7bc1bcf9acb1faea71e46af799bf59cbe8a3e9d00a01ca6494e1b7a26a",
+      "bytes": 24189889,
+      "abi": "arm64-v8a",
+      "verifiedAarch64ElfLibraries": 13,
+      "zipIntegrity": "passed",
+      "bundledJsBytes": 1025708,
+      "bundleMarkers": [
+        "OrcaCompanionPing",
+        "HEADLESS_ENTER",
+        "HEADLESS_COMPLETE",
+        "CompanionProbe"
+      ],
+      "certificateSha256": "fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c",
+      "signatureCheck": "apksigner verify --verbose --print-certs: v2 verified; identical certificate on all three APKs",
+      "package": "com.orcaspike.companion",
+      "minSdk": 24,
+      "targetSdk": 36,
+      "install": "adb install -r returned Success; installed versionName=0.0.1, stopped=false",
+      "phoneLog": [
+        "--------- beginning of main",
+        "09-23 21:06:36.091 30463 30491 I ReactNativeJS: Running \"main\""
+      ],
+      "delivery": "not-tested: watch ADB went offline before request; scoped reconnect/connect timed out with Windows 10060",
+      "runtimeClaim": "Foreground Running main only; no physical NATIVE_RECEIVE/HEADLESS_ENTER/JS_REPLY/HEADLESS_COMPLETE or watch acknowledgement yet"
+    },
+    "safety": {
+      "nativeInstall": "Original single install completed successfully; it was neither duplicated nor interrupted.",
+      "approvalDiagnosisCorrection": "A focused Play Protect activity while locked did not prove a visible approval prompt. Later terminal Success, installed package and empty active sessions removed the blocker; no prompt interaction or security change performed.",
+      "deviceSettingsChanged": [],
+      "globalLogClear": false,
+      "deviceWideDoze": false,
+      "productionDataOrCredentialsTouched": false,
+      "pairingsPreserved": true,
+      "testAppsLeftInstalled": "Native watch probe; ARM64 headless phone probe, stopped=false",
+      "restoration": "No temporary device settings were changed. Probe force-stop flag cleared on delivery."
+    },
+    "limitations": [
+      "Physical Headless JS delivery awaits watch ADB connectivity; foreground JS startup is not headless evidence.",
+      "Explicit native timeout not observed; no offline queue, crash-cold or device-wide Doze assertion.",
+      "One Samsung pair only; no battery/latency budget, product UI/rotary/TalkBack, production action, binding, socket ownership or release/Play signing proof.",
+      "Endpoint wall clocks differ; cross-device timestamps are not a latency measurement."
+    ]
   }
 }

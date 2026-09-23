@@ -1,6 +1,6 @@
 # Wear companion Data Layer spike
 
-This isolated probe verifies native phone/watch messaging and actual Expo Headless JS startup over a paired emulator connection. It sends only generated `orca-spike-*` request IDs, uses a throwaway signing key, and has no Orca credentials or business actions.
+This isolated probe verifies native phone/watch messaging on paired emulators and a physical Samsung pair, plus actual Expo Headless JS startup on emulators. It sends only generated `orca-spike-*` request IDs, uses a throwaway signing key, and has no Orca credentials or business actions.
 
 `phone/` and `watch/` compile the same Kotlin sender/listener from `native/`. `headless/` replaces the phone app with an Expo release build whose native listener starts a registered JavaScript task; JavaScript calls the native module to return the acknowledgement. All three APKs use `com.orcaspike.companion` and the same test key. The headless APK bundles JavaScript and runs without Metro.
 
@@ -70,4 +70,14 @@ For reconnect, install the native phone variant, stop only the test watch with `
 
 Force-stop delivery is an observation of these emulator/Play Services versions, not a guarantee for other Android devices. The native 32-ID replay window is process-local and evicts old IDs; it proves no durable exactly-once mutation behavior. The headless probe deliberately has no business action or durable inbox/journal. The unhandled-path timeout does not test an offline durable queue.
 
-Physical Samsung behavior, newer phone APIs, battery/latency budgets, release/Play signing, binding encryption, multi-node isolation, inbox crash recovery, and real Orca socket/action ownership remain untested. This closes emulator transport and JavaScript-bootstrap feasibility only; [the product plan](../../docs/wear-os-command-center-plan.md) retains its implementation approval and release gates. No standalone publication or license decision is made by this spike.
+## Physical Samsung results on 2026-09-23
+
+The Galaxy Watch8 Classic SM-L500 and SM-S928B phone both reported API 36. The `physical` section in the [consolidated evidence](evidence/2026-09-23.json) records paired native PING/PONG in both directions, distinct IDs, nonadjacent replay with duplicate detection, delivery while the phone activity was paused behind the lock screen, and valid-path recovery. After force-stopping only the phone probe, delivery restarted its process and cleared `stopped=true`. These are observations of this pair, not a general force-stop delivery guarantee.
+
+Unhandled-path requests produced no captured reply, but no explicit `ACK_TIMEOUT` was captured either. The sender activity was later recreated; its `onDestroy` cancels timeout callbacks. This is an incomplete negative test, not a passing timeout assertion. Cross-device clocks differ, so these logs do not establish latency.
+
+The headless release built with `-PreactNativeArchitectures=arm64-v8a`, using the build command above with both SDK environment variables pointing to the same SDK. APK checks verified 13 AArch64 libraries, the bundled JavaScript task markers, and the same signing certificate as both native probes. Installation succeeded and foreground JavaScript logged `Running "main"`. The watch ADB transport then became unavailable; reconnecting its existing endpoint timed out. Physical Headless JS receive/reply/completion and watch acknowledgement remain unverified. Local build and log receipts are under ignored `build/physical-arm64-20260923/`.
+
+The emulator verifier was not run on the personal devices: it forces device-wide Doze and battery simulation. No security settings, battery settings, production data, credentials, or pairings were changed; no logs were cleared. The native watch probe and headless phone probe remain installed. An initially focused Play Protect activity did not establish a visible approval prompt; the original install later returned `Success` without agent interaction with that activity.
+
+Battery/latency budgets, release/Play signing, binding encryption, multi-node isolation, inbox crash recovery, and real Orca socket/action ownership remain untested. [The product plan](../../docs/wear-os-command-center-plan.md) retains its implementation approval and release gates. No standalone publication or license decision is made by this spike.
