@@ -1,0 +1,5 @@
+.expo/
+android/
+node_modules/
+/p/
+coverage/

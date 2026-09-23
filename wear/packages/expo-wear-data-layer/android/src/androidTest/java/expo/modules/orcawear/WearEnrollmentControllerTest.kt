@@ -51,7 +51,10 @@ class WearEnrollmentControllerTest {
                     val pending = watchStore.pendingForPeer("phone", System.currentTimeMillis()).single()
                     assertEquals("pending", phoneStore.find(pending.id)!!.state)
                     if (cancelPhone) {
-                        phone.cancel()
+                        phone.closeCancelled()
+                        phone = makePhone()
+                        phone.recoverPending("watch", WearWorkTicket())
+                        phone.cancel("watch")
                         phone.closeCancelled()
                         phone = makePhone()
                         watch.recoverPending("phone", WearWorkTicket())
@@ -81,10 +84,28 @@ class WearEnrollmentControllerTest {
             val controller = WearEnrollmentController(CompanionRole.PHONE, store, { _, _, _ -> sends++ }, {})
             try {
                 controller.begin("watch", WearWorkTicket())
-                controller.cancel()
+                controller.cancel("watch")
                 assertThrows(IllegalStateException::class.java) { controller.retry(WearWorkTicket()) }
                 assertThrows(IllegalStateException::class.java) { controller.confirm("code", WearWorkTicket()) }
                 assertEquals(1, sends)
+            } finally { controller.closeCancelled() }
+        }
+    }
+
+    @Test fun queuedBeginCannotOutliveCancellationOrCloseANewSession() = withWearTestDatabase { context ->
+        WearBindingStore(context).use { store ->
+            var sends = 0
+            val controller = WearEnrollmentController(CompanionRole.PHONE, store, { _, _, _ -> sends++ }, {})
+            try {
+                val queuedGeneration = controller.generation()
+                val cancelledGeneration = controller.cancel("watch")
+                assertThrows(IllegalStateException::class.java) {
+                    controller.begin("watch", WearWorkTicket(), queuedGeneration)
+                }
+                controller.begin("watch", WearWorkTicket(), controller.generation())
+                controller.closeCancelled(cancelledGeneration)
+                controller.retry(WearWorkTicket())
+                assertEquals(2, sends)
             } finally { controller.closeCancelled() }
         }
     }

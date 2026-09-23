@@ -23,10 +23,16 @@ internal class WearEnrollmentController(
     private var bindingPacket: ByteArray? = null
     private var confirmationPacket: ByteArray? = null
 
-    fun begin(peerNodeId: String, ticket: WearWorkTicket) {
-        val epoch = generation.incrementAndGet()
-        sessionEpoch = epoch
-        selectedNode = peerNodeId
+    fun generation(): Long = generation.get()
+
+    fun begin(peerNodeId: String, ticket: WearWorkTicket, expectedGeneration: Long = generation() ) {
+        val epoch = synchronized(generation) {
+            check(generation.get() == expectedGeneration) { "wear_enrollment_cancelled" }
+            generation.incrementAndGet().also {
+                sessionEpoch = it
+                selectedNode = peerNodeId
+            }
+        }
         session?.close()
         session = null
         fingerprint = null
@@ -52,17 +58,19 @@ internal class WearEnrollmentController(
         }
     }
 
-    fun cancel() {
-        synchronized(generation) {
-            generation.incrementAndGet()
-            selectedNode?.let { bindings.discardPendingForPeer(it) }
+    fun cancel(peerNodeId: String): Long = synchronized(generation) {
+            check(selectedNode == null || selectedNode == peerNodeId) { "wear_enrollment_wrong_node" }
+            val cancelledGeneration = generation.incrementAndGet()
+            bindings.discardPendingForPeer(peerNodeId)
             status(mapOf("phase" to "cancelled"))
-        }
+            cancelledGeneration
     }
 
-    fun closeCancelled() {
-        session?.close()
-        session = null
+    fun closeCancelled(cancelledGeneration: Long = Long.MAX_VALUE) {
+        if (sessionEpoch < cancelledGeneration) {
+            session?.close()
+            session = null
+        }
     }
 
     fun confirm(expectedFingerprint: String, ticket: WearWorkTicket) {
@@ -135,9 +143,12 @@ internal class WearEnrollmentController(
     }
 
     fun recoverPending(peerNodeId: String, ticket: WearWorkTicket) {
-        selectedNode = peerNodeId
+        val pending = bindings.pendingForPeer(peerNodeId, wallTime())
+        if (pending.isNotEmpty()) effect(ticket) {
+            status(mapOf("phase" to "pendingRecovery", "nodeId" to peerNodeId))
+        }
         if (role == CompanionRole.WATCH) {
-            bindings.pendingForPeer(peerNodeId, wallTime()).forEach { sendAcknowledgement(it.id, peerNodeId, ticket) }
+            pending.forEach { sendAcknowledgement(it.id, peerNodeId, ticket) }
         }
     }
 

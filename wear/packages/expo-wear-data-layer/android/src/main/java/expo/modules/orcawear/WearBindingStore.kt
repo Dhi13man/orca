@@ -108,6 +108,13 @@ internal class WearBindingStore(context: Context) : SQLiteOpenHelper(
         db.delete("bindings", "peer_node_id=? AND state='pending'", arrayOf(peerNodeId))
     }
 
+    fun activeBindings(): List<StoredWearBinding> = transaction { db ->
+        val ids = db.rawQuery("SELECT id FROM bindings WHERE state='active' ORDER BY issued_at,id", null).use { cursor ->
+            buildList { while (cursor.moveToNext()) add(cursor.getString(0)) }
+        }
+        ids.map { requireNotNull(find(it)) }
+    }
+
     fun activate(id: String, peerNodeId: String, now: Long = System.currentTimeMillis()) = transaction { db ->
         requireUuid(id)
         require(now >= 0)

@@ -22,7 +22,8 @@ import {
   Globe,
   MessageSquare,
   Terminal as TerminalIcon,
-  KeyRound
+  KeyRound,
+  Watch
 } from 'lucide-react-native'
 import { colors, radii, spacing, typography } from '../src/theme/mobile-theme'
 import {
@@ -106,6 +107,15 @@ export default function SettingsScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.section}>
+          <Pressable
+            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+            onPress={() => router.push('/wear-settings')}
+          >
+            <Watch size={16} color={colors.textSecondary} />
+            <Text style={styles.rowLabel}>Watch companion</Text>
+            <ChevronRight size={16} color={colors.textMuted} />
+          </Pressable>
+          <View style={styles.separator} />
           <Pressable
             style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
             onPress={() => router.push('/terminal-settings')}

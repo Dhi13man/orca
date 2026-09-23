@@ -79,6 +79,7 @@
     },
     "plugins": [
       "expo-router",
+      ["@orca/expo-wear-data-layer", { "role": "phone" }],
       "./plugins/android-respect-rotation-lock.js",
       [
         "expo-splash-screen",

@@ -54,6 +54,11 @@ internal object WearKeyStore {
         store.deleteEntry(enrollmentAlias(attemptId))
     }
 
+    fun deleteOrphanEnrollmentKeys() {
+        val aliases = store.aliases().toList().filter { it.startsWith("orca.wear.v1.enrollment.") }
+        aliases.forEach { store.deleteEntry(it) }
+    }
+
     @Synchronized fun wrapBindingKey(bindingId: String, key: ByteArray): ByteArray {
         require(key.size == 32)
         val aad = bindingContext(bindingId)
