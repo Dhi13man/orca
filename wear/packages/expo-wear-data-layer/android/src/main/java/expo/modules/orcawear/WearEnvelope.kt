@@ -28,7 +28,8 @@ internal data class WearEnvelopeMetadata(
     val requestId: String,
     val expiresAt: Long
 ) {
-    val path: String get() = "/orca/wear/v1/" + bindingId + "/" + kind.segment
+    val path: String get() = "/orca/wear/v1/" + bindingId + "/" + kind.segment +
+        if (kind == WearEnvelopeKind.DASHBOARD) "/$revision" else ""
 }
 
 internal data class OpenWearEnvelope(val metadata: WearEnvelopeMetadata, val plaintext: ByteArray)
