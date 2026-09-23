@@ -8,6 +8,7 @@ android {
     compileSdk 36
     defaultConfig {
         minSdk 31
+        targetSdk 36
         testApplicationId 'dev.orca.wear.nativeacceptance'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
