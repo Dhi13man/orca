@@ -7,7 +7,7 @@
     ".": "./src/action.ts"
   },
   "scripts": {
-    "generate": "node scripts/generate-action-manifest.mjs",
-    "check:generated": "node scripts/generate-action-manifest.mjs --check"
+    "generate": "node scripts/generate-action-manifest.mjs && node scripts/generate-conformance-vectors.mjs",
+    "check:generated": "node scripts/generate-action-manifest.mjs --check && node scripts/generate-conformance-vectors.mjs --check"
   }
 }
