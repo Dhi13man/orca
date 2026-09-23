@@ -1,0 +1,13 @@
+{
+  "name": "@orca/wear-companion-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/action.ts"
+  },
+  "scripts": {
+    "generate": "node scripts/generate-action-manifest.mjs",
+    "check:generated": "node scripts/generate-action-manifest.mjs --check"
+  }
+}
