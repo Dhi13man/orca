@@ -14,7 +14,7 @@ import com.google.android.gms.wearable.WearableListenerService
 class PingListenerService : WearableListenerService() {
     companion object {
         private const val TAG = "OrcaSpikeWatchListener"
-        private var lastSeenRequestId: String? = null
+        private val deduper = PingRequestDeduper()
     }
 
     override fun onMessageReceived(event: MessageEvent) {
@@ -22,10 +22,8 @@ class PingListenerService : WearableListenerService() {
         val requestId = String(event.data, Charsets.UTF_8)
         Log.i(TAG, "native listener woken: PING received, requestId=$requestId, source=${event.sourceNodeId}")
 
-        if (requestId == lastSeenRequestId) {
+        if (deduper.observe(requestId)) {
             Log.i(TAG, "duplicate PING for requestId=$requestId -- acking again without re-processing")
-        } else {
-            lastSeenRequestId = requestId
         }
 
         Wearable.getMessageClient(this)
