@@ -253,7 +253,11 @@ export function createStableLogicalRpcClient(
       // session, but fence callbacks until the generation becomes current.
       for (const record of subscriptions.values()) {
         const disposePrevious = record.disposePhysical
-        attachSubscription(record, nextSession, nextGeneration)
+        if (record.options?.replayOnReconnect === false) {
+          record.disposePhysical = null
+        } else {
+          attachSubscription(record, nextSession, nextGeneration)
+        }
         disposePrevious?.()
       }
       generation = nextGeneration

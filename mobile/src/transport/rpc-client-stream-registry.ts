@@ -19,6 +19,7 @@ export type RpcStreamingListener = (result: unknown) => void
 
 export type RpcStreamSubscribeOptions = {
   onBinaryFrame?: (frame: BrowserScreencastFrame) => void
+  replayOnReconnect?: boolean
 }
 
 type StreamRequest = {
@@ -26,6 +27,7 @@ type StreamRequest = {
   params: unknown
   listener: RpcStreamingListener
   onBinaryFrame?: (frame: BrowserScreencastFrame) => void
+  replayOnReconnect: boolean
   subscriptionId?: string
   cancelled?: boolean
   sent?: boolean
@@ -57,7 +59,8 @@ export class RpcClientStreamRegistry {
       method,
       params,
       listener,
-      onBinaryFrame: subscribeOptions?.onBinaryFrame
+      onBinaryFrame: subscribeOptions?.onBinaryFrame,
+      replayOnReconnect: subscribeOptions?.replayOnReconnect !== false
     }
     this.streams.set(id, stream)
     if (method === 'browser.screencast') {
@@ -86,6 +89,9 @@ export class RpcClientStreamRegistry {
         continue
       }
       if (stream.sent) {
+        continue
+      }
+      if (!stream.replayOnReconnect) {
         continue
       }
       if (stream.method === 'browser.screencast') {
@@ -196,6 +202,10 @@ export class RpcClientStreamRegistry {
 
   private dispose(id: string): void {
     const stream = this.streams.get(id)
+    if (stream && !stream.replayOnReconnect && !stream.sent) {
+      this.remove(id)
+      return
+    }
     if (stream?.method === 'browser.screencast') {
       stream.cancelled = true
       this.clearBrowserRequest(id)

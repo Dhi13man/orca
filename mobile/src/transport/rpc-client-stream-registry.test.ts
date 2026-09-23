@@ -51,6 +51,22 @@ function terminalOutput(streamId: number, chunk: string): Uint8Array {
 }
 
 describe('RpcClientStreamRegistry', () => {
+  it('withholds gated streams after physical reauthentication until the caller reopens them', () => {
+    const { registry, sent } = createRegistry()
+    const dispose = registry.subscribe('session.tabs.subscribeAll', null, () => {}, {
+      replayOnReconnect: false
+    })
+    expect(sent).toHaveLength(1)
+
+    registry.markForReplay()
+    registry.replayAfterAuthentication()
+    expect(sent).toHaveLength(1)
+    dispose()
+    expect(sent).toHaveLength(1)
+    registry.subscribe('session.tabs.subscribeAll', null, () => {}, { replayOnReconnect: false })
+    expect(sent).toHaveLength(2)
+  })
+
   it('replays the latest terminal viewport without retaining stale stream routing', () => {
     const { registry, sent } = createRegistry()
     const events: unknown[] = []

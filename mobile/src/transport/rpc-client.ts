@@ -17,6 +17,7 @@ export type SendRequestOptions = {
 
 type SubscribeOptions = {
   onBinaryFrame?: (frame: BrowserScreencastFrame) => void
+  replayOnReconnect?: boolean
 }
 
 type StreamingListener = (result: unknown) => void

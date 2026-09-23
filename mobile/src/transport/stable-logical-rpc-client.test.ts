@@ -3,6 +3,11 @@ import type { ConnectionState, RpcResponse } from './types'
 import type { RpcClient } from './rpc-client'
 import { isRpcDeliveryUnknown, markRpcDeliveryUnknown } from './rpc-delivery-ambiguity'
 import {
+  CLIENT_CAPABILITIES_SET_RUNTIME_CAPABILITY,
+  SESSION_TABS_AUTHORITATIVE_INVENTORY_RUNTIME_CAPABILITY
+} from '../../../src/shared/protocol-version'
+import { startWearRuntimeReadCapabilitySession } from './wear-runtime-read-capability-session'
+import {
   createStableLogicalRpcClient,
   LogicalClientCutoverError,
   type MobileConnectionPath
@@ -116,6 +121,72 @@ describe('stable logical RPC client', () => {
     expect(stream).toHaveBeenCalledOnce()
     expect(stream).toHaveBeenCalledWith('current')
     pending.resolve(success('late'))
+  })
+
+  it('withholds capability-gated streams until the replacement is negotiated', async () => {
+    const first = new FakeSession('connected')
+    const replacement = new FakeSession('connected')
+    const client = createStableLogicalRpcClient(first, 'lan')
+    const dispose = client.subscribe('session.tabs.subscribeAll', null, vi.fn(), {
+      replayOnReconnect: false
+    })
+    expect(first.subscribe).toHaveBeenCalledOnce()
+
+    await client.migrateTo(replacement, 'relay')
+
+    expect(replacement.subscribe).not.toHaveBeenCalled()
+    dispose()
+    client.subscribe('session.tabs.subscribeAll', null, vi.fn(), {
+      replayOnReconnect: false
+    })
+    expect(replacement.subscribe).toHaveBeenCalledOnce()
+  })
+
+  it('negotiates a replacement before reopening a Wear inventory stream', async () => {
+    const first = new FakeSession('connected')
+    const replacement = new FakeSession('connected')
+    const reply = (method: string, params?: unknown) =>
+      success({
+        capabilities:
+          method === 'status.get'
+            ? [
+                CLIENT_CAPABILITIES_SET_RUNTIME_CAPABILITY,
+                SESSION_TABS_AUTHORITATIVE_INVENTORY_RUNTIME_CAPABILITY
+              ]
+            : (params as { capabilities: string[] }).capabilities
+      })
+    first.sendRequest.mockImplementation(async (method, params) => reply(method, params))
+    replacement.sendRequest.mockImplementation(async (method, params) => reply(method, params))
+    const client = createStableLogicalRpcClient(first, 'lan')
+    let disposeStream: () => void = () => {}
+    const stop = startWearRuntimeReadCapabilitySession(
+      client,
+      () => {
+        disposeStream()
+        disposeStream = client.subscribe('session.tabs.subscribeAll', null, vi.fn(), {
+          replayOnReconnect: false
+        })
+      },
+      () => {
+        disposeStream()
+        disposeStream = () => {}
+      }
+    )
+    await vi.waitFor(() => expect(first.subscribe).toHaveBeenCalledOnce())
+
+    await client.migrateTo(replacement, 'relay')
+
+    expect(replacement.subscribe).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(replacement.subscribe).toHaveBeenCalledOnce())
+    expect(replacement.sendRequest.mock.calls.map(([method]) => method)).toEqual([
+      'status.get',
+      'client.capabilities.set'
+    ])
+    expect(replacement.sendRequest.mock.invocationCallOrder[1]).toBeLessThan(
+      replacement.subscribe.mock.invocationCallOrder[0]!
+    )
+    stop()
+    disposeStream()
   })
 
   it('keeps replies that commit before cutover and carries viewport state into replay', async () => {
