@@ -1,0 +1,467 @@
+{
+  "date": "2026-09-23",
+  "scope": "Credential-free emulator spike; no production actions or physical-device claims",
+  "baseCommit": "da3d208b373b54d24a9a8b28cef033a22d57514e",
+  "phone": {
+    "avd": "orca_spike_phone31_codex",
+    "serial": "emulator-5554",
+    "node": "83e728ef",
+    "api": 31,
+    "fingerprint": "google/sdk_gphone64_x86_64/emulator64_x86_64_arm64:12/SE1A.211212.001.B1/8023802:user/release-keys",
+    "activePlayServices": "26.34.36 (190800-981326859)"
+  },
+  "watch": {
+    "avd": "orca_spike_wear4_codex",
+    "serial": "emulator-5556",
+    "node": "301e868c",
+    "api": 33,
+    "fingerprint": "google/sdk_gwear_x86_64/emu64xa:13/TWR7.230913.001.E7/11551413:userdebug/dev-keys",
+    "playServices": "23.36.12 (240804-562690244)"
+  },
+  "artifacts": {
+    "phone": {
+      "path": "phone/build/outputs/apk/debug/phone-debug.apk",
+      "sha256": "f2bbcc18001aa8d618d669331142c769b8dade070611eff8ab02b6fa0fbad919",
+      "certificateSha256": "fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c",
+      "package": "com.orcaspike.companion",
+      "minSdk": "31",
+      "targetSdk": "36"
+    },
+    "watch": {
+      "path": "watch/build/outputs/apk/debug/watch-debug.apk",
+      "sha256": "29b800eb59798eaed05ed5349dbd0883ddb8489a27859bf8a2bc10ee0779b9ce",
+      "certificateSha256": "fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c",
+      "package": "com.orcaspike.companion",
+      "minSdk": "33",
+      "targetSdk": "36"
+    },
+    "headless": {
+      "path": "headless/android/app/build/outputs/apk/release/app-release.apk",
+      "sha256": "52ea71324f020316b545361be8156574cdfa891e5b43e364927dd89ddd31c89c",
+      "certificateSha256": "fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c",
+      "package": "com.orcaspike.companion",
+      "minSdk": "24",
+      "targetSdk": "36"
+    }
+  },
+  "runs": {
+    "native": {
+      "command": "python verify_transport.py --adb adb --phone emulator-5554 --watch emulator-5556 --mode native --output build/codex-run/native-final",
+      "exitCode": 0,
+      "stateChecks": {
+        "crashIssued": true,
+        "absentPidObserved": true,
+        "idleStateObserved": true,
+        "stoppedFlagObserved": true
+      },
+      "results": [
+        {
+          "case": "phone-to-watch",
+          "requestId": "orca-spike-48c0745f1c8d-phone-to-watch",
+          "outcome": "acknowledged",
+          "peer": "301e868c",
+          "receiverEvidence": true
+        },
+        {
+          "case": "watch-to-phone",
+          "requestId": "orca-spike-48c0745f1c8d-watch-to-phone",
+          "outcome": "acknowledged",
+          "peer": "83e728ef",
+          "receiverEvidence": true
+        },
+        {
+          "case": "distinct-id",
+          "requestId": "orca-spike-48c0745f1c8d-distinct-id",
+          "outcome": "acknowledged",
+          "peer": "83e728ef",
+          "receiverEvidence": true
+        },
+        {
+          "case": "nonadjacent-replay",
+          "requestId": "orca-spike-48c0745f1c8d-watch-to-phone",
+          "outcome": "acknowledged",
+          "peer": "83e728ef",
+          "receiverEvidence": true
+        },
+        {
+          "case": "background",
+          "requestId": "orca-spike-48c0745f1c8d-background",
+          "outcome": "acknowledged",
+          "peer": "83e728ef",
+          "receiverEvidence": true
+        },
+        {
+          "case": "crash-cold",
+          "requestId": "orca-spike-48c0745f1c8d-crash-cold",
+          "outcome": "acknowledged",
+          "peer": "83e728ef",
+          "receiverEvidence": true,
+          "previousPid": "13501",
+          "newPid": "13601",
+          "packageStopped": false
+        },
+        {
+          "case": "doze",
+          "requestId": "orca-spike-48c0745f1c8d-doze",
+          "outcome": "acknowledged",
+          "peer": "83e728ef",
+          "receiverEvidence": true
+        },
+        {
+          "case": "force-stop",
+          "requestId": "orca-spike-48c0745f1c8d-force-stop",
+          "outcome": "acknowledged",
+          "peer": "83e728ef",
+          "receiverEvidence": true,
+          "packageStoppedBefore": true,
+          "packageStoppedAfter": false
+        },
+        {
+          "case": "explicit-relaunch",
+          "requestId": "orca-spike-48c0745f1c8d-explicit-relaunch",
+          "outcome": "acknowledged",
+          "peer": "83e728ef",
+          "receiverEvidence": true
+        },
+        {
+          "case": "unhandled-path",
+          "requestId": "orca-spike-48c0745f1c8d-unhandled-path",
+          "outcome": "ack-timeout",
+          "peer": null
+        },
+        {
+          "case": "handled-path-restored",
+          "requestId": "orca-spike-48c0745f1c8d-handled-path-restored",
+          "outcome": "acknowledged",
+          "peer": "83e728ef",
+          "receiverEvidence": true
+        }
+      ],
+      "logExcerpts": {
+        "phone": [
+          "09-23 19:20:26.592  9033  9033 I OrcaSpike: LOCAL_NODE id=83e728ef name=orca_spike_phone31_codex pid=9033",
+          "09-23 19:28:51.456 10971 10971 I OrcaSpike: LOCAL_NODE id=83e728ef name=orca_spike_phone31_codex pid=10971",
+          "09-23 19:30:04.757 11234 11234 I OrcaSpike: LOCAL_NODE id=83e728ef name=orca_spike_phone31_codex pid=11234",
+          "09-23 19:30:37.664 11313 11313 I OrcaSpike: LOCAL_NODE id=83e728ef name=orca_spike_phone31_codex pid=11313",
+          "09-23 19:31:12.161 11607 11607 I OrcaSpike: LOCAL_NODE id=83e728ef name=orca_spike_phone31_codex pid=11607",
+          "09-23 19:31:20.485 11858 11858 I OrcaSpike: LOCAL_NODE id=83e728ef name=orca_spike_phone31_codex pid=11858",
+          "09-23 19:35:23.972 12108 12108 I OrcaSpike: LOCAL_NODE id=83e728ef name=orca_spike_phone31_codex pid=12108",
+          "09-23 19:35:31.369 12418 12418 I OrcaSpike: LOCAL_NODE id=83e728ef name=orca_spike_phone31_codex pid=12418",
+          "09-23 19:36:49.748 12913 12913 I OrcaSpike: LOCAL_NODE id=83e728ef name=orca_spike_phone31_codex pid=12913",
+          "09-23 19:41:20.186 13501 13501 I OrcaSpike: LOCAL_NODE id=83e728ef name=orca_spike_phone31_codex pid=13501",
+          "09-23 19:41:20.226 13501 13501 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-48c0745f1c8d-phone-to-watch peer=301e868c",
+          "09-23 19:41:20.540 13501 13501 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-48c0745f1c8d-phone-to-watch peer=301e868c correlated=true",
+          "09-23 19:41:21.893 13501 13544 I OrcaSpikeListener: native listener woken: PING received, requestId=orca-spike-48c0745f1c8d-watch-to-phone, source=301e868c",
+          "09-23 19:41:21.896 13501 13501 I OrcaSpikeListener: PONG accepted for delivery to 301e868c requestId=orca-spike-48c0745f1c8d-watch-to-phone",
+          "09-23 19:41:22.601 13501 13544 I OrcaSpikeListener: native listener woken: PING received, requestId=orca-spike-48c0745f1c8d-distinct-id, source=301e868c",
+          "09-23 19:41:22.604 13501 13501 I OrcaSpikeListener: PONG accepted for delivery to 301e868c requestId=orca-spike-48c0745f1c8d-distinct-id",
+          "09-23 19:41:23.176 13501 13544 I OrcaSpikeListener: native listener woken: PING received, requestId=orca-spike-48c0745f1c8d-watch-to-phone, source=301e868c",
+          "09-23 19:41:23.176 13501 13544 I OrcaSpikeListener: duplicate PING for requestId=orca-spike-48c0745f1c8d-watch-to-phone -- acking again without re-processing",
+          "09-23 19:41:23.178 13501 13501 I OrcaSpikeListener: PONG accepted for delivery to 301e868c requestId=orca-spike-48c0745f1c8d-watch-to-phone",
+          "09-23 19:41:24.186 13501 13544 I OrcaSpikeListener: native listener woken: PING received, requestId=orca-spike-48c0745f1c8d-background, source=301e868c",
+          "09-23 19:41:24.190 13501 13501 I OrcaSpikeListener: PONG accepted for delivery to 301e868c requestId=orca-spike-48c0745f1c8d-background",
+          "09-23 19:41:25.696 13601 13619 I OrcaSpikeListener: native listener woken: PING received, requestId=orca-spike-48c0745f1c8d-crash-cold, source=301e868c",
+          "09-23 19:41:25.772 13601 13601 I OrcaSpikeListener: PONG accepted for delivery to 301e868c requestId=orca-spike-48c0745f1c8d-crash-cold",
+          "09-23 19:41:27.034 13601 13619 I OrcaSpikeListener: native listener woken: PING received, requestId=orca-spike-48c0745f1c8d-doze, source=301e868c",
+          "09-23 19:41:27.038 13601 13601 I OrcaSpikeListener: PONG accepted for delivery to 301e868c requestId=orca-spike-48c0745f1c8d-doze",
+          "09-23 19:41:28.528 13711 13729 I OrcaSpikeListener: native listener woken: PING received, requestId=orca-spike-48c0745f1c8d-force-stop, source=301e868c",
+          "09-23 19:41:28.623 13711 13711 I OrcaSpikeListener: PONG accepted for delivery to 301e868c requestId=orca-spike-48c0745f1c8d-force-stop",
+          "09-23 19:41:29.277 13711 13711 I OrcaSpike: LOCAL_NODE id=83e728ef name=orca_spike_phone31_codex pid=13711",
+          "09-23 19:41:29.733 13711 13729 I OrcaSpikeListener: native listener woken: PING received, requestId=orca-spike-48c0745f1c8d-explicit-relaunch, source=301e868c",
+          "09-23 19:41:29.751 13711 13711 I OrcaSpikeListener: PONG accepted for delivery to 301e868c requestId=orca-spike-48c0745f1c8d-explicit-relaunch",
+          "09-23 19:41:41.269 13711 13769 I OrcaSpikeListener: native listener woken: PING received, requestId=orca-spike-48c0745f1c8d-handled-path-restored, source=301e868c",
+          "09-23 19:41:41.270 13711 13711 I OrcaSpikeListener: PONG accepted for delivery to 301e868c requestId=orca-spike-48c0745f1c8d-handled-path-restored"
+        ],
+        "watch": [
+          "09-23 19:41:21.172  2995  3013 I OrcaSpikeListener: native listener woken: PING received, requestId=orca-spike-48c0745f1c8d-phone-to-watch, source=83e728ef",
+          "09-23 19:41:21.203  2995  2995 I OrcaSpikeListener: PONG accepted for delivery to 83e728ef requestId=orca-spike-48c0745f1c8d-phone-to-watch",
+          "09-23 19:41:22.298  2995  2995 I OrcaSpike: LOCAL_NODE id=301e868c name=orca_spike_wear4_codex pid=2995",
+          "09-23 19:41:22.544  2995  2995 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-48c0745f1c8d-watch-to-phone peer=83e728ef",
+          "09-23 19:41:22.575  2995  2995 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-48c0745f1c8d-watch-to-phone peer=83e728ef correlated=true",
+          "09-23 19:41:23.227  2995  2995 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-48c0745f1c8d-distinct-id peer=83e728ef",
+          "09-23 19:41:23.282  2995  2995 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-48c0745f1c8d-distinct-id peer=83e728ef correlated=true",
+          "09-23 19:41:23.842  2995  2995 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-48c0745f1c8d-watch-to-phone peer=83e728ef",
+          "09-23 19:41:23.857  2995  2995 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-48c0745f1c8d-watch-to-phone peer=83e728ef correlated=true",
+          "09-23 19:41:24.848  2995  2995 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-48c0745f1c8d-background peer=83e728ef",
+          "09-23 19:41:24.868  2995  2995 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-48c0745f1c8d-background peer=83e728ef correlated=true",
+          "09-23 19:41:26.123  2995  2995 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-48c0745f1c8d-crash-cold peer=83e728ef",
+          "09-23 19:41:26.447  2995  2995 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-48c0745f1c8d-crash-cold peer=83e728ef correlated=true",
+          "09-23 19:41:27.701  2995  2995 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-48c0745f1c8d-doze peer=83e728ef",
+          "09-23 19:41:27.715  2995  2995 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-48c0745f1c8d-doze peer=83e728ef correlated=true",
+          "09-23 19:41:28.974  2995  2995 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-48c0745f1c8d-force-stop peer=83e728ef",
+          "09-23 19:41:29.298  2995  2995 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-48c0745f1c8d-force-stop peer=83e728ef correlated=true",
+          "09-23 19:41:30.391  2995  2995 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-48c0745f1c8d-explicit-relaunch peer=83e728ef",
+          "09-23 19:41:30.417  2995  2995 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-48c0745f1c8d-explicit-relaunch peer=83e728ef correlated=true",
+          "09-23 19:41:31.114  2995  2995 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-48c0745f1c8d-unhandled-path peer=83e728ef",
+          "09-23 19:41:41.113  2995  2995 W OrcaSpike: ACK_TIMEOUT requestId=orca-spike-48c0745f1c8d-unhandled-path peer=83e728ef",
+          "09-23 19:41:41.928  2995  2995 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-48c0745f1c8d-handled-path-restored peer=83e728ef",
+          "09-23 19:41:41.948  2995  2995 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-48c0745f1c8d-handled-path-restored peer=83e728ef correlated=true"
+        ]
+      },
+      "counts": {
+        "cases": 11,
+        "correlatedAcknowledgements": 10,
+        "freshReceiverChecks": 10,
+        "explicitAckTimeouts": 1
+      },
+      "stateExcerpts": {
+        "deviceIdle": ["mState=IDLE mLightState=OVERRIDE"],
+        "packageState": [
+          "User 0: ceDataInode=140552 installed=true hidden=false suspended=false distractionFlags=0 stopped=false notLaunched=false enabled=0 instant=false virtual=false",
+          "User 0: ceDataInode=140552 installed=true hidden=false suspended=false distractionFlags=0 stopped=true notLaunched=false enabled=0 instant=false virtual=false",
+          "User 0: ceDataInode=140552 installed=true hidden=false suspended=false distractionFlags=0 stopped=false notLaunched=false enabled=0 instant=false virtual=false"
+        ],
+        "pidQueries": [
+          {
+            "exit": 0,
+            "stdout": "13501"
+          },
+          {
+            "exit": 1,
+            "stdout": ""
+          },
+          {
+            "exit": 0,
+            "stdout": "13601"
+          }
+        ]
+      }
+    },
+    "headless": {
+      "command": "python verify_transport.py --adb adb --phone emulator-5554 --watch emulator-5556 --mode headless --output build/codex-run/headless-final",
+      "exitCode": 0,
+      "stateChecks": {
+        "crashIssued": true,
+        "absentPidObserved": true,
+        "idleStateObserved": true,
+        "stoppedFlagObserved": true
+      },
+      "results": [
+        {
+          "case": "watch-to-phone",
+          "requestId": "orca-spike-1a903df7f839-watch-to-phone",
+          "outcome": "acknowledged",
+          "peer": "83e728ef",
+          "receiverEvidence": true
+        },
+        {
+          "case": "distinct-id",
+          "requestId": "orca-spike-1a903df7f839-distinct-id",
+          "outcome": "acknowledged",
+          "peer": "83e728ef",
+          "receiverEvidence": true
+        },
+        {
+          "case": "nonadjacent-replay",
+          "requestId": "orca-spike-1a903df7f839-watch-to-phone",
+          "outcome": "acknowledged",
+          "peer": "83e728ef",
+          "receiverEvidence": true
+        },
+        {
+          "case": "background",
+          "requestId": "orca-spike-1a903df7f839-background",
+          "outcome": "acknowledged",
+          "peer": "83e728ef",
+          "receiverEvidence": true
+        },
+        {
+          "case": "crash-cold",
+          "requestId": "orca-spike-1a903df7f839-crash-cold",
+          "outcome": "acknowledged",
+          "peer": "83e728ef",
+          "receiverEvidence": true,
+          "previousPid": "13854",
+          "newPid": "14014",
+          "packageStopped": false
+        },
+        {
+          "case": "doze",
+          "requestId": "orca-spike-1a903df7f839-doze",
+          "outcome": "acknowledged",
+          "peer": "83e728ef",
+          "receiverEvidence": true
+        },
+        {
+          "case": "force-stop",
+          "requestId": "orca-spike-1a903df7f839-force-stop",
+          "outcome": "acknowledged",
+          "peer": "83e728ef",
+          "receiverEvidence": true,
+          "packageStoppedBefore": true,
+          "packageStoppedAfter": false
+        },
+        {
+          "case": "explicit-relaunch",
+          "requestId": "orca-spike-1a903df7f839-explicit-relaunch",
+          "outcome": "acknowledged",
+          "peer": "83e728ef",
+          "receiverEvidence": true
+        },
+        {
+          "case": "unhandled-path",
+          "requestId": "orca-spike-1a903df7f839-unhandled-path",
+          "outcome": "ack-timeout",
+          "peer": null
+        },
+        {
+          "case": "handled-path-restored",
+          "requestId": "orca-spike-1a903df7f839-handled-path-restored",
+          "outcome": "acknowledged",
+          "peer": "83e728ef",
+          "receiverEvidence": true
+        }
+      ],
+      "logExcerpts": {
+        "phone": [
+          "09-23 19:42:59.271 13854 13923 I OrcaSpikeHeadless: NATIVE_RECEIVE requestId=orca-spike-1a903df7f839-watch-to-phone source=301e868c pid=13854",
+          "09-23 19:42:59.283 13854 13911 I ReactNativeJS: OrcaSpikeJS HEADLESS_ENTER requestId=orca-spike-1a903df7f839-watch-to-phone source=301e868c",
+          "09-23 19:42:59.287 13854 13915 I OrcaSpikeHeadless: JS_REPLY requestId=orca-spike-1a903df7f839-watch-to-phone source=301e868c pid=13854",
+          "09-23 19:42:59.325 13854 13911 I ReactNativeJS: OrcaSpikeJS HEADLESS_COMPLETE requestId=orca-spike-1a903df7f839-watch-to-phone",
+          "09-23 19:43:00.009 13854 13923 I OrcaSpikeHeadless: NATIVE_RECEIVE requestId=orca-spike-1a903df7f839-distinct-id source=301e868c pid=13854",
+          "09-23 19:43:00.011 13854 13911 I ReactNativeJS: OrcaSpikeJS HEADLESS_ENTER requestId=orca-spike-1a903df7f839-distinct-id source=301e868c",
+          "09-23 19:43:00.011 13854 13915 I OrcaSpikeHeadless: JS_REPLY requestId=orca-spike-1a903df7f839-distinct-id source=301e868c pid=13854",
+          "09-23 19:43:00.014 13854 13911 I ReactNativeJS: OrcaSpikeJS HEADLESS_COMPLETE requestId=orca-spike-1a903df7f839-distinct-id",
+          "09-23 19:43:00.514 13854 13923 I OrcaSpikeHeadless: NATIVE_RECEIVE requestId=orca-spike-1a903df7f839-watch-to-phone source=301e868c pid=13854",
+          "09-23 19:43:00.515 13854 13911 I ReactNativeJS: OrcaSpikeJS HEADLESS_ENTER requestId=orca-spike-1a903df7f839-watch-to-phone source=301e868c",
+          "09-23 19:43:00.516 13854 13915 I OrcaSpikeHeadless: JS_REPLY requestId=orca-spike-1a903df7f839-watch-to-phone source=301e868c pid=13854",
+          "09-23 19:43:00.518 13854 13911 I ReactNativeJS: OrcaSpikeJS HEADLESS_COMPLETE requestId=orca-spike-1a903df7f839-watch-to-phone",
+          "09-23 19:43:01.154 13854 13923 I OrcaSpikeHeadless: NATIVE_RECEIVE requestId=orca-spike-1a903df7f839-background source=301e868c pid=13854",
+          "09-23 19:43:01.158 13854 13911 I ReactNativeJS: OrcaSpikeJS HEADLESS_ENTER requestId=orca-spike-1a903df7f839-background source=301e868c",
+          "09-23 19:43:01.159 13854 13915 I OrcaSpikeHeadless: JS_REPLY requestId=orca-spike-1a903df7f839-background source=301e868c pid=13854",
+          "09-23 19:43:01.162 13854 13911 I ReactNativeJS: OrcaSpikeJS HEADLESS_COMPLETE requestId=orca-spike-1a903df7f839-background",
+          "09-23 19:43:04.752 14014 14030 I OrcaSpikeHeadless: NATIVE_RECEIVE requestId=orca-spike-1a903df7f839-crash-cold source=301e868c pid=14014",
+          "09-23 19:43:04.942 14014 14034 I ReactNativeJS: OrcaSpikeJS HEADLESS_ENTER requestId=orca-spike-1a903df7f839-crash-cold source=301e868c",
+          "09-23 19:43:04.943 14014 14038 I OrcaSpikeHeadless: JS_REPLY requestId=orca-spike-1a903df7f839-crash-cold source=301e868c pid=14014",
+          "09-23 19:43:04.965 14014 14034 I ReactNativeJS: OrcaSpikeJS HEADLESS_COMPLETE requestId=orca-spike-1a903df7f839-crash-cold",
+          "09-23 19:43:06.043 14014 14030 I OrcaSpikeHeadless: NATIVE_RECEIVE requestId=orca-spike-1a903df7f839-doze source=301e868c pid=14014",
+          "09-23 19:43:06.047 14014 14034 I ReactNativeJS: OrcaSpikeJS HEADLESS_ENTER requestId=orca-spike-1a903df7f839-doze source=301e868c",
+          "09-23 19:43:06.049 14014 14038 I OrcaSpikeHeadless: JS_REPLY requestId=orca-spike-1a903df7f839-doze source=301e868c pid=14014",
+          "09-23 19:43:06.052 14014 14034 I ReactNativeJS: OrcaSpikeJS HEADLESS_COMPLETE requestId=orca-spike-1a903df7f839-doze",
+          "09-23 19:43:07.251 14123 14140 I OrcaSpikeHeadless: NATIVE_RECEIVE requestId=orca-spike-1a903df7f839-force-stop source=301e868c pid=14123",
+          "09-23 19:43:07.426 14123 14144 I ReactNativeJS: OrcaSpikeJS HEADLESS_ENTER requestId=orca-spike-1a903df7f839-force-stop source=301e868c",
+          "09-23 19:43:07.427 14123 14148 I OrcaSpikeHeadless: JS_REPLY requestId=orca-spike-1a903df7f839-force-stop source=301e868c pid=14123",
+          "09-23 19:43:07.452 14123 14144 I ReactNativeJS: OrcaSpikeJS HEADLESS_COMPLETE requestId=orca-spike-1a903df7f839-force-stop",
+          "09-23 19:43:08.439 14123 14140 I OrcaSpikeHeadless: NATIVE_RECEIVE requestId=orca-spike-1a903df7f839-explicit-relaunch source=301e868c pid=14123",
+          "09-23 19:43:08.442 14123 14144 I ReactNativeJS: OrcaSpikeJS HEADLESS_ENTER requestId=orca-spike-1a903df7f839-explicit-relaunch source=301e868c",
+          "09-23 19:43:08.443 14123 14148 I OrcaSpikeHeadless: JS_REPLY requestId=orca-spike-1a903df7f839-explicit-relaunch source=301e868c pid=14123",
+          "09-23 19:43:08.445 14123 14144 I ReactNativeJS: OrcaSpikeJS HEADLESS_COMPLETE requestId=orca-spike-1a903df7f839-explicit-relaunch",
+          "09-23 19:43:19.701 14123 14191 I OrcaSpikeHeadless: NATIVE_RECEIVE requestId=orca-spike-1a903df7f839-handled-path-restored source=301e868c pid=14123",
+          "09-23 19:43:19.702 14123 14144 I ReactNativeJS: OrcaSpikeJS HEADLESS_ENTER requestId=orca-spike-1a903df7f839-handled-path-restored source=301e868c",
+          "09-23 19:43:19.703 14123 14148 I OrcaSpikeHeadless: JS_REPLY requestId=orca-spike-1a903df7f839-handled-path-restored source=301e868c pid=14123",
+          "09-23 19:43:19.705 14123 14144 I ReactNativeJS: OrcaSpikeJS HEADLESS_COMPLETE requestId=orca-spike-1a903df7f839-handled-path-restored"
+        ],
+        "watch": [
+          "09-23 19:42:59.804  2995  2995 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-1a903df7f839-watch-to-phone peer=83e728ef",
+          "09-23 19:43:00.003  2995  2995 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-1a903df7f839-watch-to-phone peer=83e728ef correlated=true",
+          "09-23 19:43:00.679  2995  2995 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-1a903df7f839-distinct-id peer=83e728ef",
+          "09-23 19:43:00.690  2995  2995 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-1a903df7f839-distinct-id peer=83e728ef correlated=true",
+          "09-23 19:43:01.182  2995  2995 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-1a903df7f839-watch-to-phone peer=83e728ef",
+          "09-23 19:43:01.195  2995  2995 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-1a903df7f839-watch-to-phone peer=83e728ef correlated=true",
+          "09-23 19:43:01.820  2995  2995 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-1a903df7f839-background peer=83e728ef",
+          "09-23 19:43:01.839  2995  2995 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-1a903df7f839-background peer=83e728ef correlated=true",
+          "09-23 19:43:05.288  2995  2995 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-1a903df7f839-crash-cold peer=83e728ef",
+          "09-23 19:43:05.640  2995  2995 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-1a903df7f839-crash-cold peer=83e728ef correlated=true",
+          "09-23 19:43:06.710  2995  2995 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-1a903df7f839-doze peer=83e728ef",
+          "09-23 19:43:06.728  2995  2995 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-1a903df7f839-doze peer=83e728ef correlated=true",
+          "09-23 19:43:07.823  2995  2995 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-1a903df7f839-force-stop peer=83e728ef",
+          "09-23 19:43:08.129  2995  2995 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-1a903df7f839-force-stop peer=83e728ef correlated=true",
+          "09-23 19:43:09.106  2995  2995 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-1a903df7f839-explicit-relaunch peer=83e728ef",
+          "09-23 19:43:09.123  2995  2995 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-1a903df7f839-explicit-relaunch peer=83e728ef correlated=true",
+          "09-23 19:43:09.741  2995  2995 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-1a903df7f839-unhandled-path peer=83e728ef",
+          "09-23 19:43:19.740  2995  2995 W OrcaSpike: ACK_TIMEOUT requestId=orca-spike-1a903df7f839-unhandled-path peer=83e728ef",
+          "09-23 19:43:20.359  2995  2995 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-1a903df7f839-handled-path-restored peer=83e728ef",
+          "09-23 19:43:20.381  2995  2995 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-1a903df7f839-handled-path-restored peer=83e728ef correlated=true"
+        ]
+      },
+      "counts": {
+        "cases": 10,
+        "correlatedAcknowledgements": 9,
+        "freshReceiverChecks": 9,
+        "explicitAckTimeouts": 1
+      },
+      "stateExcerpts": {
+        "deviceIdle": ["mState=IDLE mLightState=OVERRIDE"],
+        "packageState": [
+          "User 0: ceDataInode=140552 installed=true hidden=false suspended=false distractionFlags=0 stopped=false notLaunched=false enabled=0 instant=false virtual=false",
+          "User 0: ceDataInode=140552 installed=true hidden=false suspended=false distractionFlags=0 stopped=true notLaunched=false enabled=0 instant=false virtual=false",
+          "User 0: ceDataInode=140552 installed=true hidden=false suspended=false distractionFlags=0 stopped=false notLaunched=false enabled=0 instant=false virtual=false"
+        ],
+        "pidQueries": [
+          {
+            "exit": 0,
+            "stdout": "13854"
+          },
+          {
+            "exit": 0,
+            "stdout": "13854"
+          },
+          {
+            "exit": 1,
+            "stdout": ""
+          },
+          {
+            "exit": 0,
+            "stdout": "14014"
+          }
+        ]
+      }
+    }
+  },
+  "reconnect": {
+    "method": "adb emu kill only isolated watch; restart same AVD with saved data; fresh phone request after sys.boot_completed=1",
+    "phoneLogExcerpts": [
+      "09-23 19:36:49.793 12913 12913 W OrcaSpike: SEND_FAILED requestId=orca-spike-disconnected-20260923 peer=301e868c",
+      "09-23 19:36:49.793 12913 12913 W OrcaSpike: com.google.android.gms.common.api.ApiException: 4000: TARGET_NODE_NOT_CONNECTED",
+      "09-23 19:37:30.269 12913 12913 I OrcaSpike: CONNECTED_NODES ids= count=0",
+      "09-23 19:38:05.716 12913 12913 I OrcaSpike: CONNECTED_NODES ids=301e868c count=1",
+      "09-23 19:38:05.721 12913 12913 I OrcaSpike: SEND_ACCEPTED requestId=orca-spike-reconnect-ready-20260923 peer=301e868c",
+      "09-23 19:38:05.938 12913 12913 I OrcaSpike: PONG_RECEIVED requestId=orca-spike-reconnect-ready-20260923 peer=301e868c correlated=true"
+    ],
+    "watchLogExcerpts": [
+      "09-23 19:38:06.584  2641  2659 I OrcaSpikeListener: native listener woken: PING received, requestId=orca-spike-reconnect-ready-20260923, source=83e728ef",
+      "09-23 19:38:06.604  2641  2641 I OrcaSpikeListener: PONG accepted for delivery to 83e728ef requestId=orca-spike-reconnect-ready-20260923"
+    ]
+  },
+  "unitTests": {
+    "tests": "5",
+    "failures": "0",
+    "errors": "0",
+    "skipped": "0"
+  },
+  "builds": [
+    {
+      "command": "gradle :phone:assembleDebug :watch:assembleDebug :watch:testDebugUnitTest",
+      "exitCode": 0,
+      "log": "build/codex-run/native-final-build.log"
+    },
+    {
+      "command": "pnpm exec expo prebuild --platform android --no-install --clean",
+      "exitCode": 0,
+      "log": "build/codex-run/headless-clean-prebuild.log"
+    },
+    {
+      "command": "./android/gradlew.bat -p android -I ../short-path-build.gradle :app:assembleRelease -PreactNativeArchitectures=x86_64",
+      "exitCode": 0,
+      "log": "build/codex-run/headless-clean-build.log"
+    }
+  ],
+  "limitations": [
+    "Force-stop delivery is image-specific; not a general availability guarantee.",
+    "Native replay detection is process-local and bounded to 32 IDs; headless replay invokes JavaScript again.",
+    "No durable inbox, production mutation, encrypted binding, or runtime socket exercised.",
+    "No physical Samsung, other phone API, battery/latency budget, release/Play signing, or multi-node isolation tested.",
+    "Headless uses Expo-generated minSdk 24 and targetSdk 36, exercised only on API 31; it is not the product manifest contract.",
+    "Unhandled-path timeout is not evidence for an offline durable queue."
+  ],
+  "extractionSmoke": {
+    "scope": "Copy only headless source into build/extraction-smoke/headless, excluding generated android and dependencies",
+    "installCommand": "pnpm install --offline --frozen-lockfile --virtual-store-dir <short-temporary-store>",
+    "installExitCode": 0,
+    "autolinkCommand": "pnpm exec expo-modules-autolinking resolve --platform android --json",
+    "autolinkExitCode": 0,
+    "resolvedModule": "expo.modules.companionprobe.CompanionProbeModule",
+    "resolvedSource": "modules/companion-probe/android inside isolated copy",
+    "compiledCopiedTree": false
+  }
+}

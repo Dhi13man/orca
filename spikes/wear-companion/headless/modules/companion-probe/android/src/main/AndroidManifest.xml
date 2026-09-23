@@ -1,0 +1,12 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <application>
+        <service android:name="expo.modules.companionprobe.CompanionListenerService" android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data android:scheme="wear" android:host="*" android:pathPrefix="/orca-spike/ping" />
+            </intent-filter>
+        </service>
+        <service android:name="expo.modules.companionprobe.CompanionHeadlessService" android:exported="false" />
+    </application>
+</manifest>

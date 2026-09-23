@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "Orca Headless Spike",
+    "slug": "orca-companion-headless-spike",
+    "version": "0.0.1",
+    "android": {
+      "package": "com.orcaspike.companion",
+      "permissions": ["android.permission.WAKE_LOCK"],
+      "allowBackup": false
+    }
+  }
+}

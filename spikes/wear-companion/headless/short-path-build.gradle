@@ -1,0 +1,10 @@
+// Windows CreateProcess cannot launch prefab scripts under long pnpm package paths.
+if (System.getProperty('os.name').toLowerCase(java.util.Locale.ROOT).contains('windows')) {
+    gradle.beforeProject { target ->
+        target.plugins.withId('com.android.library') {
+            def nativeRoot = new File(System.getProperty('java.io.tmpdir'), 'orca-companion-headless-native/' + target.name)
+            target.layout.buildDirectory.set(new File(nativeRoot, 'build'))
+            target.android.externalNativeBuild.cmake.buildStagingDirectory = new File(nativeRoot, 'cxx')
+        }
+    }
+}

@@ -2,6 +2,7 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 
 android {
+    sourceSets.main.java.srcDir '../native/src/main/java'
     namespace "com.orcaspike.companion"
     compileSdk 36
     buildToolsVersion "36.0.0"
@@ -16,7 +17,7 @@ android {
 
     signingConfigs {
         debug {
-            storeFile file("debug.keystore")
+            storeFile rootProject.file("build/debug.keystore")
             storePassword "android"
             keyAlias "androiddebugkey"
             keyPassword "android"
