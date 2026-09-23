@@ -85,6 +85,10 @@ internal class WearBindingStore(context: Context) : SQLiteOpenHelper(
         }
     }
 
+    fun <T> withBinding(id: String, operation: (StoredWearBinding) -> T): T = transaction {
+        operation(find(id) ?: error("wear_binding_missing"))
+    }
+
     fun activate(id: String, peerNodeId: String) = transaction { db ->
         requireUuid(id)
         val changed = db.update("bindings", ContentValues().apply { put("state", "active") },

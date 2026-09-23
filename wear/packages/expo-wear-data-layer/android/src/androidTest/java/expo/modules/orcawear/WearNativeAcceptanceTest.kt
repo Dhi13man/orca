@@ -11,6 +11,26 @@ import java.util.UUID
 import javax.crypto.AEADBadTagException
 
 class WearNativeAcceptanceTest {
+    @Test fun repeatedEnrollmentReleasesBackendOperations() {
+        val phoneId = UUID.randomUUID().toString()
+        val watchId = UUID.randomUUID().toString()
+        try {
+            val phoneKey = WearKeyStore.createEnrollmentKey(phoneId)
+            val watchKey = WearKeyStore.createEnrollmentKey(watchId)
+            val transcript = WearBootstrapCrypto.transcript(
+                EnrollmentHello(phoneId, phoneKey, ByteArray(32) { 3 }),
+                EnrollmentHello(watchId, watchKey, ByteArray(32) { 4 }))
+            repeat(20) {
+                val phone = WearKeyStore.deriveBootstrap(phoneId, watchKey, transcript)
+                val watch = WearKeyStore.deriveBootstrap(watchId, phoneKey, transcript)
+                assertArrayEquals(phone.encoded, watch.encoded)
+            }
+        } finally {
+            WearKeyStore.deleteEnrollmentKey(phoneId)
+            WearKeyStore.deleteEnrollmentKey(watchId)
+        }
+    }
+
     @Test fun androidJsonParserMatchesAllSharedWireVectors() {
         val context = InstrumentationRegistry.getInstrumentation().context
         val vectors = JSONArray(context.assets.open("action-vectors.json").bufferedReader().use { it.readText() })

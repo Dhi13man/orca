@@ -49,6 +49,7 @@ internal class WearEnrollmentSession(
         val bytes = if (role == CompanionRole.PHONE) WearBootstrapCrypto.transcript(hello, snapshot)
             else WearBootstrapCrypto.transcript(snapshot, hello)
         val derived = WearKeyStore.deriveBootstrap(attemptId, snapshot.publicKey, bytes)
+        checkLive(nodeId)
         peer = snapshot
         transcript = bytes
         bootstrap = derived
@@ -110,6 +111,7 @@ internal class WearEnrollmentSession(
         check(!persistenceAttempted) { "wear_enrollment_persistence_unknown" }
         val material = bindingMaterial ?: error("wear_enrollment_binding_missing")
         val wrapped = WearKeyStore.wrapBindingKey(material.bindingId, material.key)
+        checkLive(peerNodeId)
         persistenceAttempted = true
         try {
             persist(material.bindingId, requireNotNull(peer).installId, wrapped)

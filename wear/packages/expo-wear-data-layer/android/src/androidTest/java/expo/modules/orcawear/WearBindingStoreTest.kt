@@ -9,9 +9,39 @@ import java.nio.ByteBuffer
 import java.util.UUID
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 class WearBindingStoreTest {
-    @Test fun persistsIdentityAndNonceReservationsAcrossReopenAndConcurrentConnections() = withDatabase { context ->
+    @Test fun serializesBindingAdmissionWithRevocationAcrossConnections() = withWearTestDatabase { context ->
+        WearBindingStore(context).use { store ->
+            val id = UUID.randomUUID().toString()
+            store.insertPending(id, CompanionRole.PHONE, UUID.randomUUID().toString(), "watch", ByteArray(60))
+            store.activate(id, "watch")
+            val started = CountDownLatch(1)
+            val executor = Executors.newSingleThreadExecutor()
+            try {
+                lateinit var revocation: java.util.concurrent.Future<*>
+                store.withBinding(id) { binding ->
+                    assertEquals("active", binding.state)
+                    revocation = executor.submit {
+                        WearBindingStore(context).use { concurrent ->
+                            started.countDown()
+                            concurrent.revoke(id, 0)
+                        }
+                    }
+                    assertTrue(started.await(5, TimeUnit.SECONDS))
+                    assertThrows(TimeoutException::class.java) { revocation.get(100, TimeUnit.MILLISECONDS) }
+                    assertEquals("active", store.find(id)!!.state)
+                }
+                revocation.get(5, TimeUnit.SECONDS)
+                store.withBinding(id) { assertEquals("revoked", it.state) }
+            } finally { executor.shutdownNow() }
+        }
+    }
+
+    @Test fun persistsIdentityAndNonceReservationsAcrossReopenAndConcurrentConnections() = withWearTestDatabase { context ->
         val binding = UUID.randomUUID().toString()
         val first = WearBindingStore(context)
         val installId = first.installId()
@@ -32,7 +62,7 @@ class WearBindingStoreTest {
         }
     }
 
-    @Test fun refusesPeerChangesAndPreservesRevocationDeadline() = withDatabase { context ->
+    @Test fun refusesPeerChangesAndPreservesRevocationDeadline() = withWearTestDatabase { context ->
         WearBindingStore(context).use { store ->
             val id = UUID.randomUUID().toString()
             store.insertPending(id, CompanionRole.WATCH, UUID.randomUUID().toString(), "phone", ByteArray(60))
@@ -51,7 +81,9 @@ class WearBindingStoreTest {
         }
     }
 
-    private fun withDatabase(test: (ContextWrapper) -> Unit) {
+}
+
+internal fun withWearTestDatabase(test: (ContextWrapper) -> Unit) {
         val base = InstrumentationRegistry.getInstrumentation().context
         val directory = File(base.noBackupFilesDir, "binding-test-" + UUID.randomUUID())
         check(directory.mkdir())
@@ -59,5 +91,4 @@ class WearBindingStoreTest {
             override fun getNoBackupFilesDir() = directory
         }
         try { test(context) } finally { check(directory.deleteRecursively()) }
-    }
 }
