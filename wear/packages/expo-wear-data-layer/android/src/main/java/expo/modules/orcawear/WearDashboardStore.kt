@@ -9,7 +9,8 @@ import java.io.File
 internal data class StoredWearDashboard(val metadata: WearEnvelopeMetadata, val plaintext: ByteArray)
 internal data class WearPublicationIntent(val bindingId: String, val revision: Long,
     val path: String, val expiresAt: Long, val state: String)
-internal data class PublishedWearDashboard(val revision: Long, val path: String, val expiresAt: Long)
+internal data class PublishedWearDashboard(val publisherEpoch: String, val revision: Long,
+    val path: String, val expiresAt: Long)
 
 internal class WearDashboardStore(context: Context) : SQLiteOpenHelper(
     context, File(context.noBackupFilesDir, "orca-wear-dashboard.db").absolutePath, null, 1
@@ -39,6 +40,7 @@ internal class WearDashboardStore(context: Context) : SQLiteOpenHelper(
         )""")
         db.execSQL("""CREATE TABLE published_dashboard (
             binding_id TEXT PRIMARY KEY NOT NULL,
+            publisher_epoch TEXT NOT NULL,
             revision INTEGER NOT NULL,
             path TEXT NOT NULL,
             expires_at INTEGER NOT NULL
@@ -111,8 +113,9 @@ internal class WearDashboardStore(context: Context) : SQLiteOpenHelper(
         }
 
     fun publishedDashboard(bindingId: String): PublishedWearDashboard? = readableDatabase.rawQuery(
-        "SELECT revision,path,expires_at FROM published_dashboard WHERE binding_id=?", arrayOf(bindingId)
-    ).use { if (it.moveToFirst()) PublishedWearDashboard(it.getLong(0), it.getString(1), it.getLong(2)) else null }
+        "SELECT publisher_epoch,revision,path,expires_at FROM published_dashboard WHERE binding_id=?", arrayOf(bindingId)
+    ).use { if (it.moveToFirst()) PublishedWearDashboard(it.getString(0), it.getLong(1),
+        it.getString(2), it.getLong(3)) else null }
 
     fun publishedRevision(bindingId: String): Long = publishedDashboard(bindingId)?.revision ?: 0L
 
@@ -125,9 +128,10 @@ internal class WearDashboardStore(context: Context) : SQLiteOpenHelper(
         db.beginTransaction()
         return try {
             val previous = db.rawQuery(
-                "SELECT revision,path,expires_at FROM published_dashboard WHERE binding_id=?",
+                "SELECT publisher_epoch,revision,path,expires_at FROM published_dashboard WHERE binding_id=?",
                 arrayOf(metadata.bindingId)
-            ).use { if (it.moveToFirst()) PublishedWearDashboard(it.getLong(0), it.getString(1), it.getLong(2)) else null }
+            ).use { if (it.moveToFirst()) PublishedWearDashboard(it.getString(0), it.getLong(1),
+                it.getString(2), it.getLong(3)) else null }
             val oldPath = if (previous != null && previous.revision < metadata.revision) previous.path else null
             if (previous == null || previous.revision < metadata.revision) {
                 if (oldPath != null) {
@@ -137,6 +141,7 @@ internal class WearDashboardStore(context: Context) : SQLiteOpenHelper(
                 }
                 db.insertWithOnConflict("published_dashboard", null, ContentValues().apply {
                     put("binding_id", metadata.bindingId)
+                    put("publisher_epoch", metadata.publisherEpoch)
                     put("revision", metadata.revision)
                     put("path", metadata.path)
                     put("expires_at", metadata.expiresAt)

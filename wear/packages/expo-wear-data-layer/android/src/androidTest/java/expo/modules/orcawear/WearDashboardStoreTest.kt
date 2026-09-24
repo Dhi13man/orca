@@ -30,6 +30,20 @@ class WearDashboardStoreTest {
         }
     }
 
+    @Test fun persistsPublisherEpochOfPublishedRevisionAcrossRestart() = withWearTestDatabase { context ->
+        val binding = UUID.randomUUID().toString()
+        val epoch = UUID.randomUUID().toString()
+        val metadata = WearEnvelopeMetadata(binding, WearEnvelopeKind.DASHBOARD, epoch, 1, "dashboard", 2000)
+        WearDashboardStore(context).use { store ->
+            assertEquals(1L, store.reserveRevision(binding))
+            assertNull(store.markPublished(metadata))
+        }
+        WearDashboardStore(context).use { reopened ->
+            assertEquals(PublishedWearDashboard(epoch, 1, metadata.path, 2000),
+                reopened.publishedDashboard(binding))
+        }
+    }
+
     @Test fun rejectsNonDashboardAndExpiredRows() = withWearTestDatabase { context ->
         val binding = UUID.randomUUID().toString()
         val metadata = WearEnvelopeMetadata(binding, WearEnvelopeKind.DASHBOARD,

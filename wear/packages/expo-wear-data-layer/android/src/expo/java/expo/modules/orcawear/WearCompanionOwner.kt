@@ -24,6 +24,7 @@ internal class WearCompanionOwner private constructor(private val context: Conte
     private val queue = WearWorkQueue()
     private val bindings = WearBindingStore(context)
     private val dashboards = WearDashboardStore(context)
+    private val actions = WearActionInbox(context)
     private val observers = CopyOnWriteArraySet<(Map<String, Any>) -> Unit>()
     private val dashboardObservers = CopyOnWriteArraySet<(String) -> Unit>()
     private val publicationCompletions = Executors.newSingleThreadExecutor {
@@ -315,14 +316,36 @@ internal class WearCompanionOwner private constructor(private val context: Conte
 
     fun receive(nodeId: String, path: String, bytes: ByteArray) {
         if (bytes.size > 32768 || nodeId.toByteArray(Charsets.UTF_8).size > 256 || path.length > 384) return
+        if (role == CompanionRole.PHONE && ACTION_PATH.matches(path)) {
+            if (bytes.size > 8192) return
+            val owned = bytes.copyOf()
+            submit({}, false) { ingestAction(nodeId, path, owned, it) }
+            return
+        }
         val enrollmentMessage = path == WearEnrollmentWire.PATH
         if (enrollmentMessage && bytes.size > 329) return
-        if (!enrollmentMessage && !path.matches(Regex("/orca/wear/v1/[0-9a-f-]{36}/acknowledgement"))) return
+        if (!enrollmentMessage && !ACKNOWLEDGEMENT_PATH.matches(path)) return
         val owned = bytes.copyOf()
         submitCurrent({}, false) {
             if (enrollmentMessage) enrollment.receive(nodeId, owned, it)
             else enrollment.receiveAcknowledgement(nodeId, path, owned, it)
         }
+    }
+
+    private fun ingestAction(nodeId: String, path: String, wire: ByteArray, ticket: WearWorkTicket) {
+        val opened = WearEnvelope(bindings).open(path, nodeId, wire, System.currentTimeMillis())
+        try {
+            bindings.withBinding(opened.metadata.bindingId) { binding ->
+                check(binding.state == "active" && binding.peerNodeId == nodeId) { "wear_binding_changed" }
+                val admitted = admitWearAction(opened.metadata, opened.plaintext,
+                    dashboards.publishedDashboard(opened.metadata.bindingId), System.currentTimeMillis())
+                    ?: return@withBinding
+                ticket.effect {
+                    actions.insert(opened.metadata.bindingId, opened.metadata.requestId, admitted.hash,
+                        admitted.expiresAt, wire, System.currentTimeMillis())
+                }
+            }
+        } finally { opened.plaintext.fill(0) }
     }
 
     private fun submitCurrent(completed: (Exception?) -> Unit, reportFailure: Boolean = true,
@@ -369,6 +392,8 @@ internal class WearCompanionOwner private constructor(private val context: Conte
 
     companion object {
         private val DASHBOARD_PATH = Regex("/orca/wear/v1/([0-9a-f-]{36})/dashboard/([1-9][0-9]{0,15})")
+        private val ACTION_PATH = Regex("/orca/wear/v1/[0-9a-f-]{36}/action")
+        private val ACKNOWLEDGEMENT_PATH = Regex("/orca/wear/v1/[0-9a-f-]{36}/acknowledgement")
         @Volatile private var instance: WearCompanionOwner? = null
         fun get(context: Context): WearCompanionOwner = instance ?: synchronized(this) {
             instance ?: WearCompanionOwner(context.applicationContext).also { instance = it }
