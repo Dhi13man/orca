@@ -1661,7 +1661,9 @@ the authenticated current relay owner principal and rejects a stale request
 before and after the host transcript read. The desktop's proved-channel check
 remains in place. Commit `01dcf5a24` passes 34 focused relay/provider tests,
 node typecheck, scoped lint/format, and relay bundles for Linux, macOS, Windows,
-and WSL; independent read-only review found no code defect. The tests check
-proof and handler admission separately, not one end-to-end dispatcher request.
+and WSL; independent read-only review found no code defect. Follow-up commit
+`1aeafd849` adds a dispatcher-level request test: an unproved primary is
+rejected, current attestation admits a host read, and a replaced primary
+generation is rejected. The focused test, node typecheck, lint, and format pass.
 This guard does not enable SSH sends or prove a live SSH transcript on a paired
 device.
