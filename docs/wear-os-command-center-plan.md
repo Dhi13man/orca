@@ -1125,3 +1125,16 @@ the unbound app; actual paired PAGE delivery and visible bound-agent state are
 unproved. Conversation reads, exact-target reply UI and structured/SSH sends,
 usage/notification background refresh, physical installation, and end-to-end
 acceptance remain open.
+
+The host now advertises a separate `wear.conversation-read.v1` capability and
+accepts only an authenticated mobile read of the exact current workspace,
+kind, tab, publication epoch, and snapshot version. It derives terminal
+transcript identity from that tab, refuses remote terminal fallback to local
+files, and reads structured history only under its separate negotiated
+capability. It rechecks the target after the read, returns at most 20 text
+messages under a 28-KiB body budget, and marks any clipped message. Six
+focused read tests, existing target tests, node/mobile typechecks, mobile
+negotiation tests, scoped lint/format, and read-only review pass. This is a
+host read primitive: phone action/PAGE transport and watch conversation UI are
+not wired, non-text blocks are outside this tail, and SSH transcript routing
+remains a named gap.

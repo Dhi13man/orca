@@ -4,6 +4,7 @@ import {
   SESSION_TABS_AUTHORITATIVE_INVENTORY_RUNTIME_CAPABILITY,
   STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY,
   WEAR_ACTION_TARGET_RUNTIME_CAPABILITY,
+  WEAR_CONVERSATION_READ_RUNTIME_CAPABILITY,
   WEAR_TERMINAL_SEND_RUNTIME_CAPABILITY
 } from '../../../src/shared/protocol-version'
 import type { RpcClient } from './rpc-client'
@@ -14,6 +15,7 @@ export type WearRuntimeReadCapabilities = {
   structuredAgents: boolean
   exactTargets: boolean
   terminalSend: boolean
+  conversationRead: boolean
 }
 
 export function startWearRuntimeReadCapabilitySession(
@@ -33,7 +35,8 @@ export function startWearRuntimeReadCapabilitySession(
       authoritativeInventory: false,
       structuredAgents: false,
       exactTargets: false,
-      terminalSend: false
+      terminalSend: false,
+      conversationRead: false
     })
   }
   const setUnavailable = (): void => {
@@ -81,6 +84,9 @@ export function startWearRuntimeReadCapabilitySession(
           : []),
         ...(hostCapabilities.includes(WEAR_TERMINAL_SEND_RUNTIME_CAPABILITY)
           ? [WEAR_TERMINAL_SEND_RUNTIME_CAPABILITY]
+          : []),
+        ...(hostCapabilities.includes(WEAR_CONVERSATION_READ_RUNTIME_CAPABILITY)
+          ? [WEAR_CONVERSATION_READ_RUNTIME_CAPABILITY]
           : [])
       ]
       const retryDeclaration = (): void => {
@@ -129,7 +135,8 @@ export function startWearRuntimeReadCapabilitySession(
               ),
               structuredAgents: requested.includes(STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY),
               exactTargets: requested.includes(WEAR_ACTION_TARGET_RUNTIME_CAPABILITY),
-              terminalSend: requested.includes(WEAR_TERMINAL_SEND_RUNTIME_CAPABILITY)
+              terminalSend: requested.includes(WEAR_TERMINAL_SEND_RUNTIME_CAPABILITY),
+              conversationRead: requested.includes(WEAR_CONVERSATION_READ_RUNTIME_CAPABILITY)
             })
           }, retryDeclaration)
       }
