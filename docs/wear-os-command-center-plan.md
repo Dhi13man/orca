@@ -1875,3 +1875,11 @@ authoritative effect receipt. Node 18 lacks the built-in SQLite used by the
 local durable ledger. SSH replies stay disabled pending a host-owned durable
 admission and guarded write; the unresolved Node 18 versus Node 24 storage
 choice must not be inferred from the existing local implementation.
+
+Current-source paired-emulator cold refresh repeated after the x86_64 phone
+install: phone `emulator-5556` was backgrounded to the launcher, `am kill`
+removed its PID, and the watch `emulator-5562` refresh started a new phone PID
+for `WearCompanionListenerService` while the launcher remained top-resumed.
+The watch's visible snapshot advanced from 3:54 to 3:57 AM. This is
+watch-initiated process-cold delivery on the test pair, not autonomous host
+notification delivery, physical-device operation, or a real agent reply.
