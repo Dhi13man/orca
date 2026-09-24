@@ -41,6 +41,12 @@ class ExpoWearDataLayerModule : Module() {
             observedOwner = null
         }
         Function("getState") { owner.snapshot() }
+        Function("isBackgroundRefreshActive") { runId: Int ->
+            WearDashboardRefreshJobService.isActive(runId)
+        }
+        Function("completeBackgroundRefresh") { runId: Int ->
+            WearDashboardRefreshJobService.complete(runId)
+        }
         AsyncFunction("discoverPeers") { promise: Promise ->
             val context = requireNotNull(appContext.reactContext)
             Wearable.getNodeClient(context).connectedNodes

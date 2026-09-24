@@ -10,7 +10,7 @@ import { readWearHostAgentInventory } from './wear-host-agent-inventory'
 import { projectWearAgentPage } from './wear-agent-page-projection'
 import { encodeWearConversationPage } from '@orca/wear-companion-contract/conversation-page'
 import { projectWearConversationPage } from './wear-conversation-page-projection'
-import { refreshWearDashboardOnce } from './wear-dashboard-publisher'
+import { refreshWearDashboardOnce } from './wear-dashboard-refresh'
 import { sendWearNotificationsPage } from './wear-notification-action'
 
 type HostOutcome =

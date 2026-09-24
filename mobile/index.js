@@ -5,4 +5,9 @@ AppRegistry.registerHeadlessTask('OrcaWearActionDrain', () => async () => {
   await drainWearActions()
 })
 
+AppRegistry.registerHeadlessTask('OrcaWearDashboardRefresh', () => async ({ runId }) => {
+  const { refreshBoundWearDashboards } = require('./src/wear/wear-background-dashboard-refresh')
+  await refreshBoundWearDashboards(runId)
+})
+
 require('expo-router/entry')

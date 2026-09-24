@@ -39,7 +39,8 @@ vi.mock('./wear-dashboard-publication', () => ({
   publishWearDashboard: mocks.publish
 }))
 
-import { refreshWearDashboardOnce, startWearDashboardPublisher } from './wear-dashboard-publisher'
+import { startWearDashboardPublisher } from './wear-dashboard-publisher'
+import { refreshWearDashboardOnce } from './wear-dashboard-refresh'
 import { startForegroundWearDashboardPublisher } from './wear-foreground-dashboard-publisher'
 
 const bindingA = 'a4c67006-8492-4f45-93fb-6501e4c34891'
@@ -390,6 +391,18 @@ describe('Wear dashboard publisher', () => {
     mocks.publish.mockRejectedValueOnce(new Error('offline'))
     await vi.advanceTimersByTimeAsync(5_000)
     expect(await result).toBe(false)
+    expect(mocks.closeFeed).toHaveBeenCalledOnce()
+  })
+
+  it('stops a scheduled refresh before publishing when its job is cancelled', async () => {
+    mocks.getState.mockReturnValue(state([bindingA]))
+    const cancellation = new AbortController()
+    const result = refreshWearDashboardOnce(bindingA, 30_000, cancellation.signal)
+    feedUpdate()
+    cancellation.abort()
+    expect(await result).toBe(false)
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(mocks.publish).not.toHaveBeenCalled()
     expect(mocks.closeFeed).toHaveBeenCalledOnce()
   })
 })

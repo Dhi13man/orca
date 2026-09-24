@@ -29,7 +29,7 @@ vi.mock('./wear-host-command-client', () => ({ requestWearHostCommand, withWearH
 vi.mock('../transport/host-store', () => ({ loadHostCatalog }))
 vi.mock('./wear-host-agent-inventory', () => ({ readWearHostAgentInventory }))
 vi.mock('./wear-agent-page-projection', () => ({ projectWearAgentPage }))
-vi.mock('./wear-dashboard-publisher', () => ({ refreshWearDashboardOnce }))
+vi.mock('./wear-dashboard-refresh', () => ({ refreshWearDashboardOnce }))
 vi.mock('./wear-notification-floor', () => ({
   loadWearNotificationFloor,
   saveWearNotificationFloor

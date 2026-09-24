@@ -1347,3 +1347,17 @@ host-to-phone wake source. The existing receipt JobScheduler handles only
 pending receipts, and the phone's local notification bridge requires a live
 host subscription. Autonomous host-originated delivery remains an open
 architecture and installed-device gate.
+
+The phone now schedules an app-scoped, persisted 15-minute JobScheduler refresh
+only while at least one watch binding exists. A scheduled run starts bundled
+Headless JS, refreshes every active binding, and explicitly completes its native
+job; stopped runs abort the host feed, and stale run IDs cannot finish a later
+job. On the paired API-36 phone/API-33 watch emulators, the release APK built
+and installed; after `am kill` removed the background phone process, a forced
+app-specific job started a new process while the launcher remained on top,
+finished in about 3.5 seconds, and advanced the watch's phone snapshot to
+8:44 PM without a watch tap. Mobile typecheck, scoped lint/format, and 86 Wear
+tests pass. This is best-effort periodic freshness, not immediate host-originated
+notification delivery: Android may defer periodic jobs, no screen-off/Doze or
+physical-watch behavior was tested, and the real existing-agent conversation,
+safe idle reply, SSH send durability, and physical acceptance remain open.

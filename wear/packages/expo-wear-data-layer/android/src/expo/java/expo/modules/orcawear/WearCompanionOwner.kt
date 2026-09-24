@@ -832,6 +832,9 @@ internal class WearCompanionOwner private constructor(private val context: Conte
 
     private fun updateState(value: Map<String, String>) {
         val active = bindings.activeBindings().map { mapOf("bindingId" to it.id, "nodeId" to it.peerNodeId) }
+        if (role == CompanionRole.PHONE) {
+            WearDashboardRefreshJobService.syncSchedule(context, active.isNotEmpty())
+        }
         val next = mapOf<String, Any>("role" to role.name.lowercase(), "bindings" to active) + value
         state.set(next)
         observers.forEach { it(next) }
