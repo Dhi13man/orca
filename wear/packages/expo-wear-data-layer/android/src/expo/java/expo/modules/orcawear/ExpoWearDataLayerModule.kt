@@ -8,18 +8,32 @@ import expo.modules.kotlin.modules.ModuleDefinition
 class ExpoWearDataLayerModule : Module() {
     private val observer: (Map<String, Any>) -> Unit = { sendEvent("onState", it) }
     private val dashboardObserver: (String) -> Unit = { sendEvent("onDashboardChanged", mapOf("bindingId" to it)) }
+    private val actionObserver: (String, String) -> Unit = { bindingId, requestId ->
+        sendEvent("onActionChanged", mapOf("bindingId" to bindingId, "requestId" to requestId))
+    }
     private val owner get() = WearCompanionOwner.get(requireNotNull(appContext.reactContext))
     private var observedOwner: WearCompanionOwner? = null
 
     override fun definition() = ModuleDefinition {
         Name("ExpoWearDataLayer")
-        Events("onState", "onDashboardChanged")
+        Events("onState", "onDashboardChanged", "onActionChanged")
         OnStartObserving {
             owner.also { observedOwner = it }.observe(observer)
             owner.observeDashboard(dashboardObserver)
+            owner.observeAction(actionObserver)
         }
-        OnStopObserving { observedOwner?.stopObserving(observer); observedOwner?.stopObservingDashboard(dashboardObserver); observedOwner = null }
-        OnDestroy { observedOwner?.stopObserving(observer); observedOwner?.stopObservingDashboard(dashboardObserver); observedOwner = null }
+        OnStopObserving {
+            observedOwner?.stopObserving(observer)
+            observedOwner?.stopObservingDashboard(dashboardObserver)
+            observedOwner?.stopObservingAction(actionObserver)
+            observedOwner = null
+        }
+        OnDestroy {
+            observedOwner?.stopObserving(observer)
+            observedOwner?.stopObservingDashboard(dashboardObserver)
+            observedOwner?.stopObservingAction(actionObserver)
+            observedOwner = null
+        }
         Function("getState") { owner.snapshot() }
         AsyncFunction("discoverPeers") { promise: Promise ->
             val context = requireNotNull(appContext.reactContext)
@@ -87,7 +101,8 @@ class ExpoWearDataLayerModule : Module() {
                 else promise.resolve(record?.let {
                     mapOf("bindingId" to it.bindingId, "requestId" to it.requestId,
                         "actionHash" to it.actionHash, "actionName" to it.actionName,
-                        "state" to it.state, "expiresAt" to it.expiresAt.toDouble())
+                        "state" to it.state, "expiresAt" to it.expiresAt.toDouble(),
+                        "reason" to it.reason)
                 })
             }
         }
@@ -99,10 +114,31 @@ class ExpoWearDataLayerModule : Module() {
             }
         }
         AsyncFunction("finishActionEffect") { bindingId: String, requestId: String,
-            actionHash: String, outcome: String, promise: Promise ->
-            owner.finishActionEffect(bindingId, requestId, actionHash, outcome) { finished, error ->
+            actionHash: String, outcome: String, reason: String?, promise: Promise ->
+            owner.finishActionEffect(bindingId, requestId, actionHash, outcome, reason) { finished, error ->
                 if (error != null) complete(promise, error)
                 else promise.resolve(finished)
+            }
+        }
+        AsyncFunction("sendJournalReceipt") { bindingId: String, requestId: String,
+            promise: Promise ->
+            owner.sendJournalReceipt(bindingId, requestId) { complete(promise, it) }
+        }
+        AsyncFunction("sendAction") { canonical: String, promise: Promise ->
+            owner.sendAction(canonical) { outcome, error ->
+                if (error != null) complete(promise, error)
+                else promise.resolve(outcome)
+            }
+        }
+        AsyncFunction("readAction") { bindingId: String, requestId: String,
+            promise: Promise ->
+            owner.readAction(bindingId, requestId) { record, error ->
+                if (error != null) complete(promise, error)
+                else promise.resolve(record?.let {
+                    mapOf("bindingId" to it.bindingId, "requestId" to it.requestId,
+                        "actionHash" to it.actionHash, "status" to it.status,
+                        "reason" to it.reason, "expiresAt" to it.expiresAt.toDouble())
+                })
             }
         }
     }

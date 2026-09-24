@@ -20,6 +20,10 @@ internal object WearReceiptCodec {
         "busy", "conflict", "unsupported", "unavailable", "target-changed")
     private val hashPattern = Regex("[0-9a-f]{64}")
 
+    fun validOutcome(status: String, reason: String?): Boolean =
+        status in setOf("accepted", "rejected", "unknown") &&
+            (if (status == "rejected") reason in reasons else reason == null)
+
     fun encode(receipt: WearReceipt, now: Long): ByteArray {
         validate(receipt, now)
         val json = JSONObject().apply {
@@ -55,11 +59,10 @@ internal object WearReceiptCodec {
     }
 
     private fun validate(receipt: WearReceipt, now: Long) {
-        require(receipt.bindingId.isNotBlank() && receipt.bindingId.toByteArray(Charsets.UTF_8).size <= 256)
-        require(receipt.requestId.isNotBlank() && receipt.requestId.toByteArray(Charsets.UTF_8).size <= 256)
+        require(receipt.bindingId.isNotEmpty() && receipt.bindingId.toByteArray(Charsets.UTF_8).size <= 256)
+        require(receipt.requestId.isNotEmpty() && receipt.requestId.toByteArray(Charsets.UTF_8).size <= 256)
         require(hashPattern.matches(receipt.actionHash))
-        require(receipt.status in setOf("accepted", "rejected", "unknown"))
-        require(if (receipt.status == "rejected") receipt.reason in reasons else receipt.reason == null)
+        require(validOutcome(receipt.status, receipt.reason))
         require(receipt.expiresAt > now && receipt.expiresAt - now <= 120_000)
     }
 }

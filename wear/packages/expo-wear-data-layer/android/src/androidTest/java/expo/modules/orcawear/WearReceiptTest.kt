@@ -32,4 +32,9 @@ class WearReceiptTest {
             WearReceiptCodec.decode(ByteArray(1025), 0)
         }
     }
+
+    @Test fun matchesActionContractForNonemptyWhitespaceRequestId() {
+        val value = receipt.copy(requestId = " ")
+        assertEquals(value, WearReceiptCodec.decode(WearReceiptCodec.encode(value, 0), 0))
+    }
 }

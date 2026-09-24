@@ -1,4 +1,5 @@
 import { requireOptionalNativeModule } from 'expo-modules-core'
+import type { WearReceiptReason } from '@orca/wear-companion-contract/receipt'
 
 export type WearCompanionState = {
   role: 'phone' | 'watch'
@@ -47,8 +48,17 @@ export type WearJournalRecord = {
   actionName: string
   state: 'recorded' | 'effect_started' | 'accepted' | 'rejected' | 'unknown'
   expiresAt: number
+  reason: WearReceiptReason | null
 }
 export type WearJournalHandoff = 'recorded' | 'already_recorded' | 'conflict' | 'missing' | 'full'
+export type WearWatchActionRecord = {
+  bindingId: string
+  requestId: string
+  actionHash: string
+  status: 'pending' | 'accepted' | 'rejected' | 'unknown'
+  reason: WearReceiptReason | null
+  expiresAt: number
+}
 
 type WearDataLayerModule = {
   addListener(
@@ -58,6 +68,10 @@ type WearDataLayerModule = {
   addListener(
     eventName: 'onDashboardChanged',
     listener: (event: { bindingId: string }) => void
+  ): { remove(): void }
+  addListener(
+    eventName: 'onActionChanged',
+    listener: (event: { bindingId: string; requestId: string }) => void
   ): { remove(): void }
   getState(): WearCompanionState
   discoverPeers(): Promise<WearPeer[]>
@@ -88,8 +102,14 @@ type WearDataLayerModule = {
     bindingId: string,
     requestId: string,
     actionHash: string,
-    outcome: 'accepted' | 'rejected' | 'unknown'
+    outcome: 'accepted' | 'rejected' | 'unknown',
+    reason: WearReceiptReason | null
   ): Promise<boolean>
+  sendJournalReceipt(bindingId: string, requestId: string): Promise<void>
+  sendAction(
+    canonical: string
+  ): Promise<'transmitted' | 'unknown' | 'duplicate' | 'conflict' | 'full'>
+  readAction(bindingId: string, requestId: string): Promise<WearWatchActionRecord | null>
 }
 
 export const wearDataLayer = requireOptionalNativeModule<WearDataLayerModule>('ExpoWearDataLayer')

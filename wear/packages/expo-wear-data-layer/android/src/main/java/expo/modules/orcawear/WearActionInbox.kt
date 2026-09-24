@@ -146,8 +146,8 @@ internal class WearActionInbox(context: Context, private val admissionTime: (Lon
             now, admissionTime(now)) }
 
     fun finishEffect(bindingId: String, requestId: String, actionHash: String,
-        outcome: String, now: Long): Boolean = transaction { db ->
-        WearCommandJournal.finish(db, bindingId, requestId, actionHash, outcome,
+        outcome: String, now: Long, reason: String? = null): Boolean = transaction { db ->
+        WearCommandJournal.finish(db, bindingId, requestId, actionHash, outcome, reason,
             now, admissionTime(now))
     }
 

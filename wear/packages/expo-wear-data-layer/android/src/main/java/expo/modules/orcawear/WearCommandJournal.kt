@@ -9,7 +9,8 @@ import java.security.MessageDigest
 internal enum class WearJournalHandoff { RECORDED, ALREADY_RECORDED, CONFLICT, MISSING, FULL }
 
 internal data class WearJournalRecord(val bindingId: String, val requestId: String,
-    val actionHash: String, val actionName: String, val state: String, val expiresAt: Long)
+    val actionHash: String, val actionName: String, val state: String, val expiresAt: Long,
+    val reason: String?)
 
 internal object WearCommandJournal {
     fun onCreate(db: SQLiteDatabase) {
@@ -25,6 +26,7 @@ internal object WearCommandJournal {
             target_json TEXT NOT NULL,
             expires_at INTEGER NOT NULL,
             state TEXT NOT NULL CHECK(state IN ('recorded','effect_started','accepted','rejected','unknown')),
+            result_reason TEXT,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             recorded_boot_count INTEGER NOT NULL,
@@ -95,10 +97,11 @@ internal object WearCommandJournal {
     }
 
     fun read(db: SQLiteDatabase, bindingId: String, requestId: String): WearJournalRecord? = db.rawQuery(
-        """SELECT action_hash,action_name,state,expires_at FROM command_journal
+        """SELECT action_hash,action_name,state,expires_at,result_reason FROM command_journal
             WHERE binding_id=? AND request_id=?""", arrayOf(bindingId, requestId)
     ).use { if (!it.moveToFirst()) null else WearJournalRecord(bindingId, requestId,
-        it.getString(0), it.getString(1), it.getString(2), it.getLong(3)) }
+        it.getString(0), it.getString(1), it.getString(2), it.getLong(3),
+        if (it.isNull(4)) null else it.getString(4)) }
 
     fun startEffect(db: SQLiteDatabase, bindingId: String, requestId: String,
         actionHash: String, now: Long, time: WearAdmissionTime): Boolean {
@@ -126,12 +129,14 @@ internal object WearCommandJournal {
     }
 
     fun finish(db: SQLiteDatabase, bindingId: String, requestId: String,
-        actionHash: String, outcome: String, now: Long, time: WearAdmissionTime): Boolean {
-        require(outcome in setOf("accepted", "rejected", "unknown"))
+        actionHash: String, outcome: String, reason: String?, now: Long,
+        time: WearAdmissionTime): Boolean {
+        require(WearReceiptCodec.validOutcome(outcome, reason))
         val allowedState = if (outcome == "unknown") "state='effect_started'"
             else "(state='effect_started' OR (state='unknown' AND effect_boot_count IS NOT NULL))"
         return db.update("command_journal", ContentValues().apply {
             put("state", outcome)
+            if (reason == null) putNull("result_reason") else put("result_reason", reason)
             put("updated_at", now)
             put("terminal_boot_count", time.bootCount)
             put("terminal_elapsed_at", time.elapsedMillis)

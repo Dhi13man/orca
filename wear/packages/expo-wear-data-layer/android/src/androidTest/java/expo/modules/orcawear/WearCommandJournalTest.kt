@@ -43,8 +43,9 @@ class WearCommandJournalTest {
                 assertTrue(reopened.startEffect(binding, "one", hash, 1))
                 assertFalse(reopened.startEffect(binding, "one", hash, 1))
                 assertTrue(reopened.finishEffect(binding, "one", hash, "accepted", 2))
-                assertFalse(reopened.finishEffect(binding, "one", hash, "rejected", 3))
+                assertFalse(reopened.finishEffect(binding, "one", hash, "rejected", 3, "conflict"))
                 assertEquals("accepted", reopened.journalRecord(binding, "one")!!.state)
+                assertNull(reopened.journalRecord(binding, "one")!!.reason)
             }
         }
 
@@ -68,6 +69,30 @@ class WearCommandJournalTest {
             assertNull(inbox.journalRecord(binding, "request-16"))
         }
     }
+
+    @Test fun persistsExactRejectionReasonAndRejectsInvalidOutcomeCombination() =
+        withWearTestDatabase { context ->
+            val binding = UUID.randomUUID().toString()
+            val canonical = action(binding, "one", 120_000)
+            val hash = hash(canonical)
+            WearActionInbox(context) { WearAdmissionTime(it, 1) }.use { inbox ->
+                assertEquals(WearActionInsertResult.INSERTED,
+                    inbox.insert(binding, "one", "readHostPage", hash, 120_000, wire, 0))
+                val claim = inbox.claim(0)!!
+                assertEquals(WearJournalHandoff.RECORDED,
+                    inbox.commitHandoff(binding, "one", hash, claim.claimToken, canonical, 0))
+                assertTrue(inbox.startEffect(binding, "one", hash, 0))
+                assertThrows(IllegalArgumentException::class.java) {
+                    inbox.finishEffect(binding, "one", hash, "accepted", 1, "unavailable")
+                }
+                assertTrue(inbox.finishEffect(binding, "one", hash, "rejected", 1, "target-changed"))
+            }
+            WearActionInbox(context) { WearAdmissionTime(it, 1) }.use { reopened ->
+                assertEquals("rejected", reopened.journalRecord(binding, "one")!!.state)
+                assertEquals("target-changed", reopened.journalRecord(binding, "one")!!.reason)
+                assertFalse(reopened.finishEffect(binding, "one", hash, "accepted", 2))
+            }
+        }
 
     @Test fun expiredUnstartedCommandBecomesUnknownWithoutAnEffect() = withWearTestDatabase { context ->
         val binding = UUID.randomUUID().toString()

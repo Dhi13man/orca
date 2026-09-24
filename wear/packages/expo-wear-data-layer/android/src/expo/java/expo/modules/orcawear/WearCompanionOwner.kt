@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.net.Uri
+import org.json.JSONObject
 import com.google.android.gms.tasks.Tasks
 import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.PutDataRequest
@@ -25,8 +26,10 @@ internal class WearCompanionOwner private constructor(private val context: Conte
     private val bindings = WearBindingStore(context)
     private val dashboards = WearDashboardStore(context)
     private val actions = WearActionInbox(context)
+    private val watchActions = WearWatchActionStore(context)
     private val observers = CopyOnWriteArraySet<(Map<String, Any>) -> Unit>()
     private val dashboardObservers = CopyOnWriteArraySet<(String) -> Unit>()
+    private val actionObservers = CopyOnWriteArraySet<(String, String) -> Unit>()
     private val publicationCompletions = Executors.newSingleThreadExecutor {
         Thread(it, "orca-wear-publication").apply { isDaemon = true }
     }
@@ -65,6 +68,8 @@ internal class WearCompanionOwner private constructor(private val context: Conte
     fun stopObserving(observer: (Map<String, Any>) -> Unit) { observers.remove(observer) }
     fun observeDashboard(observer: (String) -> Unit) { dashboardObservers.add(observer) }
     fun stopObservingDashboard(observer: (String) -> Unit) { dashboardObservers.remove(observer) }
+    fun observeAction(observer: (String, String) -> Unit) { actionObservers.add(observer) }
+    fun stopObservingAction(observer: (String, String) -> Unit) { actionObservers.remove(observer) }
 
     fun reserveDashboardRevision(bindingId: String, completed: (Long?, Exception?) -> Unit) {
         if (role != CompanionRole.PHONE) {
@@ -291,7 +296,7 @@ internal class WearCompanionOwner private constructor(private val context: Conte
     }
 
     fun finishActionEffect(bindingId: String, requestId: String, actionHash: String,
-        outcome: String, completed: (Boolean?, Exception?) -> Unit) {
+        outcome: String, reason: String?, completed: (Boolean?, Exception?) -> Unit) {
         if (role != CompanionRole.PHONE) {
             completed(null, IllegalStateException("wear_action_wrong_role"))
             return
@@ -300,7 +305,107 @@ internal class WearCompanionOwner private constructor(private val context: Conte
         submit({ completed(result, it) }, false) { ticket ->
             ticket.effect {
                 result = actions.finishEffect(bindingId, requestId, actionHash,
-                    outcome, System.currentTimeMillis())
+                    outcome, System.currentTimeMillis(), reason)
+            }
+        }
+    }
+
+    fun sendJournalReceipt(bindingId: String, requestId: String,
+        completed: (Exception?) -> Unit) {
+        if (role != CompanionRole.PHONE) {
+            completed(IllegalStateException("wear_receipt_wrong_role"))
+            return
+        }
+        submit(completed) { ticket ->
+            val record = actions.journalRecord(bindingId, requestId)
+                ?: error("wear_receipt_missing_journal")
+            check(record.state in setOf("accepted", "rejected", "unknown")) {
+                "wear_receipt_not_terminal"
+            }
+            val now = System.currentTimeMillis()
+            val expiresAt = Math.addExact(now, 120_000)
+            val receipt = WearReceipt(bindingId, requestId, record.actionHash,
+                record.state, record.reason, expiresAt)
+            val plaintext = WearReceiptCodec.encode(receipt, now)
+            try {
+                val metadata = WearEnvelopeMetadata(bindingId, WearEnvelopeKind.RECEIPT,
+                    bindings.installId(), 0, requestId, expiresAt)
+                val wire = WearEnvelope(bindings).seal(metadata, plaintext, System.currentTimeMillis())
+                val peerNodeId = bindings.withBinding(bindingId) { binding ->
+                    check(binding.state == "active") { "wear_binding_not_active" }
+                    binding.peerNodeId
+                }
+                ticket.effect {
+                    val task = Wearable.getMessageClient(context).sendMessage(peerNodeId, metadata.path, wire)
+                    try { Tasks.await(task, 12, TimeUnit.SECONDS) }
+                    catch (error: TimeoutException) { throw IllegalStateException("wear_work_timeout", error) }
+                }
+            } finally { plaintext.fill(0) }
+        }
+    }
+
+    fun sendAction(canonical: String, completed: (String?, Exception?) -> Unit) {
+        if (role != CompanionRole.WATCH) {
+            completed(null, IllegalStateException("wear_action_wrong_role"))
+            return
+        }
+        var result: String? = null
+        submit({ completed(result, it) }, false) { ticket ->
+            val plaintext = canonical.toByteArray(Charsets.UTF_8)
+            try {
+                require(plaintext.size <= 8192)
+                val json = JSONObject(canonical)
+                val metadata = WearEnvelopeMetadata(json.getString("bindingId"),
+                    WearEnvelopeKind.ACTION, json.getString("publisherEpoch"),
+                    json.getLong("expectedRevision"), json.getString("requestId"),
+                    json.getLong("expiresAt"))
+                val now = System.currentTimeMillis()
+                val stored = dashboards.get(metadata.bindingId, now)
+                    ?: error("wear_dashboard_unavailable")
+                val published = PublishedWearDashboard(stored.metadata.publisherEpoch,
+                    stored.metadata.revision, stored.metadata.path, stored.metadata.expiresAt)
+                stored.plaintext.fill(0)
+                val admitted = admitWearAction(metadata, plaintext, published, now)
+                    ?: error("wear_action_not_current")
+                val peerNodeId = bindings.withBinding(metadata.bindingId) { binding ->
+                    check(binding.state == "active") { "wear_binding_not_active" }
+                    binding.peerNodeId
+                }
+                val wire = WearEnvelope(bindings).seal(metadata, plaintext, System.currentTimeMillis())
+                ticket.effect {
+                    val insertion = watchActions.record(metadata.bindingId, metadata.requestId,
+                        admitted.hash, metadata.expiresAt, System.currentTimeMillis())
+                    if (insertion != WearWatchActionInsert.INSERTED) {
+                        result = insertion.name.lowercase()
+                        return@effect
+                    }
+                    actionObservers.forEach { it(metadata.bindingId, metadata.requestId) }
+                    result = try {
+                        val task = Wearable.getMessageClient(context)
+                            .sendMessage(peerNodeId, metadata.path, wire)
+                        Tasks.await(task, 12, TimeUnit.SECONDS)
+                        "transmitted"
+                    } catch (_: Exception) {
+                        watchActions.markUnknown(metadata.bindingId, metadata.requestId)
+                        actionObservers.forEach { it(metadata.bindingId, metadata.requestId) }
+                        "unknown"
+                    }
+                }
+            } finally { plaintext.fill(0) }
+        }
+    }
+
+    fun readAction(bindingId: String, requestId: String,
+        completed: (StoredWearWatchAction?, Exception?) -> Unit) {
+        if (role != CompanionRole.WATCH) {
+            completed(null, IllegalStateException("wear_action_wrong_role"))
+            return
+        }
+        var result: StoredWearWatchAction? = null
+        submit({ completed(result, it) }, false) {
+            bindings.withBinding(bindingId) { binding ->
+                check(binding.state == "active") { "wear_binding_not_active" }
+                result = watchActions.read(bindingId, requestId)
             }
         }
     }
@@ -418,6 +523,11 @@ internal class WearCompanionOwner private constructor(private val context: Conte
             submit({}, false) { ingestAction(nodeId, path, owned, it) }
             return
         }
+        if (role == CompanionRole.WATCH && RECEIPT_PATH.matches(path)) {
+            val owned = bytes.copyOf()
+            submit({}, false) { ingestReceipt(nodeId, path, owned, it) }
+            return
+        }
         val enrollmentMessage = path == WearEnrollmentWire.PATH
         if (enrollmentMessage && bytes.size > 329) return
         if (!enrollmentMessage && !ACKNOWLEDGEMENT_PATH.matches(path)) return
@@ -441,6 +551,27 @@ internal class WearCompanionOwner private constructor(private val context: Conte
                         admitted.expiresAt, wire, System.currentTimeMillis())
                 }
             }
+        } finally { opened.plaintext.fill(0) }
+    }
+
+    private fun ingestReceipt(nodeId: String, path: String, wire: ByteArray,
+        ticket: WearWorkTicket) {
+        val opened = WearEnvelope(bindings).open(path, nodeId, wire, System.currentTimeMillis())
+        try {
+            check(opened.metadata.kind == WearEnvelopeKind.RECEIPT)
+            val now = System.currentTimeMillis()
+            val receipt = WearReceiptCodec.decode(opened.plaintext, now)
+            check(receipt.bindingId == opened.metadata.bindingId &&
+                receipt.requestId == opened.metadata.requestId &&
+                receipt.expiresAt == opened.metadata.expiresAt) { "wear_receipt_header_changed" }
+            var changed = false
+            bindings.withBinding(receipt.bindingId) { binding ->
+                check(binding.state == "active" && binding.peerNodeId == nodeId) {
+                    "wear_binding_changed"
+                }
+                ticket.effect { changed = watchActions.apply(receipt, System.currentTimeMillis()) }
+            }
+            if (changed) actionObservers.forEach { it(receipt.bindingId, receipt.requestId) }
         } finally { opened.plaintext.fill(0) }
     }
 
@@ -489,6 +620,7 @@ internal class WearCompanionOwner private constructor(private val context: Conte
     companion object {
         private val DASHBOARD_PATH = Regex("/orca/wear/v1/([0-9a-f-]{36})/dashboard/([1-9][0-9]{0,15})")
         private val ACTION_PATH = Regex("/orca/wear/v1/[0-9a-f-]{36}/action")
+        private val RECEIPT_PATH = Regex("/orca/wear/v1/[0-9a-f-]{36}/receipt")
         private val ACKNOWLEDGEMENT_PATH = Regex("/orca/wear/v1/[0-9a-f-]{36}/acknowledgement")
         @Volatile private var instance: WearCompanionOwner? = null
         fun get(context: Context): WearCompanionOwner = instance ?: synchronized(this) {
