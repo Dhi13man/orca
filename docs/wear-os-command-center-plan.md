@@ -1572,3 +1572,14 @@ tests (31), both TypeScript checks, scoped lint/format, and all mobile Wear
 tests (106) and watch tests (144) pass. Review-found cursor failure and
 historical-reset wording issues were fixed. These are source checks, not live
 usage readings or a measured background wake on Dhiman's devices.
+
+Both ARM64-only release APKs were rebuilt after commit `35b797538`. Watch
+SHA-256 is `CDC7BF1EB2E2207A6870EEAED79C3397C114BA349AF1D6B1D454F82C45023624`;
+phone SHA-256 is `12F6FEF5D056E25FBCBE1E22B77DF5DA90C9D5811ADF33CB9CECFD8DB0F94B01`.
+Both verify under signing certificate SHA-256
+`fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c`,
+contain only `arm64-v8a` native libraries and bundled JavaScript, and share
+package `com.stably.orca.mobile`. The watch manifest has `standalone=false`;
+the phone manifest has the non-exported Wear Headless JS service. The physical
+phone ADB endpoint still refuses TCP and the watch is absent from ADB, so
+neither current artifact was installed on Dhiman's devices.
