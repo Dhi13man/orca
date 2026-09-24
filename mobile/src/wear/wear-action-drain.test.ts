@@ -741,7 +741,7 @@ describe('Wear action drain', () => {
         targetPublicationEpoch: 'publication-a',
         targetSnapshotVersion: 7
       },
-      { timeoutMs: 8_000, failWhenDisconnected: true }
+      { timeoutMs: 20_000, failWhenDisconnected: true }
     )
     const serialized = native.sendConversationPage.mock.calls[0][2] as string
     expect(JSON.parse(serialized)).toMatchObject({

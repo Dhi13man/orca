@@ -240,7 +240,7 @@ async function drain(): Promise<void> {
                 targetPublicationEpoch: action.targetPublicationEpoch,
                 targetSnapshotVersion: action.targetSnapshotVersion
               },
-              { timeoutMs: 8_000, failWhenDisconnected: true }
+              { timeoutMs: 20_000, failWhenDisconnected: true }
             )
         )
         if (response.ok) {
