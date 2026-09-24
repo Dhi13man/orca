@@ -1680,3 +1680,17 @@ Host 2's from 1:46 to 1:48 AM after another page request. This supports
 process-cold, watch-initiated Inbox fetch and per-host honest states on the
 paired emulator. It does not prove a retained host notification, autonomous
 host-originated delivery, screen-off/Doze timing, or a physical watch.
+
+The current release also retains one persisted, app-scoped periodic
+`WearDashboardRefreshJobService` (`JobScheduler` ID 1464156499, 15-minute
+interval) on paired phone `emulator-5556`. After the app was backgrounded and
+its process killed, forcing that specific test-app job with `cmd jobscheduler
+run -f` reported `Running job [FORCED]`, started a new Orca phone PID while
+the launcher remained top-resumed, and the watch displayed a 1:50 AM phone
+snapshot without a watch tap. A second forced run across the next minute
+advanced the watch snapshot from 1:50 to 1:51 AM without watch input; the
+phone process had already restarted before that second run, so it is job-path
+evidence but not a second cold-start claim. This reconfirms scheduled
+phone-to-watch refresh on the current emulator build, not naturally timed
+15-minute execution, host notification delivery, Doze behavior, or physical
+acceptance.
