@@ -21,25 +21,38 @@ function snapshotLabel(timestamp: number): string {
 }
 
 function usageLabel(usage: WearProviderUsage): string {
-  if (usage.status !== 'ok') {
+  const session = usage.session
+  const weekly = usage.weekly
+  if (!session && !weekly) {
     return usage.status === 'fetching'
       ? 'Updating'
       : usage.status === 'idle'
         ? 'Waiting for usage'
-        : 'Usage unavailable'
-  }
-  const session = usage.session
-  const weekly = usage.weekly
-  if (!session && !weekly) {
-    return 'No usage window reported'
+        : usage.status === 'ok'
+          ? 'No usage window reported'
+          : 'Usage unavailable'
   }
   const percent = (value: number) => `${Math.round(value * 10) / 10}%`
-  return [
+  const reading = [
     session ? `${percent(session.usedPercent)} session` : null,
     weekly ? `${percent(weekly.usedPercent)} weekly` : null
   ]
     .filter(Boolean)
     .join(' · ')
+  return usage.status === 'ok' ? reading : `Last known · ${reading}`
+}
+
+function usageWindowDetails(window: NonNullable<WearProviderUsage['session']>): string {
+  const minutes = window.windowMinutes
+  const duration =
+    minutes % 10_080 === 0
+      ? `${minutes / 10_080}w`
+      : minutes % 1_440 === 0
+        ? `${minutes / 1_440}d`
+        : minutes % 60 === 0
+          ? `${minutes / 60}h`
+          : `${minutes}m`
+  return `${duration} window${window.resetsAt === null ? '' : ` · reset time ${snapshotLabel(window.resetsAt)}`}`
 }
 
 function PageNotice({ children }: { children: ReactNode }) {
@@ -140,21 +153,38 @@ function UsagePage({ dashboard }: { dashboard: WearDashboard }) {
             : 'No active Claude or Codex usage reported.'}
         </PageNotice>
       ) : null}
-      {dashboard.usageGroups.map((group) => (
-        <View key={group.groupKey} style={styles.card} accessible accessibilityRole="summary">
-          <Text style={styles.cardTitle}>
-            {group.provider === 'claude' ? 'Claude' : 'Codex'} ·{' '}
-            {group.identityConfidence === 'verified' ? 'Verified account' : 'Unverified account'}
-          </Text>
-          <Text style={styles.detail}>{usageLabel(group.providerUsage)}</Text>
-          <Text style={styles.secondary}>
-            {group.providerUsage.updatedAt > 0
-              ? `Last reported ${snapshotLabel(group.providerUsage.updatedAt)} · `
-              : ''}
-            {group.sourceHostIds.length} {group.sourceHostIds.length === 1 ? 'machine' : 'machines'}
-          </Text>
-        </View>
-      ))}
+      {dashboard.usageGroups.map((group) => {
+        const readingHost = dashboard.hosts.find((host) => host.hostId === group.readingHostId)
+        return (
+          <View key={group.groupKey} style={styles.card} accessible accessibilityRole="summary">
+            <Text style={styles.cardTitle}>
+              {group.provider === 'claude' ? 'Claude' : 'Codex'} ·{' '}
+              {group.identityConfidence === 'verified' ? 'Verified account' : 'Unverified account'}
+            </Text>
+            <Text style={styles.detail}>{usageLabel(group.providerUsage)}</Text>
+            {group.providerUsage.session ? (
+              <Text style={styles.secondary}>
+                Session: {usageWindowDetails(group.providerUsage.session)}
+              </Text>
+            ) : null}
+            {group.providerUsage.weekly ? (
+              <Text style={styles.secondary}>
+                Weekly: {usageWindowDetails(group.providerUsage.weekly)}
+              </Text>
+            ) : null}
+            <Text style={styles.secondary}>
+              {group.providerUsage.updatedAt > 0
+                ? `Last reported ${snapshotLabel(group.providerUsage.updatedAt)} · `
+                : ''}
+              {group.sourceHostIds.length}{' '}
+              {group.sourceHostIds.length === 1 ? 'machine' : 'machines'}
+            </Text>
+            <Text style={styles.secondary}>
+              Reading from {readingHost?.displayName ?? group.readingHostId}
+            </Text>
+          </View>
+        )
+      })}
       {dashboard.usagePage.truncated ? (
         <PageNotice>
           Showing {dashboard.usagePage.included} of {dashboard.usagePage.total} account groups.

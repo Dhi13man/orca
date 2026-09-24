@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { AccountsSnapshot } from '../components/accounts-snapshot'
 import type { HostObservationCoordinator } from '../transport/host-observation-coordinator'
 import type { HostClientProcessOwner } from '../transport/host-client-process-owner'
@@ -7,6 +8,7 @@ import type { WearSessionInventorySummary } from './wear-session-inventory'
 
 const WEAR_LIVE_HOST_LIMIT = 3
 const WEAR_HOST_ROTATION_MS = 30_000
+const WEAR_HOST_ROTATION_CURSOR_KEY = 'orca.wear.host-rotation-cursor.v1'
 
 export type WearHostFeedSnapshot = {
   catalog: readonly HostCatalogEntry[]
@@ -34,7 +36,7 @@ export function startWearHostFeed(args: {
   const inventories = new Map<string, WearSessionInventorySummary>()
   const accounts = new Map<string, AccountsSnapshot>()
   let catalog: HostCatalogEntry[] | null = null
-  let nextHost = 0
+  let nextHost: number | null = null
   let stopped = false
   let loading = false
   let refreshAgain = false
@@ -128,11 +130,31 @@ export function startWearHostFeed(args: {
         }
       }
       const ready = loaded.filter((host) => host.credentialStatus === 'ready' && host.profile)
+      if (nextHost === null && ready.length > WEAR_LIVE_HOST_LIMIT) {
+        let stored = 0
+        try {
+          stored = Number(await AsyncStorage.getItem(WEAR_HOST_ROTATION_CURSOR_KEY))
+        } catch (error) {
+          onError(error)
+        }
+        nextHost = Number.isSafeInteger(stored) && stored >= 0 ? stored : 0
+      }
+      const start = ready.length ? (nextHost ?? 0) % ready.length : 0
       const selected = new Set<string>()
       for (let offset = 0; offset < Math.min(WEAR_LIVE_HOST_LIMIT, ready.length); offset++) {
-        selected.add(ready[(nextHost + offset) % ready.length].id)
+        selected.add(ready[(start + offset) % ready.length].id)
       }
-      nextHost = ready.length ? (nextHost + WEAR_LIVE_HOST_LIMIT) % ready.length : 0
+      if (ready.length > WEAR_LIVE_HOST_LIMIT) {
+        nextHost = (start + WEAR_LIVE_HOST_LIMIT) % ready.length
+        try {
+          await AsyncStorage.setItem(WEAR_HOST_ROTATION_CURSOR_KEY, String(nextHost))
+        } catch (error) {
+          onError(error)
+        }
+      }
+      if (stopped) {
+        return false
+      }
       for (const hostId of active.keys()) {
         if (!selected.has(hostId)) {
           releaseHost(hostId)

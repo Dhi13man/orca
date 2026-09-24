@@ -1557,3 +1557,18 @@ The matching ARM64 phone APK also built; SHA-256
 Its manifest contains the non-exported Wear Headless JS service and its APK
 contains bundled JavaScript. No physical install or Headless JS wake occurred;
 paired-device and runtime acceptance remain open.
+
+Read-only source review found that each cold background publisher began host
+rotation at the first three paired machines, starving later hosts when jobs
+ended before the 30-second rotation. The existing Wear host feed now persists
+its bounded rotation cursor across publisher restarts using the phone's existing
+AsyncStorage dependency. Cursor read/write errors are reported while the full
+catalog and a bounded live batch remain available; persistent storage failure
+can still weaken cross-restart fairness. The watch Usage page now shows each
+window's duration and reset time, labels retained error-state figures as last
+known, and names the host that supplied the displayed reading (falling back to
+its opaque ID when that host row is clipped). Focused publisher/background/feed
+tests (31), both TypeScript checks, scoped lint/format, and all mobile Wear
+tests (106) and watch tests (144) pass. Review-found cursor failure and
+historical-reset wording issues were fixed. These are source checks, not live
+usage readings or a measured background wake on Dhiman's devices.

@@ -1,4 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+const rotation = vi.hoisted(() => ({ cursor: null as string | null }))
+vi.mock('@react-native-async-storage/async-storage', () => ({
+  default: {
+    getItem: vi.fn(async () => rotation.cursor),
+    setItem: vi.fn(async (_key: string, value: string) => {
+      rotation.cursor = value
+    })
+  }
+}))
 import type { AccountsSnapshot } from '../components/accounts-snapshot'
 import type { HostObservationCoordinator } from '../transport/host-observation-coordinator'
 import type { HostClientProcessOwner } from '../transport/host-client-process-owner'
@@ -85,9 +95,14 @@ function harness() {
 const flush = async () => {
   await Promise.resolve()
   await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
 }
 
-afterEach(() => vi.useRealTimers())
+afterEach(() => {
+  rotation.cursor = null
+  vi.useRealTimers()
+})
 
 describe('Wear host feed', () => {
   it('reloads the paired catalog for an explicit watch refresh', async () => {
@@ -175,6 +190,60 @@ describe('Wear host feed', () => {
     stop()
     expect(h.released.slice(-3)).toEqual(['a', 'b', 'c'])
     expect(vi.mocked(h.owner.retainLifetime).mock.results[0].value).toHaveBeenCalledOnce()
+  })
+
+  it('continues rotation after a background publisher restarts', async () => {
+    const h = harness()
+    const catalog = [host('a'), host('b'), host('c'), host('d')]
+    const start = () =>
+      startWearHostFeed({
+        owner: h.owner,
+        coordinator: h.coordinator,
+        loadCatalog: async () => catalog,
+        onUpdate: (snapshot) => h.snapshots.push(snapshot),
+        onError: vi.fn()
+      })
+    const first = start()
+    await vi.waitFor(() => expect(h.acquired).toEqual(['a', 'b', 'c']))
+    first()
+    h.acquired.length = 0
+    const second = start()
+    await vi.waitFor(() => expect(h.acquired).toEqual(['a', 'b', 'd']))
+    second()
+  })
+
+  it('keeps the catalog available when the rotation cursor cannot persist', async () => {
+    const h = harness()
+    const onError = vi.fn()
+    vi.mocked(AsyncStorage.setItem).mockRejectedValueOnce(new Error('storage unavailable'))
+    const stop = startWearHostFeed({
+      owner: h.owner,
+      coordinator: h.coordinator,
+      loadCatalog: async () => [host('a'), host('b'), host('c'), host('d')],
+      onUpdate: (snapshot) => h.snapshots.push(snapshot),
+      onError
+    })
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(h.acquired).toEqual(['a', 'b', 'c']))
+    expect(h.snapshots.at(-1)?.catalog).toHaveLength(4)
+    stop()
+  })
+
+  it('keeps the catalog available when the rotation cursor cannot be read', async () => {
+    const h = harness()
+    const onError = vi.fn()
+    vi.mocked(AsyncStorage.getItem).mockRejectedValueOnce(new Error('storage unavailable'))
+    const stop = startWearHostFeed({
+      owner: h.owner,
+      coordinator: h.coordinator,
+      loadCatalog: async () => [host('a'), host('b'), host('c'), host('d')],
+      onUpdate: (snapshot) => h.snapshots.push(snapshot),
+      onError
+    })
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(h.acquired).toEqual(['a', 'b', 'c']))
+    expect(h.snapshots.at(-1)?.catalog).toHaveLength(4)
+    stop()
   })
 
   it('marks retired inventory incomplete while keeping cached account readings', async () => {
