@@ -21,6 +21,7 @@ import {
 } from './codex-structured-prompt-items'
 import { CODEX_USER_INPUT_METHOD } from './codex-structured-prompt-replies'
 import { readCodexTurnId } from './codex-structured-thread-facts'
+import { publishCodexTurnLifecycle } from './codex-turn-lifecycle-journal'
 
 // The one place Codex events become journal rows.
 //
@@ -125,28 +126,16 @@ export function createCodexJournalTranslator(
     sessionId: string,
     threadId: string,
     turnId: string,
-    state: 'running' | 'completed'
-  ): void => {
-    if (deps.primaryThreadId?.() !== threadId) {
-      return
-    }
-    const identity = {
-      provider: 'legacy' as const,
-      agent: 'codex' as const,
+    state: 'running' | 'completed' | 'abandoned'
+  ): void =>
+    publishCodexTurnLifecycle(
+      deps.sink,
+      deps.primaryThreadId?.() ?? null,
       sessionId,
-      recordId: `turn-lifecycle:${turnId}`
-    }
-    if (state === 'completed') {
-      deps.sink.appendTombstone(identity)
-    } else {
-      deps.sink.appendItem(identity, {
-        kind: 'status',
-        text: 'Codex is working…',
-        turnLifecycle: { turnId, state }
-      })
-    }
-    deps.sink.publish()
-  }
+      threadId,
+      turnId,
+      state
+    )
 
   const identityFor = (
     threadId: string,
@@ -268,7 +257,7 @@ export function createCodexJournalTranslator(
         streams.flush()
         for (const [threadId, turnIds] of currentTurnIds) {
           for (const turnId of turnIds) {
-            publishTurnLifecycle(event.sessionId, threadId, turnId, 'completed')
+            publishTurnLifecycle(event.sessionId, threadId, turnId, 'abandoned')
             ordinals.forgetTurn(threadId, turnId)
           }
         }

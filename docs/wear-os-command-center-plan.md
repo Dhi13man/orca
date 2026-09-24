@@ -1883,3 +1883,27 @@ for `WearCompanionListenerService` while the launcher remained top-resumed.
 The watch's visible snapshot advanced from 3:54 to 3:57 AM. This is
 watch-initiated process-cold delivery on the test pair, not autonomous host
 notification delivery, physical-device operation, or a real agent reply.
+
+Dhiman clarified that validation must use the existing configured,
+authenticated agents and paired machines. There is no disposable-profile,
+new-login, or new-account gate. Preserve all existing profiles and data. Before
+one watch-path reply test, inspect an existing agent's exact session identity
+and verify that it is idle; send only a harmless bounded acknowledgement and
+leave busy sessions untouched. The earlier isolated sign-in attempt is
+historical, not an outstanding requirement. Remaining acceptance includes a
+real conversation and reply, SSH durable send, autonomous notification delivery,
+and physical phone/watch installation and on-device checks.
+
+A status race found during review is closed in source: Codex now retains a
+completed lifecycle verdict in the structured journal, while a provider end
+without a turn completion still tombstones the running marker. Wear reports
+`done` only when a completion verdict belongs after the latest user submission;
+assistant text alone is insufficient because it may precede `turn/started`.
+The real translator/reducer test covers start-before-user completion, a new
+submission, and assistant text before a start notification; the shared
+projection also keeps another overlapping turn working. Focused runtime and
+mixed-version tests (75), node typecheck, and scoped lint/format pass. The `pnpm test`
+wrapper currently fails before Vitest while rebuilding the unrelated
+`@vscode/windows-process-tree` addon because this machine lacks VS Spectre
+libraries; direct Vitest passed. This is source evidence, not installed-device
+status acceptance.

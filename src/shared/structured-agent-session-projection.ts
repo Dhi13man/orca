@@ -107,10 +107,16 @@ export function projectStructuredItemToNativeChat(
 export function activeStructuredAgentSessionTurnId(
   items: readonly AgentJournalRenderItem[]
 ): string | null {
+  const completed = new Set<string>()
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const body = items[index]?.body
-    if (body?.kind === 'status' && body.turnLifecycle) {
-      return body.turnLifecycle.state === 'running' ? body.turnLifecycle.turnId : null
+    if (body?.kind !== 'status' || !body.turnLifecycle) {
+      continue
+    }
+    if (body.turnLifecycle.state === 'completed') {
+      completed.add(body.turnLifecycle.turnId)
+    } else if (!completed.has(body.turnLifecycle.turnId)) {
+      return body.turnLifecycle.turnId
     }
   }
   return null

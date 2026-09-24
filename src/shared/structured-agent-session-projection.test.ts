@@ -42,6 +42,13 @@ describe('structured agent session status projection', () => {
     expect(projectStructuredAgentSessionStatus([running, prompt])).toBe('attention')
     expect(activeStructuredAgentSessionTurnId([running, completed])).toBeNull()
     expect(projectStructuredAgentSessionStatus([running, completed])).toBe('idle')
+    const newerRunning = item('newer-running', 2, {
+      kind: 'status',
+      text: 'Working',
+      turnLifecycle: { turnId: 'turn-2', state: 'running' }
+    })
+    expect(activeStructuredAgentSessionTurnId([running, newerRunning, completed])).toBe('turn-2')
+    expect(projectStructuredAgentSessionStatus([running, newerRunning, completed])).toBe('working')
   })
 
   it('creates a deterministic pane identity for status stores', () => {

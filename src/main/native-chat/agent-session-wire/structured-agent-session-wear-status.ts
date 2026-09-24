@@ -34,6 +34,24 @@ export function structuredAgentSessionWearStatus(
     return null
   }
   const status = projectStructuredAgentSessionStatus(items)
+  const lastUserSequence = items.reduce(
+    (latest, item) =>
+      item.body.kind === 'message' && item.body.role === 'user'
+        ? Math.max(latest, item.sequence)
+        : latest,
+    -1
+  )
+  if (
+    status === 'idle' &&
+    !items.some(
+      (item) =>
+        item.sequence > lastUserSequence &&
+        item.body.kind === 'status' &&
+        item.body.turnLifecycle?.state === 'completed'
+    )
+  ) {
+    return null
+  }
   return {
     state: status === 'attention' ? 'blocked' : status === 'working' ? 'working' : 'done',
     updatedAt:

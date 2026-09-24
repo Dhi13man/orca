@@ -136,6 +136,14 @@ describe('codex journal translation', () => {
           text: 'Codex is working…',
           turnLifecycle: { turnId: TURN_ID, state: 'running' }
         }
+      },
+      {
+        key: 'legacy:codex:session-1:turn-completion%3Aturn-1',
+        body: {
+          kind: 'status',
+          text: 'Codex completed',
+          turnLifecycle: { turnId: TURN_ID, state: 'completed' }
+        }
       }
     ])
     expect(tap.tombstones).toEqual(['legacy:codex:session-1:turn-lifecycle%3Aturn-1'])
@@ -197,7 +205,9 @@ describe('codex journal translation', () => {
     expect(
       projectStructuredAgentSessionStatus(
         tap.rows
-          .filter((row) => !tap.tombstones.includes(row.key))
+          .filter(
+            (row) => row.body.kind === 'status' && row.body.turnLifecycle?.state === 'completed'
+          )
           .map((row, sequence) => ({
             itemId: row.key,
             revision: 1,
