@@ -78,7 +78,7 @@ function AttentionPage({ dashboard }: { dashboard: WearDashboard }) {
         <Text style={styles.cardTitle}>agents needed attention in this snapshot</Text>
         <Text style={styles.secondary}>
           {incomplete > 0
-            ? `${incomplete} host inventories are incomplete`
+            ? `${incomplete} host ${incomplete === 1 ? 'inventory is' : 'inventories are'} incomplete`
             : 'From inventories at snapshot time'}
         </Text>
       </View>
