@@ -1852,3 +1852,15 @@ and verifies under test certificate
 `fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c`.
 ADB still lists only emulators; this build has not been installed on the
 physical phone. The physical watch remains unavailable over ADB.
+
+Installed-device check on the existing paired emulators exposed an ABI trap:
+the x86_64 phone emulator advertises ARM64 too, but an ARM64-only APK crashed
+at startup because SoLoader sought `libreactnative.so` under x86_64. An
+x86_64 release of the same source installed and launched, with the phone
+process live and Host 2 connected. The paired watch's displayed phone
+snapshot advanced from 3:21 to 3:39 AM after refresh, confirming dashboard
+delivery on that emulator pair. The watch still labels its host inventory
+incomplete; this does not verify a live structured status or conversation.
+The build output was restored to ARM64-only and its SHA-256 rechecked as
+`A798C6C5099FB1E94F56F505B9D3B727195F3196E1820E97EEDCAB0DCD9A359F`.
+No physical device was changed.
