@@ -1607,3 +1607,16 @@ Kotlin contract conformance test, scoped lint/format, and phone/watch release
 Kotlin compiles pass. An individual group with enough source hosts to exceed
 the 32-KiB page bound still cannot be displayed; no physical Usage page fetch
 or process-death cache cleanup has been observed.
+
+After commit `20d4474f0`, both ARM64-only release APKs rebuilt offline. The
+watch APK SHA-256 is
+`FF1FCDB3EC26FE243BBE3284C8EE52A82774D5A8D5C07CB6F35984B8566F6028`;
+the phone APK SHA-256 is
+`38D4B9EC5B88E858442215F3D2098258C589B939A5261365035AE8043F61E11E`.
+Both contain bundled JavaScript, report only `arm64-v8a`, use package
+`com.stably.orca.mobile`, and verify under certificate SHA-256
+`fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c`.
+The watch manifest has `standalone=false`; the phone's Wear Headless JS service
+is non-exported. ADB still lists only emulators. The physical phone's advertised
+`192.168.68.106:45379` endpoint actively refused a connection, and the watch
+did not appear. Neither current APK was installed on Dhiman's devices.
