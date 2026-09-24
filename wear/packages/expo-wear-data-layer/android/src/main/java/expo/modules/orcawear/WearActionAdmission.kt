@@ -4,7 +4,7 @@ import dev.orca.wear.contract.ActionAdmission
 import dev.orca.wear.contract.WearActionDecoder
 import java.security.MessageDigest
 
-internal data class AdmittedWearAction(val hash: String, val expiresAt: Long)
+internal data class AdmittedWearAction(val hash: String, val expiresAt: Long, val name: String)
 
 internal fun admitWearAction(metadata: WearEnvelopeMetadata, plaintext: ByteArray,
     published: PublishedWearDashboard?, now: Long): AdmittedWearAction? {
@@ -21,5 +21,5 @@ internal fun admitWearAction(metadata: WearEnvelopeMetadata, plaintext: ByteArra
     val hash = MessageDigest.getInstance("SHA-256").digest(plaintext).joinToString("") {
         "%02x".format(it.toInt() and 0xff)
     }
-    return AdmittedWearAction(hash, metadata.expiresAt)
+    return AdmittedWearAction(hash, metadata.expiresAt, action.getString("action"))
 }

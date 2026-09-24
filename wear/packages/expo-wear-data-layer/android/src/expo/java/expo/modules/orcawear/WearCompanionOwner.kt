@@ -341,7 +341,7 @@ internal class WearCompanionOwner private constructor(private val context: Conte
                     dashboards.publishedDashboard(opened.metadata.bindingId), System.currentTimeMillis())
                     ?: return@withBinding
                 ticket.effect {
-                    actions.insert(opened.metadata.bindingId, opened.metadata.requestId, admitted.hash,
+                    actions.insert(opened.metadata.bindingId, opened.metadata.requestId, admitted.name, admitted.hash,
                         admitted.expiresAt, wire, System.currentTimeMillis())
                 }
             }

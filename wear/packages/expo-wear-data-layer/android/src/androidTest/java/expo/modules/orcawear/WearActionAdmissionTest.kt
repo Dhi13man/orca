@@ -18,7 +18,7 @@ class WearActionAdmissionTest {
         val expectedHash = MessageDigest.getInstance("SHA-256").digest(plaintext).joinToString("") {
             "%02x".format(it.toInt() and 0xff)
         }
-        assertEquals(AdmittedWearAction(expectedHash, 1000),
+        assertEquals(AdmittedWearAction(expectedHash, 1000, "refresh"),
             admitWearAction(metadata, plaintext, published, 0))
     }
 

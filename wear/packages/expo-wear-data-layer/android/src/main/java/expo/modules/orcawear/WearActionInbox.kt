@@ -4,10 +4,13 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import android.os.SystemClock
+import android.provider.Settings
 import java.io.File
 import java.util.UUID
 
-internal enum class WearActionInsertResult { INSERTED, DUPLICATE, CONFLICT, BUSY }
+internal enum class WearActionInsertResult { INSERTED, DUPLICATE, CONFLICT, BUSY, RATE_LIMITED }
+internal data class WearAdmissionTime(val elapsedMillis: Long, val bootCount: Int)
 
 internal data class ClaimedWearAction(
     val bindingId: String,
@@ -18,7 +21,10 @@ internal data class ClaimedWearAction(
     val wire: ByteArray
 )
 
-internal class WearActionInbox(context: Context) : SQLiteOpenHelper(
+internal class WearActionInbox(context: Context, private val admissionTime: (Long) -> WearAdmissionTime = {
+    WearAdmissionTime(SystemClock.elapsedRealtime(),
+        Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1))
+}) : SQLiteOpenHelper(
     context, File(context.noBackupFilesDir, "orca-wear-actions.db").absolutePath, null, 1
 ) {
     override fun onConfigure(db: SQLiteDatabase) {
@@ -37,12 +43,22 @@ internal class WearActionInbox(context: Context) : SQLiteOpenHelper(
             PRIMARY KEY(binding_id,request_id)
         )""")
         db.execSQL("CREATE INDEX actions_expiry ON actions(expires_at)")
+        db.execSQL("""CREATE TABLE admission_events (
+            binding_id TEXT NOT NULL,
+            request_id TEXT NOT NULL,
+            action_hash TEXT NOT NULL,
+            action_class TEXT NOT NULL,
+            boot_count INTEGER NOT NULL,
+            elapsed_at INTEGER NOT NULL,
+            PRIMARY KEY(binding_id,request_id)
+        )""")
+        db.execSQL("CREATE INDEX admission_window ON admission_events(binding_id,action_class,elapsed_at)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) =
         error("wear_action_inbox_schema_unsupported")
 
-    fun insert(bindingId: String, requestId: String, actionHash: String,
+    fun insert(bindingId: String, requestId: String, actionName: String, actionHash: String,
         expiresAt: Long, wire: ByteArray, now: Long): WearActionInsertResult = transaction { db ->
         require(UUID.fromString(bindingId).toString() == bindingId)
         require(requestId.isNotBlank() && requestId.toByteArray(Charsets.UTF_8).size <= 256)
@@ -50,6 +66,8 @@ internal class WearActionInbox(context: Context) : SQLiteOpenHelper(
         require(expiresAt > now && expiresAt - now <= 120_000)
         require(wire.size in 16..8192)
         gc(db, now)
+        val sampledTime = admissionTime(now)
+        if (!pruneAdmissionEvents(db, sampledTime)) return@transaction WearActionInsertResult.RATE_LIMITED
         val existing = db.rawQuery(
             "SELECT action_hash FROM actions WHERE binding_id=? AND request_id=?",
             arrayOf(bindingId, requestId)
@@ -58,15 +76,34 @@ internal class WearActionInbox(context: Context) : SQLiteOpenHelper(
             return@transaction if (existing == actionHash) WearActionInsertResult.DUPLICATE
                 else WearActionInsertResult.CONFLICT
         }
+        val admittedHash = db.rawQuery(
+            "SELECT action_hash FROM admission_events WHERE binding_id=? AND request_id=?",
+            arrayOf(bindingId, requestId)
+        ).use { if (it.moveToFirst()) it.getString(0) else null }
+        if (admittedHash != null) {
+            return@transaction if (admittedHash == actionHash) WearActionInsertResult.DUPLICATE
+                else WearActionInsertResult.CONFLICT
+        }
         val total = count(db, null)
         val perBinding = count(db, bindingId)
         if (total >= 64 || perBinding >= 8) return@transaction WearActionInsertResult.BUSY
+        val actionClass = actionClass(actionName)
+        if (!rateAdmitted(db, bindingId, actionClass, sampledTime.elapsedMillis))
+            return@transaction WearActionInsertResult.RATE_LIMITED
         db.insertOrThrow("actions", null, ContentValues().apply {
             put("binding_id", bindingId)
             put("request_id", requestId)
             put("action_hash", actionHash)
             put("expires_at", expiresAt)
             put("wire", wire)
+        })
+        db.insertOrThrow("admission_events", null, ContentValues().apply {
+            put("binding_id", bindingId)
+            put("request_id", requestId)
+            put("action_hash", actionHash)
+            put("action_class", actionClass)
+            put("boot_count", sampledTime.bootCount)
+            put("elapsed_at", sampledTime.elapsedMillis)
         })
         WearActionInsertResult.INSERTED
     }
@@ -95,13 +132,60 @@ internal class WearActionInbox(context: Context) : SQLiteOpenHelper(
     }
 
     fun removeBinding(bindingId: String): Int = transaction { db ->
-        db.delete("actions", "binding_id=?", arrayOf(bindingId))
+        val removed = db.delete("actions", "binding_id=?", arrayOf(bindingId))
+        db.delete("admission_events", "binding_id=?", arrayOf(bindingId))
+        removed
     }
 
     fun prune(now: Long): Int = transaction { db -> gc(db, now) }
 
     private fun gc(db: SQLiteDatabase, now: Long): Int =
         db.delete("actions", "expires_at<=?", arrayOf(now.toString()))
+
+    private fun pruneAdmissionEvents(db: SQLiteDatabase, time: WearAdmissionTime): Boolean {
+        if (time.bootCount < 0 || time.elapsedMillis < 0) return false
+        val priorBoot = db.rawQuery("SELECT boot_count FROM admission_events LIMIT 1", null).use {
+            if (it.moveToFirst()) it.getInt(0) else null
+        }
+        if (priorBoot != null && priorBoot != time.bootCount) {
+            if (time.elapsedMillis < 60_000) return false
+            db.delete("admission_events", "boot_count!=?", arrayOf(time.bootCount.toString()))
+        }
+        db.delete("admission_events", "boot_count=? AND elapsed_at<=?",
+            arrayOf(time.bootCount.toString(), (time.elapsedMillis - 60_000).toString()))
+        return true
+    }
+
+    private fun actionClass(name: String): String = when (name) {
+        "readHostPage", "readHostAgents", "readNotificationsPage", "openConversation",
+        "renewConversation", "closeConversation" -> "read"
+        "sendAgentMessage" -> "send"
+        "refresh" -> "refresh"
+        "requestPhoneHandoff" -> "handoff"
+        else -> error("wear_action_unknown")
+    }
+
+    private fun rateAdmitted(db: SQLiteDatabase, bindingId: String, actionClass: String, elapsedNow: Long): Boolean {
+        val events = db.rawQuery("""SELECT COUNT(*),MAX(elapsed_at),
+            SUM(CASE WHEN elapsed_at>? THEN 1 ELSE 0 END)
+            FROM admission_events WHERE binding_id=? AND action_class=?""",
+            arrayOf((elapsedNow - 2_000).toString(), bindingId, actionClass)).use {
+            it.moveToFirst()
+            Triple(it.getLong(0), if (it.isNull(1)) null else it.getLong(1), it.getLong(2))
+        }
+        val global = db.rawQuery("SELECT COUNT(*) FROM admission_events", null).use {
+            it.moveToFirst(); it.getLong(0)
+        }
+        if (global >= 4096) return false
+        val latest = events.second
+        return when (actionClass) {
+            "read" -> events.first < 30 && events.third < 4
+            "send" -> events.first < 10 && (latest == null || elapsedNow - latest >= 2_000)
+            "refresh" -> latest == null || elapsedNow - latest >= 10_000
+            "handoff" -> latest == null || elapsedNow - latest >= 5_000
+            else -> error("wear_action_unknown")
+        }
+    }
 
     private fun count(db: SQLiteDatabase, bindingId: String?): Long = db.rawQuery(
         if (bindingId == null) "SELECT COUNT(*) FROM actions"
