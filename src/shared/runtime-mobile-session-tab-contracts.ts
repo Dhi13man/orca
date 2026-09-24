@@ -92,6 +92,10 @@ export type RuntimeMobileSessionAgentTab = {
   title: string
   sessionId: string
   agent: 'codex'
+  structuredStatus?: {
+    state: 'working' | 'blocked' | 'done'
+    updatedAt: number
+  }
   color?: string | null
   isPinned?: boolean
   isActive: boolean

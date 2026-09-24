@@ -13,6 +13,36 @@ function worktree(
 }
 
 describe('Wear session inventory', () => {
+  it('counts host-published structured status and expires it without inventing old-host state', () => {
+    const inventory = new WearSessionInventory(true)
+    inventory.accept({
+      type: 'snapshots',
+      authoritative: true,
+      snapshots: [
+        worktree('epoch-a', 1, [
+          {
+            type: 'agent-session',
+            id: 'blocked',
+            title: 'Needs approval',
+            structuredStatus: { state: 'blocked', updatedAt: now }
+          },
+          { type: 'agent-session', id: 'old-host', title: 'Unknown' }
+        ])
+      ]
+    })
+    expect(inventory.summary(now).agentCounts).toEqual({
+      total: 2,
+      working: 0,
+      needsAttention: 1
+    })
+    expect(inventory.rows(now).map((row) => [row.sessionTabId, row.state, row.freshness])).toEqual([
+      ['blocked', 'blocked', 'fresh'],
+      ['old-host', null, 'unavailable']
+    ])
+    expect(inventory.nextFreshnessExpiry(now)).toBe(now + 30 * 60_000 + 1)
+    expect(inventory.summary(now + 30 * 60_000 + 1).agentCounts.needsAttention).toBe(0)
+  })
+
   it('projects exact terminal and structured agent identities without guessing stale state', () => {
     const inventory = new WearSessionInventory(true)
     inventory.accept({

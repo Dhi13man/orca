@@ -3254,6 +3254,7 @@ export class OrcaRuntimeService {
   private readonly rendererPublicationThrottle = new RendererPublicationThrottle()
   private tabs = new Map<string, RuntimeSyncedTab>()
   private mobileSessionTabsByWorktree = new Map<string, RuntimeMobileSessionTabsSnapshot>()
+  private structuredWearStatusBySessionId = new Map<string, string>()
   private readonly clientHostedPageReconciliation = new ClientHostedPageReconciliationWindow(
     Date.now()
   )
@@ -9560,6 +9561,25 @@ export class OrcaRuntimeService {
     }
   }
 
+  private publishStructuredWearStatus(sessionId: string): void {
+    const status = getStructuredAgentSessionHost()?.wearStatus(sessionId) ?? null
+    const key = JSON.stringify(status)
+    if (this.structuredWearStatusBySessionId.get(sessionId) === key) {
+      return
+    }
+    this.structuredWearStatusBySessionId.set(sessionId, key)
+    for (const [worktreeId, snapshot] of this.mobileSessionTabsByWorktree) {
+      if (
+        !snapshot.tabs.some((tab) => tab.type === 'agent-session' && tab.sessionId === sessionId)
+      ) {
+        continue
+      }
+      const next = { ...snapshot, snapshotVersion: snapshot.snapshotVersion + 1 }
+      this.mobileSessionTabsByWorktree.set(worktreeId, next)
+      this.emitMobileSessionTabsSnapshot(next)
+    }
+  }
+
   /**
    * Answers one client's session-tabs question: whether this runtime has taken back *that* client's
    * client-hosted pages yet, then that client's own tab selection.
@@ -9571,8 +9591,19 @@ export class OrcaRuntimeService {
     result: RuntimeMobileSessionTabsResult,
     clientNavigationId?: string
   ): RuntimeMobileSessionTabsResult {
+    const statusHost = getStructuredAgentSessionHost()
+    const withStructuredStatus = {
+      ...result,
+      tabs: result.tabs.map((tab) => {
+        if (tab.type !== 'agent-session') {
+          return tab
+        }
+        const structuredStatus = statusHost?.wearStatus(tab.sessionId)
+        return structuredStatus ? { ...tab, structuredStatus } : tab
+      })
+    }
     return this.clientSessionTabSelections.project(
-      this.withClientHostedPagesHold(result, clientNavigationId),
+      this.withClientHostedPagesHold(withStructuredStatus, clientNavigationId),
       clientNavigationId
     )
   }
@@ -11437,6 +11468,9 @@ export class OrcaRuntimeService {
       resolveLaunchArgs: () => this.resolveConfiguredCodexStructuredArgs(),
       resolveLaunchEnvOverlay: () =>
         resolveTuiAgentLaunchEnv('codex', this.requireStore().getSettings().agentDefaultEnv),
+      onJournalPublished: (sessionId) => this.publishStructuredWearStatus(sessionId),
+      onError: ({ scope, error }) =>
+        console.warn('[structured-agent-session] host error', { scope, error }),
       handoffTransport: this.createStructuredAgentSessionHandoffTransport()
     })
   }

@@ -49,5 +49,6 @@ export type StructuredAgentSessionHostDeps = {
   /** How long a session outlives its last surface. Tests drive this; production takes the default. */
   releaseGraceMs?: number
   onEventSinkError?: (input: { sessionId: string; error: unknown }) => void
+  onJournalPublished?: (sessionId: string) => void
   handoffTransport?: StructuredAgentSessionHandoffTransport
 }

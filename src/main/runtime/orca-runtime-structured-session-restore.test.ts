@@ -5,6 +5,39 @@ import { OrcaRuntimeService } from './orca-runtime'
 afterEach(() => setStructuredAgentSessionHost(null))
 
 describe('structured session cold restoration', () => {
+  it('publishes changed host-owned structured status through session tabs', async () => {
+    const runtime = new OrcaRuntimeService()
+    let status: { state: 'working' | 'blocked'; updatedAt: number } | null = {
+      state: 'working',
+      updatedAt: 1_800_000_000_000
+    }
+    setStructuredAgentSessionHost({ wearStatus: () => status } as never)
+    runtime.publishStructuredAgentSessionTab({
+      workspaceId: 'workspace-1',
+      sessionId: 'session-1',
+      agent: 'codex',
+      activate: true
+    })
+    const published: { version: number; state: string | undefined }[] = []
+    const close = runtime.onMobileSessionTabsChanged((snapshot) => {
+      const tab = snapshot.tabs.find((candidate) => candidate.type === 'agent-session')
+      published.push({
+        version: snapshot.snapshotVersion,
+        state: tab?.type === 'agent-session' ? tab.structuredStatus?.state : undefined
+      })
+    })
+    const internal = runtime as unknown as { publishStructuredWearStatus(sessionId: string): void }
+    internal.publishStructuredWearStatus('session-1')
+    status = { state: 'blocked', updatedAt: 1_800_000_600_000 }
+    internal.publishStructuredWearStatus('session-1')
+    internal.publishStructuredWearStatus('session-1')
+    status = null
+    internal.publishStructuredWearStatus('session-1')
+    close()
+    expect(published.map((entry) => entry.state)).toEqual(['working', 'blocked', undefined])
+    expect(published.map((entry) => entry.version)).toEqual([2, 3, 4])
+  })
+
   it('skips every heavy recovery step when no durable session store exists', async () => {
     const runtime = new OrcaRuntimeService()
     const refresh = vi.fn(async () => new Set<string>())
@@ -126,6 +159,7 @@ describe('structured session cold restoration', () => {
     setStructuredAgentSessionHost({
       reconcileRestartLeases: async () => undefined,
       restoreReadableSessions: async () => undefined,
+      wearStatus: () => null,
       listSessionTabs: () => [
         {
           sessionId: 'agent-session:agent-session:restored-session',

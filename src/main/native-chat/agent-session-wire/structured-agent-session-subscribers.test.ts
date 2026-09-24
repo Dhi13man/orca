@@ -29,6 +29,20 @@ afterEach(async () => {
 })
 
 describe('AgentSessionSubscribers', () => {
+  it('notifies tab projection even when no conversation subscriber is open', () => {
+    const published: string[] = []
+    const subscribers = new AgentSessionSubscribers((sessionId) => published.push(sessionId))
+    subscribers.publish(SESSION, {} as never)
+    subscribers.handoff(SESSION, 1, {
+      owner: 'native',
+      direction: null,
+      phase: 'idle',
+      stage: null,
+      operationId: null
+    })
+    expect(published).toEqual([SESSION, SESSION])
+  })
+
   it('publishes the current fence when a resumed cursor is already caught up', async () => {
     const journal = await openAgentSessionJournal({
       identity: {

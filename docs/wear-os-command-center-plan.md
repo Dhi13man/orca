@@ -1827,3 +1827,19 @@ an optional field on the existing structured tab projection, publish a tab
 change when that verdict changes, and keep older hosts/clients at unavailable.
 Acceptance must cover a pending prompt beyond the conversation tail, completed
 turn, crash/restart stale running state, and old-host/new-phone absence.
+
+The host-owned structured-status projection is now implemented on this branch.
+It reads the full reduced journal only for a reconciled live native owner,
+publishes `working`/`blocked`/`done` as an optional session-tab field, and
+keeps older hosts at unavailable. Publication follows journal changes and
+lease renewal; a deadline timer invalidates it if renewal stops. A failed
+status observer is reported without aborting a durable agent send. Host/Wear
+focused tests, node/mobile typechecks, scoped lint and format pass; the new
+runtime publication test passes in isolation. The full restoration suite's
+assertions pass but its Windows temp-directory teardown intermittently fails
+with `EPERM`, so that suite remains a harness check to revisit. No current
+source phone APK or physical paired-device status roundtrip has been verified
+yet. The exact idle-session reply, SSH durable send, physical watch install,
+and installed-device acceptance remain open. Existing configured agents and
+paired machines are the test targets; no disposable profile or sign-in is
+required.

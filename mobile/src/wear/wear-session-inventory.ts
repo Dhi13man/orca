@@ -1,9 +1,10 @@
 import { AGENT_STATUS_STALE_AFTER_MS } from '../../../src/shared/agent-status-types'
 import { UNPUBLISHED_WORKTREE_PUBLICATION_EPOCH } from '../../../src/shared/runtime-session-contracts'
 import type { WearDashboardHost } from '@orca/wear-companion-contract/dashboard'
+import { explicitWearAgentStatus } from './wear-explicit-agent-status'
 
 type AgentTab =
-  | { type: 'agent-session'; id: string; title: string }
+  | { type: 'agent-session'; id: string; title: string; structuredStatus?: unknown }
   | { type: 'terminal'; id: string; title: string; launchAgent?: unknown; agentStatus?: unknown }
 
 export type WearSessionAgentRow = {
@@ -75,7 +76,12 @@ function snapshot(value: unknown): InventorySnapshot | null {
     }
     seen.add(item.id)
     if (item.type === 'agent-session') {
-      tabs.push({ type: 'agent-session', id: item.id, title: agentTitle(item.title, 'Agent') })
+      tabs.push({
+        type: 'agent-session',
+        id: item.id,
+        title: agentTitle(item.title, 'Agent'),
+        structuredStatus: item.structuredStatus
+      })
     } else if (item.type === 'terminal') {
       tabs.push({
         type: 'terminal',
@@ -93,33 +99,6 @@ function snapshot(value: unknown): InventorySnapshot | null {
     publicationEpoch: value.publicationEpoch,
     snapshotVersion: value.snapshotVersion as number,
     tabs
-  }
-}
-
-function explicitAgentStatus(
-  value: unknown,
-  now: number
-): {
-  state: 'working' | 'blocked' | 'waiting' | 'done'
-  updatedAt: number
-  fresh: boolean
-} | null {
-  if (
-    !record(value) ||
-    !['working', 'blocked', 'waiting', 'done'].includes(value.state as string) ||
-    !Number.isSafeInteger(value.updatedAt) ||
-    (value.updatedAt as number) < 0
-  ) {
-    return null
-  }
-  const updatedAt = value.updatedAt as number
-  if (updatedAt > now + 300_000) {
-    return null
-  }
-  return {
-    state: value.state as 'working' | 'blocked' | 'waiting' | 'done',
-    updatedAt: Math.min(updatedAt, now),
-    fresh: value.restoredUnconfirmed !== true && now - updatedAt <= AGENT_STATUS_STALE_AFTER_MS
   }
 }
 
@@ -227,12 +206,15 @@ export class WearSessionInventory {
     let lastActivityAt: number | null = null
     for (const item of this.snapshots.values()) {
       for (const tab of item.tabs) {
-        if (tab.type === 'agent-session') {
-          total++
-          continue
-        }
-        const status = explicitAgentStatus(tab.agentStatus, now)
-        if ((typeof tab.launchAgent !== 'string' || !tab.launchAgent) && !status) {
+        const status = explicitWearAgentStatus(
+          tab.type === 'agent-session' ? tab.structuredStatus : tab.agentStatus,
+          now
+        )
+        if (
+          tab.type === 'terminal' &&
+          (typeof tab.launchAgent !== 'string' || !tab.launchAgent) &&
+          !status
+        ) {
           continue
         }
         total++
@@ -268,11 +250,14 @@ export class WearSessionInventory {
         if (
           tab.type === 'terminal' &&
           (typeof tab.launchAgent !== 'string' || !tab.launchAgent) &&
-          !explicitAgentStatus(tab.agentStatus, now)
+          !explicitWearAgentStatus(tab.agentStatus, now)
         ) {
           continue
         }
-        const status = tab.type === 'terminal' ? explicitAgentStatus(tab.agentStatus, now) : null
+        const status = explicitWearAgentStatus(
+          tab.type === 'agent-session' ? tab.structuredStatus : tab.agentStatus,
+          now
+        )
         rows.push({
           workspaceId: item.worktree,
           sessionTabId: tab.id,
@@ -297,10 +282,10 @@ export class WearSessionInventory {
     let next: number | null = null
     for (const item of this.snapshots.values()) {
       for (const tab of item.tabs) {
-        if (tab.type !== 'terminal') {
-          continue
-        }
-        const status = explicitAgentStatus(tab.agentStatus, now)
+        const status = explicitWearAgentStatus(
+          tab.type === 'agent-session' ? tab.structuredStatus : tab.agentStatus,
+          now
+        )
         if (!status?.fresh || status.state === 'done') {
           continue
         }

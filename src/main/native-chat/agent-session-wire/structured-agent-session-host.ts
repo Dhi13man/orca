@@ -55,11 +55,20 @@ import type {
   StructuredAgentSessionHostSession
 } from './structured-agent-session-host-types'
 import { readStructuredAgentSessionHistoryResult } from './structured-agent-session-history-result'
+import {
+  structuredAgentSessionWearStatus,
+  type StructuredWearStatus
+} from './structured-agent-session-wear-status'
+import {
+  createStructuredAgentSessionWearPublication,
+  type StructuredAgentSessionWearPublication
+} from './structured-agent-session-wear-publication'
+import { structuredAgentSessionWearSubmissionOutcome } from './structured-agent-session-wear-receipt'
 export type { StructuredAgentSessionHostDeps } from './structured-agent-session-host-types'
 
 export class StructuredAgentSessionHost {
   private readonly sessions = new Map<string, StructuredAgentSessionHostSession>()
-  private readonly subscribers = new AgentSessionSubscribers()
+  private readonly subscribers: AgentSessionSubscribers
   private readonly tasks = new StructuredAgentSessionTaskQueue()
   private readonly runtimeState: StructuredAgentSessionHostRuntimeState
   private readonly reconcileLeases: (sessionId: string) => Promise<AgentSessionWireRefusal | null>
@@ -67,11 +76,21 @@ export class StructuredAgentSessionHost {
   private readonly readableRestorer: StructuredAgentSessionReadableRestorer
   private readonly restartRestore = new StructuredAgentSessionRestartRestoreGate()
   private readonly holds: StructuredAgentSessionHolds
+  private readonly wearPublication: StructuredAgentSessionWearPublication
 
   constructor(readonly deps: StructuredAgentSessionHostDeps) {
+    this.wearPublication = createStructuredAgentSessionWearPublication(
+      deps,
+      (sessionId) => this.wearStatus(sessionId),
+      this.now
+    )
+    this.subscribers = new AgentSessionSubscribers(this.wearPublication.publish)
     this.runtimeState = new StructuredAgentSessionHostRuntimeState(
       deps,
-      (record) => this.restoreRenewedHandoff(record.sessionId),
+      (record) => {
+        this.wearPublication.publish(record.sessionId)
+        return this.restoreRenewedHandoff(record.sessionId)
+      },
       (record, probe) =>
         this.sessions.has(record.sessionId)
           ? this.serialize(record.sessionId, () =>
@@ -105,7 +124,10 @@ export class StructuredAgentSessionHost {
       resolveRecovery: (sessionId) => this.runtimeState.resolveRecovery(sessionId),
       serialize: (sessionId, task) => this.serialize(sessionId, task),
       hasSession: (sessionId) => this.sessions.has(sessionId),
-      onReadable: (sessionId, restored) => this.sessions.set(sessionId, restored),
+      onReadable: (sessionId, restored) => {
+        this.sessions.set(sessionId, restored)
+        this.wearPublication.publish(sessionId)
+      },
       restoreHandoff: (sessionId) => this.handoffs.restore(sessionId)
     })
     this.runtimeState.startLeaseRenewal()
@@ -115,28 +137,24 @@ export class StructuredAgentSessionHost {
 
   hasSession = (sessionId: string): boolean => this.sessions.has(sessionId)
 
+  wearStatus(sessionId: string): StructuredWearStatus | null {
+    return structuredAgentSessionWearStatus(
+      this.sessions.get(sessionId),
+      this.deps.store.getRecord(sessionId)?.lease,
+      this.now()
+    )
+  }
+
   wearSubmissionOutcome(
     sessionId: string,
     clientOperationId: string,
     sendFingerprint: string
   ): { state: 'accepted' | 'rejected' | 'unknown'; reason: string | null } | null {
-    const journal = this.sessions.get(sessionId)?.journal
-    if (!journal) {
-      return null
-    }
-    const submission = journal
-      .submissions()
-      .find((row) => row.clientMessageId === clientOperationId)
-    if (submission && submission.payloadFingerprint !== sendFingerprint) {
-      return null
-    }
-    if (journal.receiptFor(clientOperationId)) {
-      return { state: 'accepted', reason: null }
-    }
-    if (submission?.dispatchState === 'rejected') {
-      return { state: 'rejected', reason: submission.reason }
-    }
-    return submission ? { state: 'unknown', reason: null } : null
+    return structuredAgentSessionWearSubmissionOutcome(
+      this.sessions.get(sessionId)?.journal,
+      clientOperationId,
+      sendFingerprint
+    )
   }
 
   /** A surface bound to this session and wants it live. The FIRST hold on a session with no
@@ -242,6 +260,7 @@ export class StructuredAgentSessionHost {
   async flushAllStreamedEvents(): Promise<void> {
     this.holds.dispose()
     this.runtimeState.stopLeaseRenewal()
+    this.wearPublication.dispose()
     this.handoffs.stopTuiHistoryCatchup()
     await this.tasks.drainAttaches()
     await this.runtimeState.flushAllEventSinks()

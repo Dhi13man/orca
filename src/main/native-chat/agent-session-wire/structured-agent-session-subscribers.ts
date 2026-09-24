@@ -38,6 +38,8 @@ type Subscriber = {
 export class AgentSessionSubscribers {
   private readonly bySession = new Map<string, Map<string, Subscriber>>()
 
+  constructor(private readonly onPublished?: (sessionId: string) => void) {}
+
   /** Opens the stream with a bounded tail page or, when the client's cursor
    *  still resolves, with the rows it missed. Returns the disposer. */
   open(input: {
@@ -96,6 +98,7 @@ export class AgentSessionSubscribers {
     for (const subscriber of this.subscribers(sessionId)) {
       this.deliver(subscriber, journal)
     }
+    this.onPublished?.(sessionId)
   }
 
   /** Force every subscriber back to a bounded tail page — recovery, epoch
@@ -112,6 +115,7 @@ export class AgentSessionSubscribers {
       subscriber.cursor = page.liveCursor ?? page.window.nextCursor
       subscriber.fence = fence
     }
+    this.onPublished?.(sessionId)
   }
 
   snapshot(sessionId: string, journal: AgentSessionJournal, fence: number): void {
@@ -121,6 +125,7 @@ export class AgentSessionSubscribers {
       subscriber.cursor = page.liveCursor ?? page.window.nextCursor
       subscriber.fence = fence
     }
+    this.onPublished?.(sessionId)
   }
 
   handoff(sessionId: string, fence: number, handoff: AgentSessionHandoffStatus): void {
@@ -139,6 +144,7 @@ export class AgentSessionSubscribers {
       })
       subscriber.fence = fence
     }
+    this.onPublished?.(sessionId)
   }
 
   private subscribers(sessionId: string): Subscriber[] {
