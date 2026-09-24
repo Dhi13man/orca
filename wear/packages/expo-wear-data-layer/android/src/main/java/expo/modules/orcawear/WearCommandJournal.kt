@@ -27,6 +27,8 @@ internal object WearCommandJournal {
             expires_at INTEGER NOT NULL,
             state TEXT NOT NULL CHECK(state IN ('recorded','effect_started','accepted','rejected','unknown')),
             result_reason TEXT,
+            receipt_attempts INTEGER NOT NULL DEFAULT 0,
+            receipt_transmitted INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             recorded_boot_count INTEGER NOT NULL,
@@ -103,6 +105,33 @@ internal object WearCommandJournal {
         it.getString(0), it.getString(1), it.getString(2), it.getLong(3),
         if (it.isNull(4)) null else it.getString(4)) }
 
+    fun pendingReceipts(db: SQLiteDatabase): List<Pair<String, String>> = db.rawQuery(
+        """SELECT binding_id,request_id FROM command_journal
+            WHERE state IN ('accepted','rejected','unknown') AND receipt_transmitted=0
+            ORDER BY receipt_attempts,updated_at,binding_id,request_id LIMIT 64""", null
+    ).use { cursor -> buildList {
+        while (cursor.moveToNext()) add(cursor.getString(0) to cursor.getString(1))
+    } }
+
+    fun noteReceiptAttempt(db: SQLiteDatabase, record: WearJournalRecord): Boolean =
+        db.compileStatement("""UPDATE command_journal SET receipt_attempts=receipt_attempts+1
+            WHERE binding_id=? AND request_id=? AND action_hash=? AND state=?""").use {
+            it.bindString(1, record.bindingId)
+            it.bindString(2, record.requestId)
+            it.bindString(3, record.actionHash)
+            it.bindString(4, record.state)
+            it.executeUpdateDelete() == 1
+        }
+
+    fun markReceiptTransmitted(db: SQLiteDatabase, record: WearJournalRecord): Boolean =
+        db.update("command_journal", ContentValues().apply {
+            put("receipt_transmitted", 1)
+        }, "binding_id=? AND request_id=? AND action_hash=? AND state=? AND " +
+            (if (record.reason == null) "result_reason IS NULL" else "result_reason=?"),
+            if (record.reason == null) arrayOf(record.bindingId, record.requestId,
+                record.actionHash, record.state) else arrayOf(record.bindingId, record.requestId,
+                record.actionHash, record.state, record.reason)) == 1
+
     fun startEffect(db: SQLiteDatabase, bindingId: String, requestId: String,
         actionHash: String, now: Long, time: WearAdmissionTime): Boolean {
         prune(db, now, time)
@@ -137,6 +166,8 @@ internal object WearCommandJournal {
         return db.update("command_journal", ContentValues().apply {
             put("state", outcome)
             if (reason == null) putNull("result_reason") else put("result_reason", reason)
+            put("receipt_attempts", 0)
+            put("receipt_transmitted", 0)
             put("updated_at", now)
             put("terminal_boot_count", time.bootCount)
             put("terminal_elapsed_at", time.elapsedMillis)

@@ -106,6 +106,7 @@ type WearDataLayerModule = {
     reason: WearReceiptReason | null
   ): Promise<boolean>
   sendJournalReceipt(bindingId: string, requestId: string): Promise<void>
+  pendingJournalReceipts(): Promise<{ bindingId: string; requestId: string }[]>
   sendAction(
     canonical: string
   ): Promise<'transmitted' | 'unknown' | 'duplicate' | 'conflict' | 'full'>

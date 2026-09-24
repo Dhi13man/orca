@@ -1,4 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <application>
         <service android:name="expo.modules.orcawear.WearCompanionListenerService" android:exported="true">
             <intent-filter>
@@ -7,5 +8,8 @@
                 <data android:scheme="wear" android:host="*" android:pathPrefix="/orca/wear/v1/" />
             </intent-filter>
         </service>
+        <service android:name="expo.modules.orcawear.WearActionHeadlessService" android:exported="false" />
+        <service android:name="expo.modules.orcawear.WearReceiptRetryJobService"
+            android:exported="true" android:permission="android.permission.BIND_JOB_SERVICE" />
     </application>
 </manifest>

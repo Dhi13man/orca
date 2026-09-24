@@ -46,6 +46,11 @@ class WearCommandJournalTest {
                 assertFalse(reopened.finishEffect(binding, "one", hash, "rejected", 3, "conflict"))
                 assertEquals("accepted", reopened.journalRecord(binding, "one")!!.state)
                 assertNull(reopened.journalRecord(binding, "one")!!.reason)
+                val receipt = reopened.journalRecord(binding, "one")!!
+                assertEquals(listOf(binding to "one"), reopened.pendingReceipts())
+                assertTrue(reopened.noteReceiptAttempt(receipt))
+                assertTrue(reopened.markReceiptTransmitted(receipt))
+                assertTrue(reopened.pendingReceipts().isEmpty())
             }
         }
 
@@ -91,6 +96,53 @@ class WearCommandJournalTest {
                 assertEquals("rejected", reopened.journalRecord(binding, "one")!!.state)
                 assertEquals("target-changed", reopened.journalRecord(binding, "one")!!.reason)
                 assertFalse(reopened.finishEffect(binding, "one", hash, "accepted", 2))
+            }
+        }
+
+    @Test fun laterAuthoritativeOutcomeReopensReceiptTransport() = withWearTestDatabase { context ->
+        val binding = UUID.randomUUID().toString()
+        val canonical = action(binding, "one", 120_000)
+        val hash = hash(canonical)
+        WearActionInbox(context) { WearAdmissionTime(it, 1) }.use { inbox ->
+            assertEquals(WearActionInsertResult.INSERTED,
+                inbox.insert(binding, "one", "readHostPage", hash, 120_000, wire, 0))
+            val claim = inbox.claim(0)!!
+            assertEquals(WearJournalHandoff.RECORDED,
+                inbox.commitHandoff(binding, "one", hash, claim.claimToken, canonical, 0))
+            assertTrue(inbox.startEffect(binding, "one", hash, 0))
+            assertTrue(inbox.finishEffect(binding, "one", hash, "unknown", 1))
+            val unknown = inbox.journalRecord(binding, "one")!!
+            assertTrue(inbox.noteReceiptAttempt(unknown))
+            assertTrue(inbox.markReceiptTransmitted(unknown))
+            assertTrue(inbox.pendingReceipts().isEmpty())
+            assertTrue(inbox.finishEffect(binding, "one", hash, "accepted", 2))
+            assertEquals(listOf(binding to "one"), inbox.pendingReceipts())
+            assertFalse(inbox.markReceiptTransmitted(unknown))
+        }
+    }
+
+    @Test fun failedReceiptPreparationsRotateBehindLaterTerminalRows() =
+        withWearTestDatabase { context ->
+            val binding = UUID.randomUUID().toString()
+            WearActionInbox(context) { WearAdmissionTime(it, 1) }.use { inbox ->
+                repeat(3) { index ->
+                    val now = index * 2_000L
+                    val request = "request-$index"
+                    val canonical = action(binding, request, now + 120_000)
+                    val hash = hash(canonical)
+                    assertEquals(WearActionInsertResult.INSERTED,
+                        inbox.insert(binding, request, "readHostPage", hash,
+                            now + 120_000, wire, now))
+                    val claim = inbox.claim(now)!!
+                    assertEquals(WearJournalHandoff.RECORDED,
+                        inbox.commitHandoff(binding, request, hash, claim.claimToken, canonical, now))
+                    assertTrue(inbox.startEffect(binding, request, hash, now))
+                    assertTrue(inbox.finishEffect(binding, request, hash, "rejected", now, "unavailable"))
+                }
+                assertEquals("request-0", inbox.pendingReceipts().first().second)
+                assertTrue(inbox.noteReceiptAttempt(inbox.journalRecord(binding, "request-0")!!))
+                assertTrue(inbox.noteReceiptAttempt(inbox.journalRecord(binding, "request-1")!!))
+                assertEquals("request-2", inbox.pendingReceipts().first().second)
             }
         }
 

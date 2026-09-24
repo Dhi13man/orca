@@ -141,6 +141,17 @@ internal class WearActionInbox(context: Context, private val admissionTime: (Lon
     fun journalRecord(bindingId: String, requestId: String): WearJournalRecord? =
         WearCommandJournal.read(readableDatabase, bindingId, requestId)
 
+    fun pendingReceipts(): List<Pair<String, String>> =
+        WearCommandJournal.pendingReceipts(readableDatabase)
+
+    fun noteReceiptAttempt(record: WearJournalRecord): Boolean = transaction { db ->
+        WearCommandJournal.noteReceiptAttempt(db, record)
+    }
+
+    fun markReceiptTransmitted(record: WearJournalRecord): Boolean = transaction { db ->
+        WearCommandJournal.markReceiptTransmitted(db, record)
+    }
+
     fun startEffect(bindingId: String, requestId: String, actionHash: String, now: Long): Boolean =
         transaction { db -> WearCommandJournal.startEffect(db, bindingId, requestId, actionHash,
             now, admissionTime(now)) }

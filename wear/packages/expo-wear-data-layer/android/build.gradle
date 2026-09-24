@@ -22,5 +22,6 @@ android {
 }
 
 dependencies {
+    implementation 'com.facebook.react:react-android'
     implementation 'com.google.android.gms:play-services-wearable:19.0.0'
 }

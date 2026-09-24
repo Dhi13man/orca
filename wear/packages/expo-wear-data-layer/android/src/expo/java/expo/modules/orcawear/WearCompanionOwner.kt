@@ -1,6 +1,7 @@
 package expo.modules.orcawear
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.net.Uri
@@ -58,7 +59,10 @@ internal class WearCompanionOwner private constructor(private val context: Conte
             }, {
                 if (it != null) reportError(classify(it))
                 reconcilePublicationIntents()
-                if (role == CompanionRole.PHONE) syncDashboardItems()
+                if (role == CompanionRole.PHONE) {
+                    syncDashboardItems()
+                    if (actions.pendingReceipts().isNotEmpty()) scheduleReceiptRetry()
+                }
             })
         }
     }
@@ -302,7 +306,10 @@ internal class WearCompanionOwner private constructor(private val context: Conte
             return
         }
         var result: Boolean? = null
-        submit({ completed(result, it) }, false) { ticket ->
+        submit({ error ->
+            if (error == null && result == true) scheduleReceiptRetry()
+            completed(result, error)
+        }, false) { ticket ->
             ticket.effect {
                 result = actions.finishEffect(bindingId, requestId, actionHash,
                     outcome, System.currentTimeMillis(), reason)
@@ -322,6 +329,7 @@ internal class WearCompanionOwner private constructor(private val context: Conte
             check(record.state in setOf("accepted", "rejected", "unknown")) {
                 "wear_receipt_not_terminal"
             }
+            ticket.effect { check(actions.noteReceiptAttempt(record)) { "wear_receipt_changed" } }
             val now = System.currentTimeMillis()
             val expiresAt = Math.addExact(now, 120_000)
             val receipt = WearReceipt(bindingId, requestId, record.actionHash,
@@ -339,9 +347,56 @@ internal class WearCompanionOwner private constructor(private val context: Conte
                     val task = Wearable.getMessageClient(context).sendMessage(peerNodeId, metadata.path, wire)
                     try { Tasks.await(task, 12, TimeUnit.SECONDS) }
                     catch (error: TimeoutException) { throw IllegalStateException("wear_work_timeout", error) }
+                    check(actions.markReceiptTransmitted(record)) { "wear_receipt_changed" }
                 }
             } finally { plaintext.fill(0) }
         }
+    }
+
+    fun pendingJournalReceipts(completed: (List<Map<String, String>>?, Exception?) -> Unit) {
+        if (role != CompanionRole.PHONE) {
+            completed(null, IllegalStateException("wear_receipt_wrong_role"))
+            return
+        }
+        var result: List<Map<String, String>>? = null
+        submit({ completed(result, it) }, false) {
+            result = actions.pendingReceipts().map { (bindingId, requestId) ->
+                mapOf("bindingId" to bindingId, "requestId" to requestId)
+            }
+        }
+    }
+
+    fun retryPendingReceipts(limit: Int, completed: (Boolean) -> Unit) {
+        require(limit in 1..2)
+        if (role != CompanionRole.PHONE) {
+            completed(false)
+            return
+        }
+        pendingJournalReceipts { records, error ->
+            if (error != null) {
+                completed(true)
+                return@pendingJournalReceipts
+            }
+            val batch = records.orEmpty().take(limit)
+            fun next(index: Int) {
+                if (index == batch.size) {
+                    pendingJournalReceipts { remaining, checkError ->
+                        completed(checkError != null || remaining.orEmpty().isNotEmpty())
+                    }
+                    return
+                }
+                val receipt = batch[index]
+                sendJournalReceipt(receipt.getValue("bindingId"), receipt.getValue("requestId")) {
+                    next(index + 1)
+                }
+            }
+            next(0)
+        }
+    }
+
+    private fun scheduleReceiptRetry() {
+        try { WearReceiptRetryJobService.schedule(context) }
+        catch (_: Exception) { reportError("unavailable") }
     }
 
     fun sendAction(canonical: String, completed: (String?, Exception?) -> Unit) {
@@ -520,7 +575,11 @@ internal class WearCompanionOwner private constructor(private val context: Conte
         if (role == CompanionRole.PHONE && ACTION_PATH.matches(path)) {
             if (bytes.size > 8192) return
             val owned = bytes.copyOf()
-            submit({}, false) { ingestAction(nodeId, path, owned, it) }
+            var admitted: WearActionInsertResult? = null
+            submit({ error ->
+                if (error == null && admitted in setOf(WearActionInsertResult.INSERTED,
+                    WearActionInsertResult.DUPLICATE)) wakeActionDrain()
+            }, false) { admitted = ingestAction(nodeId, path, owned, it) }
             return
         }
         if (role == CompanionRole.WATCH && RECEIPT_PATH.matches(path)) {
@@ -538,20 +597,30 @@ internal class WearCompanionOwner private constructor(private val context: Conte
         }
     }
 
-    private fun ingestAction(nodeId: String, path: String, wire: ByteArray, ticket: WearWorkTicket) {
+    private fun ingestAction(nodeId: String, path: String, wire: ByteArray,
+        ticket: WearWorkTicket): WearActionInsertResult? {
         val opened = WearEnvelope(bindings).open(path, nodeId, wire, System.currentTimeMillis())
-        try {
+        return try {
             bindings.withBinding(opened.metadata.bindingId) { binding ->
                 check(binding.state == "active" && binding.peerNodeId == nodeId) { "wear_binding_changed" }
                 val admitted = admitWearAction(opened.metadata, opened.plaintext,
                     dashboards.publishedDashboard(opened.metadata.bindingId), System.currentTimeMillis())
-                    ?: return@withBinding
+                    ?: return@withBinding null
+                var result: WearActionInsertResult? = null
                 ticket.effect {
-                    actions.insert(opened.metadata.bindingId, opened.metadata.requestId, admitted.name, admitted.hash,
+                    result = actions.insert(opened.metadata.bindingId, opened.metadata.requestId, admitted.name, admitted.hash,
                         admitted.expiresAt, wire, System.currentTimeMillis())
                 }
+                result
             }
         } finally { opened.plaintext.fill(0) }
+    }
+
+    private fun wakeActionDrain() {
+        try {
+            context.startService(Intent(context, WearActionHeadlessService::class.java)
+                .setAction(WearActionHeadlessService.ACTION))
+        } catch (_: Exception) { reportError("unavailable") }
     }
 
     private fun ingestReceipt(nodeId: String, path: String, wire: ByteArray,

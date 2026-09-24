@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { View, StyleSheet } from 'react-native'
+import { AppState, View, StyleSheet } from 'react-native'
 import { Stack, useRouter } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import * as SplashScreen from 'expo-splash-screen'
@@ -14,6 +14,7 @@ import { loadHostCatalog } from '../src/transport/host-store'
 import { extractPairingCodeFromUrl } from '../src/transport/pairing'
 import { recoverMobileRelayPairing } from '../src/transport/mobile-relay-pairing-recovery'
 import { startForegroundWearDashboardPublisher } from '../src/wear/wear-dashboard-publisher'
+import { drainWearActions } from '../src/wear/wear-action-drain'
 
 // Why: keeps the native splash screen visible until the React tree is mounted
 // and ready to render. Without this the user sees a blank white/black frame
@@ -52,6 +53,19 @@ export default function RootLayout() {
       }),
     []
   )
+
+  useEffect(() => {
+    const drain = () => {
+      void drainWearActions().catch(() => console.warn('Wear action recovery failed'))
+    }
+    drain()
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        drain()
+      }
+    })
+    return () => subscription.remove()
+  }, [])
 
   // Why: route `orca://pair?...` deep links to the confirm screen so
   // the same pairing flow runs whether the link arrived via QR scan,
