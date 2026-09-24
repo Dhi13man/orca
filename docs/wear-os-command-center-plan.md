@@ -1694,3 +1694,11 @@ evidence but not a second cold-start claim. This reconfirms scheduled
 phone-to-watch refresh on the current emulator build, not naturally timed
 15-minute execution, host notification delivery, Doze behavior, or physical
 acceptance.
+
+The current ARM64 watch release source map lists 626 bundled modules from
+`/index.ts` and `/App.tsx`; none comes from the preserved, untracked
+`wear/src/orca/` direct-runtime prototype or `wear/src/command-center/`.
+The committed `wear/App.tsx` imports the companion Data Layer and fixed page
+hooks, with no direct runtime-RPC/WebSocket client. This checks the bundle's
+source boundary; it does not alone inspect on-device private storage or prove
+that a production watch never held credentials from an older app.
