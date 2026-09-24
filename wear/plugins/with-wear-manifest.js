@@ -24,22 +24,6 @@ module.exports = function withWearManifest(config) {
       }
     ]
 
-    const application = manifest.application?.[0]
-    if (!application) {
-      throw new Error('Generated Android manifest has no application')
-    }
-    const metadata = application['meta-data'] ?? []
-    application['meta-data'] = [
-      ...metadata.filter(
-        (entry) => entry.$?.['android:name'] !== 'com.google.android.wearable.standalone'
-      ),
-      {
-        $: {
-          'android:name': 'com.google.android.wearable.standalone',
-          'android:value': 'true'
-        }
-      }
-    ]
     return configWithManifest
   })
 }

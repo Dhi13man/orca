@@ -1542,3 +1542,18 @@ is required. The previously created isolated sign-in attempt is historical
 evidence, not an active blocker. Before a reply test, reverify an existing
 agent session's exact identity and idle state, then send only a bounded,
 harmless acknowledgement; leave busy sessions and all profile data untouched.
+
+An ARM64-only release build exposed a conflicting watch manifest plugin:
+`with-wear-manifest.js` overwrote the companion module's `standalone=false` with
+`true`. The duplicate metadata writer was removed. Expo config introspection
+and the rebuilt watch APK now report `com.google.android.wearable.standalone=false`;
+the APK contains only `arm64-v8a` native libraries, the bundled JavaScript,
+package `com.stably.orca.mobile`, and certificate SHA-256
+`fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c`.
+The watch APK SHA-256 is
+`F0B40C87F1670266A290FC38F01DDAF500C1B791935539B6BF47B257B4E290C8`.
+The matching ARM64 phone APK also built; SHA-256
+`B6E4136038770BC830296D5A6D12A1FCFBC5AA09644B5C3C642B0E49870B6AF6`.
+Its manifest contains the non-exported Wear Headless JS service and its APK
+contains bundled JavaScript. No physical install or Headless JS wake occurred;
+paired-device and runtime acceptance remain open.
