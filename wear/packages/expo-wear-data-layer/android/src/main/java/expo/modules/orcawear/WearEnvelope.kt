@@ -44,7 +44,8 @@ internal class WearEnvelope(
         require(plaintext.size <= if (metadata.kind == WearEnvelopeKind.ACTION) 8192 else 32768)
         val nonce = bindings.reserveNonce(metadata.bindingId)
         val header = encodeHeader(metadata, nonce)
-        require(header.size + plaintext.size + 16 <= 32768)
+        require(header.size + plaintext.size + 16 <=
+            if (metadata.kind == WearEnvelopeKind.ACTION) 8192 else 32768)
         return withKey(metadata.bindingId, { authorize(it, metadata.kind, it.role, false) }) { key ->
             val ciphertext = cipher(Cipher.ENCRYPT_MODE, key, nonce, header).doFinal(plaintext)
             validate(metadata, Math.addExact(now, elapsedRealtime() - started))
@@ -62,6 +63,7 @@ internal class WearEnvelope(
             ?: error("wear_envelope_kind_unknown")
         val metadata = WearEnvelopeMetadata(readText(input), kind, readText(input),
             input.readLong(), readText(input), input.readLong())
+        if (kind == WearEnvelopeKind.ACTION) require(wire.size <= 8192)
         validate(metadata, now)
         require(metadata.path == path) { "wear_envelope_wrong_path" }
         val nonce = ByteArray(12).also { input.readFully(it) }
