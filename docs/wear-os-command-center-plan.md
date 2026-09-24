@@ -1634,3 +1634,15 @@ rendering, not authenticated conversation, action delivery, Usage PAGE,
 notifications, timed background wake, or physical-device behavior. No agent
 message or production data change was made. The verified ARM64 checkpoint APKs
 were restored to the canonical release output paths after emulator testing.
+
+The paired emulator's on-watch "Refresh from phone" completed with a visible
+snapshot timestamp advance from 1:21 to 1:26 AM. With test phone
+`emulator-5556` on its launcher (`topResumedActivity` no longer Orca), a second
+watch refresh advanced the timestamp to 1:27. After `adb shell am kill
+com.stably.orca.mobile` on that test emulator (not force-stop), the old phone
+process exited, a new PID appeared following a watch refresh, and the visible
+snapshot advanced to 1:28. These observations support foreground,
+backgrounded, and process-cold **watch-initiated** request/response on the
+paired emulator. They do not prove host-originated autonomous wake,
+screen-off/Doze timing, notification delivery, physical watch behavior, or a
+real host conversation/reply.
