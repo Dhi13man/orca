@@ -1221,3 +1221,16 @@ Focused host, phone, and Wear tests and typechecks pass. A live paired structure
 send, journal recovery after process restart, and physical-watch acceptance are
 still unproved. SSH-host replies, autonomous refresh/notifications, live
 conversation follow, and full-product acceptance remain open.
+
+The committed phone and Wear release APKs installed on the existing disposable
+Android API-36 phone/Wear API-33 emulator pair without losing their binding.
+With the phone on the launcher, a watch refresh advanced the displayed phone
+snapshot. After `am kill` ended only the background Orca test process, a new
+watch refresh started a new phone process while the launcher stayed top-visible;
+the watch snapshot advanced from 5:31 to 5:33 PM. This proves watch-initiated
+Headless refresh after ordinary process reclamation on this emulator. A further
+watch refresh advanced the snapshot to 5:35 PM while the phone reported
+`mWakefulness=Asleep`. Neither test proves host-initiated notification wake,
+Doze timing, an authenticated host read, or physical-watch behavior. The test
+phone's sole desktop pairing reports invalid authentication, so paired
+conversation/reply delivery remains unproved.
