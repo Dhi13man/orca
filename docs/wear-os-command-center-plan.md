@@ -1441,3 +1441,24 @@ proof of a phone-to-watch rejection receipt on a device. Existing authenticated
 agents remain the inventory and conversation targets. An exact idle-session
 reply, host-backed watch conversation, SSH durable send, notification timing,
 real usage, and physical-watch installation and operation remain open.
+
+The next bounded unit wires `requestPhoneHandoff` through the phone's existing
+Wear command journal and local notification channel. A terminal target is
+resolved with its workspace, tab, publication epoch, and snapshot version
+before scheduling the notification and again on tap. The phone selects only a
+matching renderable local terminal tab; a newer user tab choice cancels the
+handoff, and an older same-epoch snapshot can wait up to 15 seconds for the
+exact version. The watch now offers **Open on phone** in terminal conversations
+and retains the request/hash across restart to recover its native receipt.
+Structured-agent phone handoff remains unavailable because mobile has no
+structured-agent session tab; the watch does not advertise that control there.
+No new profile or sign-in was created. Validation must use the existing paired
+machines and authenticated agents, and a reply test remains restricted to a
+reverified idle exact session with a harmless bounded acknowledgement.
+Focused mobile tests (36), all Wear tests (143), both TypeScript checks, and
+scoped lint pass; these prove source behavior only. The full mobile run passed
+3,983 tests but failed eight existing tests in seven untouched areas: seven
+source-text checks sensitive to this Windows checkout's CRLF text and a
+mock-server key-pair child-process import test. A phone/watch emulator
+handoff, notification timing, real-host exact conversation/reply, actual usage,
+and physical watch installation/operation are still required for acceptance.

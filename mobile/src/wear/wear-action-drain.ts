@@ -12,6 +12,7 @@ import { encodeWearConversationPage } from '@orca/wear-companion-contract/conver
 import { projectWearConversationPage } from './wear-conversation-page-projection'
 import { refreshWearDashboardOnce } from './wear-dashboard-refresh'
 import { sendWearNotificationsPage } from './wear-notification-action'
+import { executeWearPhoneHandoff } from './wear-phone-handoff-executor'
 
 type HostOutcome =
   | { outcome: 'accepted' | 'unknown'; reason: null }
@@ -124,6 +125,8 @@ async function drain(): Promise<void> {
       } catch {
         outcome = { outcome: 'unknown', reason: null }
       }
+    } else if (decoded.ok && decoded.action.action === 'requestPhoneHandoff') {
+      outcome = await executeWearPhoneHandoff(decoded.action)
     } else if (decoded.ok && decoded.action.action === 'sendAgentMessage') {
       try {
         const action = decoded.action

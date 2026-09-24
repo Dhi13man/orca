@@ -62,15 +62,19 @@ export function setScheduledNotificationsMaxForTests(max?: number): void {
   maxScheduledNotifications = max ?? MAX_SCHEDULED_NOTIFICATIONS
 }
 
-export function configureNotificationChannel(): void {
+export async function ensureNotificationChannel(): Promise<void> {
   if (Platform.OS === 'android') {
-    void Notifications.setNotificationChannelAsync('orca-desktop', {
+    await Notifications.setNotificationChannelAsync('orca-desktop', {
       name: 'Desktop Notifications',
       importance: Notifications.AndroidImportance.HIGH,
       vibrationPattern: [0, 250],
       lightColor: '#6366f1'
     })
   }
+}
+
+export function configureNotificationChannel(): void {
+  void ensureNotificationChannel()
 }
 
 export async function showLocalNotification(

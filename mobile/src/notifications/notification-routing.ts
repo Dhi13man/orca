@@ -49,7 +49,53 @@ export type NotificationNavigationTarget = Readonly<{
   hostId: string
   sessionTarget: HostStackRouteTarget | null
   credentialRecovery?: 'retry' | 're-pair'
+  wearHandoff?: WearHandoffTarget
 }>
+
+export type WearHandoffTarget = Readonly<{
+  hostId: string
+  workspaceId: string
+  workspaceKind: 'worktree' | 'folder'
+  sessionTabId: string
+  targetPublicationEpoch: string
+  targetSnapshotVersion: number
+  requestId: string
+}>
+
+export function buildWearHandoffNotificationData(
+  target: WearHandoffTarget
+): Record<string, string | number> {
+  return { source: 'wear-handoff', ...target }
+}
+
+function readWearHandoffTarget(value: Record<string, unknown>): WearHandoffTarget | null {
+  const hostId = readNonEmptyString(value.hostId)
+  const workspaceId = readNonEmptyString(value.workspaceId)
+  const sessionTabId = readNonEmptyString(value.sessionTabId)
+  const targetPublicationEpoch = readNonEmptyString(value.targetPublicationEpoch)
+  const requestId = readNonEmptyString(value.requestId)
+  if (
+    !hostId ||
+    !workspaceId ||
+    !sessionTabId ||
+    !targetPublicationEpoch ||
+    !requestId ||
+    !['worktree', 'folder'].includes(value.workspaceKind as string) ||
+    !Number.isSafeInteger(value.targetSnapshotVersion) ||
+    (value.targetSnapshotVersion as number) < 0
+  ) {
+    return null
+  }
+  return {
+    hostId,
+    workspaceId,
+    workspaceKind: value.workspaceKind as 'worktree' | 'folder',
+    sessionTabId,
+    targetPublicationEpoch,
+    targetSnapshotVersion: value.targetSnapshotVersion as number,
+    requestId
+  }
+}
 
 export function notificationCredentialRecoveryRoute(
   target: NotificationNavigationTarget
@@ -69,6 +115,25 @@ export function getNotificationNavigationTarget(
   }
 
   const record = data as Record<string, unknown>
+  if (record.source === 'wear-handoff') {
+    const handoff = readWearHandoffTarget(record)
+    if (
+      !handoff ||
+      !options.knownHostIds?.has(handoff.hostId) ||
+      options.credentialStatusByHostId?.get(handoff.hostId) !== 'ready'
+    ) {
+      return null
+    }
+    return {
+      hostId: handoff.hostId,
+      sessionTarget: mobileSessionRouteTarget({
+        hostId: handoff.hostId,
+        worktreeId: handoff.workspaceId,
+        handoff
+      }),
+      wearHandoff: handoff
+    }
+  }
   const hostId = readNonEmptyString(record.hostId)
   if (!hostId) {
     return null

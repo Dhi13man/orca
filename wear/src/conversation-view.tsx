@@ -13,7 +13,9 @@ export function ConversationView({
   onDraftChange,
   onBack,
   onRetry,
-  reply
+  reply,
+  phoneHandoff,
+  handoffAvailable
 }: {
   title: string
   status: 'idle' | 'loading' | 'ready' | 'unavailable'
@@ -30,8 +32,16 @@ export function ConversationView({
     send: (text: string) => Promise<void>
     clear: (verified?: boolean) => Promise<void>
   }
+  phoneHandoff: {
+    status: 'recovering' | 'idle' | 'pending' | 'accepted' | 'rejected' | 'unknown'
+    reason: string | null
+    request: () => Promise<void>
+    clear: (verified?: boolean) => Promise<void>
+  }
+  handoffAvailable: boolean
 }) {
   const [confirmRecovery, setConfirmRecovery] = useState(false)
+  const [confirmHandoffRecovery, setConfirmHandoffRecovery] = useState(false)
   useEffect(() => {
     if (reply.status === 'accepted' && draft) {
       onDraftChange('')
@@ -44,6 +54,49 @@ export function ConversationView({
       <Text accessibilityRole="header" style={styles.heading}>
         {title}
       </Text>
+      {handoffAvailable ? (
+        <WearButton
+          disabled={phoneHandoff.status !== 'idle'}
+          label={phoneHandoff.status === 'pending' ? 'Opening on phone…' : 'Open on phone'}
+          quiet
+          onPress={() => void phoneHandoff.request()}
+        />
+      ) : null}
+      {phoneHandoff.status === 'accepted' ? (
+        <>
+          <Text style={styles.detail}>Phone notification ready. Tap it to open this agent.</Text>
+          <WearButton label="Done" quiet onPress={() => void phoneHandoff.clear()} />
+        </>
+      ) : null}
+      {phoneHandoff.status === 'rejected' ? (
+        <>
+          <Text accessibilityRole="alert" style={styles.detail}>
+            {phoneHandoff.reason === 'unsupported'
+              ? 'This agent cannot open on the phone yet.'
+              : 'Phone handoff was rejected. Refresh the agent and try again.'}
+          </Text>
+          <WearButton label="Dismiss" quiet onPress={() => void phoneHandoff.clear()} />
+        </>
+      ) : null}
+      {phoneHandoff.status === 'unknown' ? (
+        <>
+          <Text accessibilityRole="alert" style={styles.detail}>
+            Phone handoff is uncertain. Check phone notifications before requesting another.
+          </Text>
+          <WearButton
+            label={confirmHandoffRecovery ? 'I checked the phone' : 'Check phone first'}
+            quiet
+            onPress={() => {
+              if (confirmHandoffRecovery) {
+                void phoneHandoff.clear(true)
+                setConfirmHandoffRecovery(false)
+              } else {
+                setConfirmHandoffRecovery(true)
+              }
+            }}
+          />
+        </>
+      ) : null}
       {status === 'loading' || status === 'idle' ? (
         <Text style={styles.detail}>Reading conversation from phone…</Text>
       ) : null}

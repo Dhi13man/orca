@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildLocalNotificationData,
+  buildWearHandoffNotificationData,
   getNotificationNavigationTarget,
   notificationCredentialRecoveryRoute
 } from './notification-routing'
@@ -86,5 +87,54 @@ describe('notification routing', () => {
 
     expect(target?.sessionTarget).not.toBeNull()
     expect(notificationCredentialRecoveryRoute(target!)).toBeNull()
+  })
+
+  it('routes a verified Wear handoff with its exact tab fence', () => {
+    const data = buildWearHandoffNotificationData({
+      hostId: 'host-1',
+      workspaceId: 'folder:one',
+      workspaceKind: 'folder',
+      sessionTabId: 'tab-1',
+      targetPublicationEpoch: 'epoch-1',
+      targetSnapshotVersion: 8,
+      requestId: 'request-1'
+    })
+    expect(
+      getNotificationNavigationTarget(data, {
+        knownHostIds: new Set(['host-1']),
+        credentialStatusByHostId: new Map([['host-1', 'ready']])
+      })
+    ).toMatchObject({
+      hostId: 'host-1',
+      sessionTarget: {
+        params: {
+          worktreeId: 'folder:one',
+          wearHandoffSessionTabId: 'tab-1',
+          wearHandoffPublicationEpoch: 'epoch-1',
+          wearHandoffSnapshotVersion: '8'
+        }
+      }
+    })
+    expect(
+      getNotificationNavigationTarget(data, {
+        knownHostIds: new Set(['host-1']),
+        credentialStatusByHostId: new Map([['host-1', 'missing']])
+      })
+    ).toBeNull()
+    expect(
+      getNotificationNavigationTarget(data, {
+        knownHostIds: new Set(['other']),
+        credentialStatusByHostId: new Map([['host-1', 'ready']])
+      })
+    ).toBeNull()
+    expect(
+      getNotificationNavigationTarget(
+        { ...data, targetSnapshotVersion: '8' },
+        {
+          knownHostIds: new Set(['host-1']),
+          credentialStatusByHostId: new Map([['host-1', 'ready']])
+        }
+      )
+    ).toBeNull()
   })
 })

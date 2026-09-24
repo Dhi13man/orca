@@ -20,6 +20,7 @@ import type { WearAgentRow } from './packages/wear-companion-contract/src/agent-
 import { useConversationPage } from './src/use-conversation-page'
 import { ConversationView } from './src/conversation-view'
 import { useWearReply } from './src/use-wear-reply'
+import { useWearPhoneHandoff } from './src/use-wear-phone-handoff'
 import { useDashboardRefresh } from './src/use-dashboard-refresh'
 import { useNotificationPages } from './src/use-notification-pages'
 import { NotificationInboxView } from './src/notification-inbox-view'
@@ -79,6 +80,11 @@ export default function App() {
     currentAgent,
     conversation.status === 'ready' ? conversation.page : null,
     selectedHost?.name ?? null
+  )
+  const phoneHandoff = useWearPhoneHandoff(
+    dashboard.state === 'ready' ? dashboard.dashboard : null,
+    selectedHostId,
+    currentAgent
   )
   const conversationStatus = conversation.status
   const retryConversation = conversation.retry
@@ -292,6 +298,8 @@ export default function App() {
                 onBack={() => setSelectedAgent(null)}
                 onRetry={conversation.retry}
                 reply={reply}
+                phoneHandoff={phoneHandoff}
+                handoffAvailable={currentAgent.kind === 'terminal'}
               />
             ) : selectedHost && selectedAgent ? (
               <View style={styles.pages}>

@@ -214,6 +214,12 @@ import {
 } from '../../../../src/session/session-tab-snapshot-gate'
 import { resolveActiveSessionTab } from '../../../../src/session/active-session-tab'
 import {
+  applyWearHandoffSelection,
+  markMobileSessionUserSelection,
+  useWearHandoffRoute,
+  type WearHandoffSelection
+} from '../../../../src/session/wear-handoff-selection'
+import {
   createInitialSessionAutoCreateState,
   useInitialSessionTerminalAutoCreate,
   useWorktreeSessionTabsLoaded
@@ -725,13 +731,23 @@ export default function SessionScreen() {
     worktreeId,
     name: routeWorktreeName,
     created,
-    warning: createdWarning
+    warning: createdWarning,
+    wearHandoffRequestId,
+    wearHandoffSessionTabId,
+    wearHandoffWorkspaceKind,
+    wearHandoffPublicationEpoch,
+    wearHandoffSnapshotVersion
   } = useLocalSearchParams<{
     hostId: string
     worktreeId: string
     name?: string
     created?: string
     warning?: string
+    wearHandoffRequestId?: string
+    wearHandoffSessionTabId?: string
+    wearHandoffWorkspaceKind?: string
+    wearHandoffPublicationEpoch?: string
+    wearHandoffSnapshotVersion?: string
   }>()
   const isFolderWorkspaceRoute = worktreeId.startsWith('folder:') // Synthetic ids have no repo scope.
   // Why: the floating sentinel has no repo/worktree, so repo-backed surfaces hide.
@@ -940,6 +956,8 @@ export default function SessionScreen() {
   const pendingActiveSessionTabIdRef = useRef<string | null>(null)
   // Why: survive transient snapshot gaps so the device's own tab pick can re-bind.
   const selectedSessionTabIdRef = useRef<string | null>(null)
+  const wearHandoffIntentRef = useRef<WearHandoffSelection | null>(null)
+  const appliedWearHandoffRequestRef = useRef<string | null>(null)
   const pendingActiveTerminalHandleRef = useRef<string | null>(null)
   // Why: remember the page id to activate its session tab once it syncs (bridge auto-activate flags only webContents, not the app-level active tab).
   const pendingBrowserFocusPageIdRef = useRef<string | null>(null)
@@ -1746,8 +1764,18 @@ export default function SessionScreen() {
       }
 
       const snapshotActive = nextTabs.find((tab) => tab.isActive) ?? nextTabs[0] ?? null
+      const handoffSelected = applyWearHandoffSelection(
+        { ...result, tabs: nextTabs },
+        {
+          intent: wearHandoffIntentRef,
+          pendingTab: pendingActiveSessionTabIdRef,
+          pendingTerminalHandle: pendingActiveTerminalHandleRef,
+          pendingBrowserFocus: pendingBrowserFocusPageIdRef,
+          selectedTab: selectedSessionTabIdRef
+        }
+      )
       const pendingActiveSessionTabId = pendingActiveSessionTabIdRef.current
-      const followsHost = result.navigationIntent === 'follow'
+      const followsHost = result.navigationIntent === 'follow' && !handoffSelected
       const pendingActiveTerminalHandle = followsHost
         ? null
         : pendingActiveTerminalHandleRef.current
@@ -1758,7 +1786,7 @@ export default function SessionScreen() {
       const resolved = resolveActiveSessionTab(nextTabs, {
         pendingActiveSessionTabId,
         selectedSessionTabId: selectedSessionTabIdRef.current,
-        navigationIntent: result.navigationIntent
+        navigationIntent: followsHost ? result.navigationIntent : undefined
       })
       let active = resolved.activeTab
       let selectionSource: string = resolved.selectionSource
@@ -2604,6 +2632,7 @@ export default function SessionScreen() {
     activeSessionTabTypeRef.current = null
     pendingActiveSessionTabIdRef.current = null
     selectedSessionTabIdRef.current = null
+    wearHandoffIntentRef.current = null
     pendingActiveTerminalHandleRef.current = null
     pendingBrowserFocusPageIdRef.current = null
     pendingTerminalActivationAttemptRef.current = null
@@ -2640,6 +2669,19 @@ export default function SessionScreen() {
     hostId,
     worktreeId
   ])
+
+  useWearHandoffRoute({
+    hostId,
+    workspaceId: worktreeId,
+    requestId: wearHandoffRequestId,
+    sessionTabId: wearHandoffSessionTabId,
+    workspaceKind: wearHandoffWorkspaceKind,
+    publicationEpoch: wearHandoffPublicationEpoch,
+    snapshotVersion: wearHandoffSnapshotVersion,
+    intentRef: wearHandoffIntentRef,
+    appliedRequestRef: appliedWearHandoffRequestRef,
+    fetchSessionTabs
+  })
 
   useEffect(() => {
     if (connState !== 'connected') {
@@ -2777,6 +2819,8 @@ export default function SessionScreen() {
   // Why: unsubscribe restores old dims (clears phone-fit banner); resubscribe phone-fits the new one.
   const switchTab = useCallback(
     (handle: string) => {
+      markMobileSessionUserSelection()
+      wearHandoffIntentRef.current = null
       triggerSelection()
       const matchingTab = sessionTabs.find(
         (tab): tab is Extract<MobileSessionTab, { type: 'terminal' }> =>
@@ -2831,6 +2875,8 @@ export default function SessionScreen() {
           return
         }
         terminalDiagnosticsRef.current.tabSwitch('terminal', tab.id, true)
+        markMobileSessionUserSelection()
+        wearHandoffIntentRef.current = null
         triggerSelection()
         pendingActiveSessionTabIdRef.current = tab.id
         pendingActiveTerminalHandleRef.current = null
@@ -2855,6 +2901,8 @@ export default function SessionScreen() {
         return
       }
 
+      markMobileSessionUserSelection()
+      wearHandoffIntentRef.current = null
       triggerSelection()
       terminalDiagnosticsRef.current.tabSwitch(tab.type, tab.id, false)
       pendingActiveSessionTabIdRef.current = tab.id

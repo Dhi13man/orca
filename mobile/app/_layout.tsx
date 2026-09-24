@@ -15,6 +15,8 @@ import { extractPairingCodeFromUrl } from '../src/transport/pairing'
 import { recoverMobileRelayPairing } from '../src/transport/mobile-relay-pairing-recovery'
 import { startForegroundWearDashboardPublisher } from '../src/wear/wear-foreground-dashboard-publisher'
 import { drainWearActions } from '../src/wear/wear-action-drain'
+import { verifyWearPhoneHandoffTarget } from '../src/wear/wear-phone-handoff-executor'
+import { readMobileSessionUserSelectionGeneration } from '../src/session/wear-handoff-selection'
 
 // Why: keeps the native splash screen visible until the React tree is mounted
 // and ready to render. Without this the user sees a blank white/black frame
@@ -128,6 +130,7 @@ export default function RootLayout() {
     }
 
     async function handleNotificationResponse(response: Notifications.NotificationResponse) {
+      const selectionGeneration = readMobileSessionUserSelectionGeneration()
       if (response.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) {
         clearLastNotificationResponse()
         return
@@ -152,7 +155,21 @@ export default function RootLayout() {
       if (disposed) {
         return
       }
-      if (target) {
+      if (
+        target?.wearHandoff &&
+        (await verifyWearPhoneHandoffTarget(target.wearHandoff)) !== 'terminal'
+      ) {
+        handledNotificationIdsRef.current.delete(notificationId)
+        return
+      }
+      if (
+        target?.wearHandoff &&
+        selectionGeneration !== readMobileSessionUserSelectionGeneration()
+      ) {
+        handledNotificationIdsRef.current.delete(notificationId)
+        return
+      }
+      if (!disposed && target) {
         openNotificationRoute(target)
       }
     }

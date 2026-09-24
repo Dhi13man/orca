@@ -21,6 +21,7 @@ const loadHostCatalog = vi.hoisted(() => vi.fn())
 const readWearHostAgentInventory = vi.hoisted(() => vi.fn())
 const projectWearAgentPage = vi.hoisted(() => vi.fn())
 const refreshWearDashboardOnce = vi.hoisted(() => vi.fn())
+const executeWearPhoneHandoff = vi.hoisted(() => vi.fn())
 const loadWearNotificationFloor = vi.hoisted(() => vi.fn())
 const saveWearNotificationFloor = vi.hoisted(() => vi.fn())
 
@@ -30,6 +31,7 @@ vi.mock('../transport/host-store', () => ({ loadHostCatalog }))
 vi.mock('./wear-host-agent-inventory', () => ({ readWearHostAgentInventory }))
 vi.mock('./wear-agent-page-projection', () => ({ projectWearAgentPage }))
 vi.mock('./wear-dashboard-refresh', () => ({ refreshWearDashboardOnce }))
+vi.mock('./wear-phone-handoff-executor', () => ({ executeWearPhoneHandoff }))
 vi.mock('./wear-notification-floor', () => ({
   loadWearNotificationFloor,
   saveWearNotificationFloor
@@ -44,6 +46,27 @@ vi.mock('expo-crypto', async () => {
 })
 
 import { drainWearActions } from './wear-action-drain'
+
+function fencedAction(requestId: string, action: string, payload: Record<string, string>) {
+  return {
+    schemaVersion: 1,
+    bindingId: 'binding',
+    requestId,
+    expiresAt: Date.now() + 60_000,
+    action,
+    target: {
+      hostId: 'host-a',
+      workspaceId: 'workspace-a',
+      workspaceKind: 'worktree',
+      sessionTabId: 'tab-a'
+    },
+    publisherEpoch: 'phone-epoch',
+    expectedRevision: 2,
+    targetPublicationEpoch: 'runtime-epoch',
+    targetSnapshotVersion: 7,
+    payload
+  }
+}
 
 describe('Wear action drain', () => {
   beforeEach(() => {
@@ -75,6 +98,7 @@ describe('Wear action drain', () => {
       result: { outcome: 'accepted', reason: null, actionHash: 'a'.repeat(64) }
     })
     refreshWearDashboardOnce.mockResolvedValue(true)
+    executeWearPhoneHandoff.mockResolvedValue({ outcome: 'accepted', reason: null })
     loadWearNotificationFloor.mockResolvedValue(null)
     saveWearNotificationFloor.mockResolvedValue(undefined)
   })
@@ -145,6 +169,37 @@ describe('Wear action drain', () => {
       'accepted',
       null
     )
+  })
+
+  it('finishes a journaled phone handoff only after the local notification outcome', async () => {
+    const action = fencedAction('handoff-request', 'requestPhoneHandoff', {})
+    native.claimAction
+      .mockReset()
+      .mockResolvedValueOnce({
+        bindingId: 'binding',
+        requestId: 'handoff-request',
+        actionHash: 'a'.repeat(64),
+        claimToken: 'token',
+        canonical: JSON.stringify(action)
+      })
+      .mockResolvedValue(null)
+    let settle!: (outcome: { outcome: 'accepted'; reason: null }) => void
+    executeWearPhoneHandoff.mockReturnValue(
+      new Promise((resolve) => {
+        settle = resolve
+      })
+    )
+    const drain = drainWearActions()
+    await vi.waitFor(() => expect(executeWearPhoneHandoff).toHaveBeenCalledWith(action))
+    expect(native.finishActionEffect).not.toHaveBeenCalled()
+    settle({ outcome: 'accepted', reason: null })
+    await drain
+    expect(native.finishActionEffect.mock.calls[0]?.slice(1)).toEqual([
+      'handoff-request',
+      'a'.repeat(64),
+      'accepted',
+      null
+    ])
   })
 
   it('sends only a floor-filtered, redacted notification PAGE for the selected paired host', async () => {
@@ -439,24 +494,9 @@ describe('Wear action drain', () => {
     ['terminal', 'wear.terminal.send'],
     ['structured', 'wear.agent.send']
   ])('routes a journaled %s reply to its exact host method', async (kind, method) => {
-    const canonical = JSON.stringify({
-      schemaVersion: 1,
-      bindingId: 'binding',
-      requestId: 'request',
-      expiresAt: Date.now() + 60_000,
-      action: 'sendAgentMessage',
-      target: {
-        hostId: 'host-a',
-        workspaceId: 'workspace-a',
-        workspaceKind: 'worktree',
-        sessionTabId: 'tab-a'
-      },
-      publisherEpoch: 'phone-epoch',
-      expectedRevision: 2,
-      targetPublicationEpoch: 'runtime-epoch',
-      targetSnapshotVersion: 7,
-      payload: { text: '  exact reply  ' }
-    })
+    const canonical = JSON.stringify(
+      fencedAction('request', 'sendAgentMessage', { text: '  exact reply  ' })
+    )
     const actionHash = createHash('sha256').update(canonical).digest('hex')
     native.claimAction
       .mockReset()
