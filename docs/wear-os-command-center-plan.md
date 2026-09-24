@@ -1760,8 +1760,22 @@ The watch `openConversation` host RPC previously timed out after eight seconds,
 shorter than the runtime's 15-second WSL transcript lookup and SSH relay read.
 Commit `89d0c12b1` uses the existing 20-second conversation budget within the
 phone's 25-second host-request deadline. The focused mobile tests (19), mobile
-typecheck, scoped lint/format, and diff check pass. The installed emulator APKs
-predate this change; no real paired-host conversation or physical-watch read
-has been accepted. Current paired inventories show the Crowley and Choisoonsil
-agents working and Rasputin with no terminals, so no acknowledgement test was
-sent to an agent.
+typecheck, scoped lint/format, and diff check pass. No real paired-host
+conversation or physical-watch read has been accepted. Current paired
+inventories show Crowley and Choisoonsil agents working and Rasputin with no
+terminals, so no acknowledgement test was sent.
+
+The phone release APK rebuilt after `89d0c12b1` with offline Gradle, SHA-256
+`96185991FC441D7729AA42E88195DF38B5C72AFC3595E01B6C440A372655F3BD`.
+Its package is `com.stably.orca.mobile`, versionCode 15, and its signing
+certificate matches the paired emulator's installed APK at
+`fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c`.
+One in-place install on phone emulator `5556` returned `Success`; its app
+started, then the launcher resumed. The bound watch emulator `5562` refreshed
+through the backgrounded phone and advanced its snapshot from 2:37 to 2:40 AM.
+Before that install, with the phone on its launcher and no watch tap, Android's
+persisted 15-minute refresh job completed at 2:37:42 AM and the watch advanced
+from 2:22 to 2:37 AM. This is paired-emulator periodic and on-demand delivery,
+not proof of screen-off/Doze behavior, a real host conversation, or physical
+watch operation. The current phone APK now contains the timeout fix, but no
+authenticated host was available to exercise its 15-second transcript path.
