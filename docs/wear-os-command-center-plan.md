@@ -1702,3 +1702,11 @@ The committed `wear/App.tsx` imports the companion Data Layer and fixed page
 hooks, with no direct runtime-RPC/WebSocket client. This checks the bundle's
 source boundary; it does not alone inspect on-device private storage or prove
 that a production watch never held credentials from an older app.
+
+Read-only `uiautomator dump` on paired watch emulator `5562` exposed a
+scrollable Usage view, individually focusable account card with its status,
+timestamp, machine count and reading host in the accessibility description,
+and focusable buttons labelled "Previous page", "Next page", and "Refresh
+from phone". This verifies these rendered accessibility-tree labels on the
+emulator; TalkBack speech/order, rotating input, and physical small-round
+ergonomics remain untested.
