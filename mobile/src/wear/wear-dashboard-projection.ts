@@ -4,6 +4,9 @@ import {
   type WearDashboardHost
 } from '@orca/wear-companion-contract/dashboard'
 import type { ConnectionState, HostCatalogEntry } from '../transport/types'
+import { activeWearUsageSources } from './wear-active-provider-sources'
+import type { WearHostFeedSnapshot } from './wear-host-feed'
+import type { WearUsageGroupKeys } from './wear-usage-group-keys'
 import { projectWearUsageGroups, type WearUsageSource } from './wear-usage-groups'
 
 export type WearHostObservation = {
@@ -26,6 +29,61 @@ export type WearDashboardProjectionInput = {
 }
 
 const DASHBOARD_LIFETIME_MS = 24 * 60 * 60 * 1000
+
+export function projectWearHostFeedDashboard(
+  bindingId: string,
+  publisherEpoch: string,
+  revision: number,
+  generatedAt: number,
+  feed: WearHostFeedSnapshot,
+  opaqueKeyFor: WearDashboardProjectionInput['opaqueKeyFor']
+): WearDashboard {
+  const paired = new Set(feed.catalog.map((host) => host.id))
+  const usageSources = [...feed.accounts].flatMap(([hostId, account]) =>
+    paired.has(hostId) ? activeWearUsageSources(hostId, account) : []
+  )
+  return projectWearDashboard({
+    bindingId,
+    publisherEpoch,
+    revision,
+    generatedAt,
+    companionState: 'unavailable',
+    catalog: feed.catalog,
+    observations: feed.observations,
+    usageSources,
+    opaqueKeyFor
+  })
+}
+
+export function wearDashboardContentSignature(
+  bindingId: string,
+  owner: WearUsageGroupKeys,
+  feed: WearHostFeedSnapshot,
+  publisherEpoch: string
+): string {
+  return JSON.stringify(
+    projectWearHostFeedDashboard(bindingId, publisherEpoch, 0, 0, feed, (provider, identity) =>
+      owner.keyFor(bindingId, provider, identity)
+    )
+  )
+}
+
+export function hasWearDashboardContentChange(
+  signatures: ReadonlyMap<string, string>,
+  owners: ReadonlyMap<string, WearUsageGroupKeys>,
+  feed: WearHostFeedSnapshot,
+  publisherEpoch: string
+): boolean {
+  for (const [bindingId, owner] of owners) {
+    if (
+      signatures.get(bindingId) !==
+      wearDashboardContentSignature(bindingId, owner, feed, publisherEpoch)
+    ) {
+      return true
+    }
+  }
+  return false
+}
 
 export function wearHostDisplayName(name: string): string {
   let value = ''

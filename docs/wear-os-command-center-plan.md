@@ -1309,3 +1309,16 @@ directory entry survives power loss, and concurrent relay processes could race
 capacity and outcome updates. The uncommitted prototype was removed; no SSH
 reply route was enabled. A host-owned transactional, durable reservation and
 receipt remains required before the SSH send capability can be advertised.
+
+The phone publisher now compares each binding's redacted projected dashboard
+content before reserving a revision. An added second watch only publishes its
+own binding; a host update consumed during a reservation does not republish;
+explicit refresh and a five-minute freshness heartbeat still publish. Mobile
+typecheck, lint, formatting, and all 79 Wear tests pass. The multi-ABI release
+APK built and installed on the disposable paired phone emulator. The watch
+loaded both paired machines' Inbox pages; Host 1 was unavailable and Host 2
+reported no retained events. A synthetic bell attempted through an isolated
+shell received only an old-host input-accepted receipt, its terminal stream
+did not prove bell execution, and no watch event appeared. Treat terminal-bell
+delivery as unproved, not a passing acceptance test. The physical watch is
+still absent from ADB; no existing busy agent was sent a prompt.

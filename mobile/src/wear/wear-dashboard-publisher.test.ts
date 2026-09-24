@@ -39,11 +39,8 @@ vi.mock('./wear-dashboard-publication', () => ({
   publishWearDashboard: mocks.publish
 }))
 
-import {
-  refreshWearDashboardOnce,
-  startForegroundWearDashboardPublisher,
-  startWearDashboardPublisher
-} from './wear-dashboard-publisher'
+import { refreshWearDashboardOnce, startWearDashboardPublisher } from './wear-dashboard-publisher'
+import { startForegroundWearDashboardPublisher } from './wear-foreground-dashboard-publisher'
 
 const bindingA = 'a4c67006-8492-4f45-93fb-6501e4c34891'
 const bindingB = 'b4c67006-8492-4f45-93fb-6501e4c34891'
@@ -239,6 +236,89 @@ describe('Wear dashboard publisher', () => {
     await vi.advanceTimersByTimeAsync(29_999)
     expect(mocks.publish).toHaveBeenCalledTimes(1)
     await vi.advanceTimersByTimeAsync(1)
+    expect(mocks.publish).toHaveBeenCalledTimes(2)
+    stop()
+  })
+
+  it('does not invalidate watch pages for an unchanged host feed', async () => {
+    mocks.getState.mockReturnValue(state([bindingA]))
+    const stop = startWearDashboardPublisher(vi.fn())
+    feedUpdate()
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(mocks.publish).toHaveBeenCalledOnce()
+    feedUpdate()
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(mocks.publish).toHaveBeenCalledOnce()
+    feedUpdate({
+      ...snapshot(),
+      catalog: [
+        {
+          id: 'host-new',
+          name: 'New machine',
+          endpoint: 'private-endpoint',
+          publicKeyB64: 'private-key',
+          lastConnected: 1,
+          credentialStatus: 'missing',
+          profile: null
+        }
+      ]
+    })
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(mocks.publish).toHaveBeenCalledTimes(2)
+    stop()
+  })
+
+  it('publishes only the new binding when another watch is paired', async () => {
+    mocks.getState.mockReturnValue(state([bindingA]))
+    const stop = startWearDashboardPublisher(vi.fn())
+    feedUpdate()
+    await vi.advanceTimersByTimeAsync(2_000)
+    mocks.onState?.(state([bindingA, bindingB]))
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(mocks.publish.mock.calls.map(([dashboard]) => dashboard.bindingId)).toEqual([
+      bindingA,
+      bindingB
+    ])
+    stop()
+  })
+
+  it('does not republish a feed update already consumed by an in-flight reservation', async () => {
+    let finish!: (revision: number) => void
+    mocks.reserve.mockImplementationOnce(() => new Promise<number>((resolve) => (finish = resolve)))
+    mocks.getState.mockReturnValue(state([bindingA]))
+    const stop = startWearDashboardPublisher(vi.fn())
+    feedUpdate()
+    await vi.advanceTimersByTimeAsync(2_000)
+    feedUpdate({
+      ...snapshot(),
+      catalog: [
+        {
+          id: 'host-new',
+          name: 'New machine',
+          endpoint: 'private-endpoint',
+          publicKeyB64: 'private-key',
+          lastConnected: 1,
+          credentialStatus: 'missing',
+          profile: null
+        }
+      ]
+    })
+    finish(1)
+    await Promise.resolve()
+    await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(mocks.publish).toHaveBeenCalledOnce()
+    expect(mocks.publish.mock.calls[0][0].hosts[0].hostId).toBe('host-new')
+    stop()
+  })
+
+  it('renews the dashboard freshness even when host content stays unchanged', async () => {
+    mocks.getState.mockReturnValue(state([bindingA]))
+    const stop = startWearDashboardPublisher(vi.fn())
+    feedUpdate()
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(mocks.publish).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(5 * 60_000 - 2_000 + 1)
     expect(mocks.publish).toHaveBeenCalledTimes(2)
     stop()
   })

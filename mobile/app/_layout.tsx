@@ -13,7 +13,7 @@ import { useOpenNotificationRoute } from '../src/notifications/use-open-notifica
 import { loadHostCatalog } from '../src/transport/host-store'
 import { extractPairingCodeFromUrl } from '../src/transport/pairing'
 import { recoverMobileRelayPairing } from '../src/transport/mobile-relay-pairing-recovery'
-import { startForegroundWearDashboardPublisher } from '../src/wear/wear-dashboard-publisher'
+import { startForegroundWearDashboardPublisher } from '../src/wear/wear-foreground-dashboard-publisher'
 import { drainWearActions } from '../src/wear/wear-action-drain'
 
 // Why: keeps the native splash screen visible until the React tree is mounted
