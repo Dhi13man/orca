@@ -1493,3 +1493,14 @@ sign-in prerequisite. A reply test may use only a reverified idle exact session
 and a harmless bounded acknowledgement; busy agents remain untouched. SSH
 durable send, actual usage/freshness, physical-watch installation and operation,
 and end-to-end receipt/recovery acceptance remain open.
+
+Release builds from `f1bb8d30c` passed offline Gradle for both apps. Phone APK
+SHA-256 is `AB497C4250F5BCF80C40E84C1A858132130597467D3549EF4CA687A3FFC49632`;
+watch APK SHA-256 is `050C98A95056A19A60E3502515F060DAB726A77182E1BF34F2CBD34E49642BF5`.
+Both report certificate SHA-256
+`fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c`,
+matching the previously installed emulator certificate. In-place updates on
+paired phone `emulator-5556` and bound watch `emulator-5562` returned `Success`;
+both `MainActivity` instances resumed. This verifies packaging and startup,
+not a structured notification tap or real host conversation. Physical phone
+and watch were absent from `adb devices -l` and ADB mDNS discovery.
