@@ -56,9 +56,9 @@ Dhiman authorized the full companion scope on 2026-09-23, including the independ
 | Physical device/API support, Wear API 33 floor, and phone API 31 floor           | Dhiman and Orca implementation owner | Approval of decisions 6 and 8; on-device Settings/ADB and Google Play Services evidence           | Open                              |
 | Windows SSH atomic-send capability                                               | Dhiman and Orca runtime reviewer     | Approval of revised decision 9; a 2026-09-23 probe modeled the documented write/fsync/rename sequence (not the production module) with orderly self-exits (not a forced kill) at its step boundaries and found no corruption — a real but very narrow sanity check on the algorithm's design, not crash-safety evidence for the production code (spike log below); real crash/power-cut durability evidence against the actual implementation, **or** Dhiman's explicit approval of a named "all machines" scope reduction excluding Windows SSH hosts, both remain outstanding | Open — no meaningful evidence toward decision 9 closed yet |
 | No direct watch-to-runtime client                                                | Dhiman                               | Approval of new decision 10                                                                        | Approved 2026-09-23              |
-| Structured agent-session inventory + messaging parity                            | Dhiman and Orca implementation owner | Approval of revised decision 11; Phase 0 code audit closed 2026-09-23 (spike log below) — the real RPC gap is `agentSession.*` entirely absent from `MOBILE_RPC_METHOD_ALLOWLIST`, larger scope than a filter change; per-agent-kind/host-path Phase 2 acceptance still pending implementation | Open — audit closed, scope corrected upward, implementation not started |
+| Structured agent-session inventory + messaging parity                            | Dhiman and Orca implementation owner | Approval of revised decision 11; Phase 0 code audit closed 2026-09-23 (spike log below) — the real RPC gap was `agentSession.*` absent from `MOBILE_RPC_METHOD_ALLOWLIST`; per-agent-kind/host-path Phase 2 acceptance remains open | Open — local Codex inventory/read/send implemented; other provider and host paths, installed acceptance outstanding |
 
-Phase 0A gathers no-code/read-only evidence and records preliminary choices. Dhiman then explicitly authorizes or rejects the isolated Phase 0B spike. Phase 0B updates this register with the named assignee and final evidence links. No calendar deadline is invented; each row is a hard prerequisite for the phase that consumes it.
+The full product scope is authorized; remaining phase gates require evidence, not another phase-permission request. No calendar deadline is invented; each open row remains an acceptance requirement for the phase that consumes it.
 
 ### Evidence re-verification — 2026-09-23
 
@@ -1755,3 +1755,13 @@ cannot be inferred from a separate login shell when its provider session has
 no transcript path; that exact session remains unavailable rather than
 showing a guessed file. Existing paired-agent validation, SSH send durability,
 and physical-device acceptance remain open.
+
+The watch `openConversation` host RPC previously timed out after eight seconds,
+shorter than the runtime's 15-second WSL transcript lookup and SSH relay read.
+Commit `89d0c12b1` uses the existing 20-second conversation budget within the
+phone's 25-second host-request deadline. The focused mobile tests (19), mobile
+typecheck, scoped lint/format, and diff check pass. The installed emulator APKs
+predate this change; no real paired-host conversation or physical-watch read
+has been accepted. Current paired inventories show the Crowley and Choisoonsil
+agents working and Rasputin with no terminals, so no acknowledgement test was
+sent to an agent.
