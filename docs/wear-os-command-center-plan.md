@@ -1263,8 +1263,22 @@ that presentation gap and a disposable live-agent roundtrip remain open.
 An Orca-managed Codex terminal was created only in that throwaway repository.
 The source-built host published it; the watch Agents dashboard changed from
 zero to one agent, and Host 2's agent PAGE displayed the terminal row with
-status unavailable. The isolated Codex profile is at its sign-in screen; no
-prompt was sent, no conversation was returned, and no reply can be claimed.
+status unavailable. The isolated Codex profile reached its sign-in screen;
+no prompt was sent, no conversation was returned, and no reply can be claimed.
+Owner correction: that test terminal was retired, and signing in or creating
+another profile is not a prerequisite. Continue validation with existing
+configured, authenticated agents and paired machines. Inspect the exact
+identity and idle state before one harmless bounded reply test; leave busy
+sessions untouched and preserve all existing profiles and pairings.
 The host catalog view now omits its static, misleading connection and
 inventory labels; live connection remains on the dashboard and detailed
 inventory authority on the agent page.
+
+Watch conversation selection now follows a newer snapshot version only for
+the same workspace, tab, kind, workspace type, and host publication epoch.
+An absent or unverifiable current target hides the composer and offers a path
+back to agents; a new host epoch requires explicit reselection. The Wear
+typecheck, lint, 140 tests, and rebuilt release APK pass on the paired emulator.
+The existing authenticated host inventory can be inspected read-only, but no
+currently observed agent has yet met the idle, exact-identity gate for a
+harmless reply; none has received a test prompt.

@@ -15,6 +15,7 @@ import { useWearReply } from './src/use-wear-reply'
 import { useDashboardRefresh } from './src/use-dashboard-refresh'
 import { useNotificationPages } from './src/use-notification-pages'
 import { NotificationInboxView } from './src/notification-inbox-view'
+import { selectCurrentWearAgent } from './src/selected-wear-agent'
 
 export default function App() {
   const [state, setState] = useState<WearCompanionState | null>(
@@ -44,13 +45,7 @@ export default function App() {
   )
   const currentAgent =
     agentPages.state.status === 'ready' && selectedAgent
-      ? (agentPages.state.agents.find(
-          (agent) =>
-            agent.workspaceId === selectedAgent.workspaceId &&
-            agent.sessionTabId === selectedAgent.sessionTabId &&
-            agent.targetPublicationEpoch === selectedAgent.targetPublicationEpoch &&
-            agent.targetSnapshotVersion === selectedAgent.targetSnapshotVersion
-        ) ?? null)
+      ? selectCurrentWearAgent(agentPages.state.agents, selectedAgent)
       : null
   const conversation = useConversationPage(
     dashboard.state === 'ready' ? dashboard.dashboard : null,
@@ -252,6 +247,19 @@ export default function App() {
                 onRetry={conversation.retry}
                 reply={reply}
               />
+            ) : selectedHost && selectedAgent ? (
+              <View style={styles.pages}>
+                <Text accessibilityRole="alert" style={styles.detail}>
+                  {agentPages.state.status === 'ready'
+                    ? agentPages.state.nextCursor
+                      ? 'This agent is outside the loaded page. Browse agents again.'
+                      : 'This agent is no longer in the current host inventory.'
+                    : agentPages.state.status === 'unavailable'
+                      ? 'The current agent inventory is unavailable.'
+                      : 'Checking the selected agent on the phone…'}
+                </Text>
+                <WearButton label="Back to agents" quiet onPress={() => setSelectedAgent(null)} />
+              </View>
             ) : selectedHost && dashboard.state === 'ready' ? (
               <AgentPagesView
                 {...agentPages.state}
