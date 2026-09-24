@@ -1,8 +1,15 @@
 import { z } from 'zod'
 import { WEAR_CONVERSATION_READ_RUNTIME_CAPABILITY } from '../../../../shared/protocol-version'
-import type { NativeChatMessage } from '../../../../shared/native-chat-types'
+import {
+  boundWearConversationMessages,
+  clippedWearConversationText,
+  projectWearNativeChatMessages,
+  type WearConversationTextMessage
+} from '../../../../shared/wear-conversation-text'
 import type { RuntimeMobileSessionTabsResult } from '../../../../shared/runtime-types'
 import { isNativeChatSupportedAgent } from '../../../../shared/native-chat-agent-support'
+import { SSH_WEAR_CONVERSATION_TAIL_METHOD } from '../../../../shared/ssh-wear-conversation'
+import { folderWorkspaceKey } from '../../../../shared/workspace-scope'
 import { readNativeChatTranscriptTail } from '../../../native-chat/transcript-watch'
 import { resolveWearActionTarget } from '../../wear-action-target'
 import { defineMethod, type RpcAnyMethod, type RpcContext } from '../core'
@@ -20,43 +27,27 @@ const params = z
   })
   .strict()
 
+const remoteRead = z
+  .object({
+    state: z.literal('ready'),
+    messages: z
+      .array(
+        z
+          .object({
+            id: z.string().min(1).max(512),
+            role: z.enum(['user', 'assistant']),
+            text: z.string().min(1).max(2_048),
+            truncated: z.boolean(),
+            observedAt: z.number().int().nonnegative().safe().nullable()
+          })
+          .strict()
+      )
+      .max(20),
+    hasOlder: z.boolean()
+  })
+  .strict()
+
 type ReadParams = z.infer<typeof params>
-type Message = {
-  id: string
-  role: 'user' | 'assistant'
-  text: string
-  truncated: boolean
-  observedAt: number | null
-}
-
-function clippedText(blocks: NativeChatMessage['blocks']): { text: string; truncated: boolean } {
-  const text = blocks
-    .filter((block) => block.type === 'text')
-    .map((block) => block.text)
-    .join('\n')
-  let bytes = 0
-  let end = 0
-  for (const character of text) {
-    const size = Buffer.byteLength(character, 'utf8')
-    if (bytes + size > 2_048) {
-      break
-    }
-    bytes += size
-    end += character.length
-  }
-  return { text: text.slice(0, end), truncated: end < text.length }
-}
-
-function bounded(messages: Message[]): { messages: Message[]; clipped: boolean } {
-  const selected = messages.slice(-20)
-  let clipped = selected.length !== messages.length
-  while (Buffer.byteLength(JSON.stringify(selected), 'utf8') > 28_000) {
-    selected.shift()
-    clipped = true
-  }
-  return { messages: selected, clipped }
-}
-
 async function currentSnapshot(context: RpcContext, target: ReadParams) {
   const snapshot = projectSessionTabsForClient(
     await context.runtime.listMobileSessionTabs(`id:${target.workspaceId}`, context.pairedDeviceId),
@@ -65,7 +56,7 @@ async function currentSnapshot(context: RpcContext, target: ReadParams) {
   )
   const kind = context.runtime
     .listFolderWorkspaces()
-    .some((folder) => folder.id === target.workspaceId)
+    .some((folder) => folderWorkspaceKey(folder.id) === target.workspaceId)
     ? 'folder'
     : 'worktree'
   return { snapshot, resolved: resolveWearActionTarget(snapshot, target, kind) }
@@ -100,9 +91,10 @@ export const WEAR_CONVERSATION_READ_METHODS: RpcAnyMethod[] = [
       if (!first.resolved) {
         return { state: 'target-changed' as const }
       }
-      let messages: Message[]
+      let messages: WearConversationTextMessage[]
       let hasOlder: boolean
       let identity: ReturnType<typeof terminalIdentity> = null
+      let remoteRoute: ReturnType<typeof context.runtime.getWearSshTerminalRoute> = null
       if (first.resolved.kind === 'structured') {
         const result = await requireStructuredHost(context).history({
           sessionId: first.resolved.sessionId,
@@ -116,44 +108,69 @@ export const WEAR_CONVERSATION_READ_METHODS: RpcAnyMethod[] = [
           ) {
             return []
           }
-          const text = clippedText(item.body.blocks)
+          const text = clippedWearConversationText(item.body.blocks)
           return text.text
             ? [{ id: item.itemId, role: item.body.role, ...text, observedAt: item.observedAt }]
             : []
         })
         hasOlder = result.page.hasOlder
       } else {
-        if (
-          !context.runtime.isLocalWearTerminalTarget(first.resolved.terminal, first.resolved.ptyId)
-        ) {
-          return { state: 'unavailable' as const }
-        }
         identity = terminalIdentity(first.snapshot, target.sessionTabId)
         if (!identity) {
           return { state: 'unavailable' as const }
         }
-        const read = await readNativeChatTranscriptTail(
-          {
-            agent: identity.agent,
-            sessionId: identity.sessionId,
-            ...(identity.transcriptPath ? { transcriptPath: identity.transcriptPath } : {}),
-            limit: 20
-          },
-          context.signal
-        )
-        if (!('messages' in read)) {
-          return { state: 'unavailable' as const }
-        }
-        messages = read.messages.flatMap((message) => {
-          if (message.role !== 'user' && message.role !== 'assistant') {
-            return []
+        if (
+          context.runtime.isLocalWearTerminalTarget(first.resolved.terminal, first.resolved.ptyId)
+        ) {
+          const read = await readNativeChatTranscriptTail(
+            {
+              agent: identity.agent,
+              sessionId: identity.sessionId,
+              ...(identity.transcriptPath ? { transcriptPath: identity.transcriptPath } : {}),
+              limit: 20
+            },
+            context.signal
+          )
+          if (!('messages' in read)) {
+            return { state: 'unavailable' as const }
           }
-          const text = clippedText(message.blocks)
-          return text.text
-            ? [{ id: message.id, role: message.role, ...text, observedAt: message.timestamp }]
-            : []
-        })
-        hasOlder = read.hasMore
+          const projected = projectWearNativeChatMessages(read.messages, read.hasMore)
+          messages = projected.messages
+          hasOlder = projected.hasOlder
+        } else {
+          remoteRoute = context.runtime.getWearSshTerminalRoute(
+            first.resolved.terminal,
+            first.resolved.ptyId,
+            target.workspaceId
+          )
+          if (!remoteRoute) {
+            return { state: 'unavailable' as const }
+          }
+          let response: unknown
+          try {
+            response = await remoteRoute.requestHostRpc(
+              SSH_WEAR_CONVERSATION_TAIL_METHOD,
+              {
+                agent: identity.agent,
+                sessionId: identity.sessionId,
+                transcriptPath: identity.transcriptPath
+              },
+              { signal: context.signal, timeoutMs: 15_000 }
+            )
+          } catch {
+            return { state: 'unavailable' as const }
+          }
+          const parsed = remoteRead.safeParse(response)
+          if (
+            !parsed.success ||
+            Buffer.byteLength(JSON.stringify(parsed.data.messages), 'utf8') > 28_000 ||
+            parsed.data.messages.some((message) => Buffer.byteLength(message.text, 'utf8') > 2_048)
+          ) {
+            return { state: 'unavailable' as const }
+          }
+          messages = parsed.data.messages
+          hasOlder = parsed.data.hasOlder
+        }
       }
       const latest = await currentSnapshot(context, target)
       if (!latest.resolved || latest.resolved.kind !== first.resolved.kind) {
@@ -171,16 +188,35 @@ export const WEAR_CONVERSATION_READ_METHODS: RpcAnyMethod[] = [
         (latest.resolved.kind !== 'terminal' ||
           latest.resolved.terminal !== first.resolved.terminal ||
           latest.resolved.ptyId !== first.resolved.ptyId ||
-          !context.runtime.isLocalWearTerminalTarget(
-            latest.resolved.terminal,
-            latest.resolved.ptyId
-          ) ||
           JSON.stringify(terminalIdentity(latest.snapshot, target.sessionTabId)) !==
             JSON.stringify(identity))
       ) {
         return { state: 'target-changed' as const }
       }
-      const result = bounded(messages)
+      if (latest.resolved.kind === 'terminal') {
+        if (remoteRoute) {
+          const currentRoute = context.runtime.getWearSshTerminalRoute(
+            latest.resolved.terminal,
+            latest.resolved.ptyId,
+            target.workspaceId
+          )
+          if (
+            !currentRoute ||
+            currentRoute.provider !== remoteRoute.provider ||
+            currentRoute.connectionId !== remoteRoute.connectionId
+          ) {
+            return { state: 'unavailable' as const }
+          }
+        } else if (
+          !context.runtime.isLocalWearTerminalTarget(
+            latest.resolved.terminal,
+            latest.resolved.ptyId
+          )
+        ) {
+          return { state: 'target-changed' as const }
+        }
+      }
+      const result = boundWearConversationMessages(messages)
       return {
         state: 'ready' as const,
         kind: first.resolved.kind,

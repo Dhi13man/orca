@@ -19,6 +19,7 @@ import { RelayPtySourcePublication } from './relay-pty-source-publication'
 import { SkillInstallHandler } from './skill-install-handler'
 import { relayLogLine } from './relay-diagnostic-log'
 import { remoteCliRequestTimeoutMs } from './remote-cli-timeout'
+import { WearConversationTailHandler } from './wear-conversation-tail-handler'
 
 export class RelayRuntimeServices {
   readonly ptyHandler: PtyHandler
@@ -74,6 +75,7 @@ export class RelayRuntimeServices {
       portScanHandler,
       agentExecHandler,
       workspaceSessionHandler,
+      new WearConversationTailHandler(dispatcher),
       new AiVaultHandler(dispatcher, {
         hostPlatform,
         service: this.aiVaultService ?? undefined

@@ -67,18 +67,22 @@ function snapshot(kind: 'terminal' | 'structured' = 'terminal'): RuntimeMobileSe
 
 function context(
   initial: RuntimeMobileSessionTabsResult,
-  capabilities: string[] = [WEAR_CONVERSATION_READ_RUNTIME_CAPABILITY]
+  capabilities: string[] = [WEAR_CONVERSATION_READ_RUNTIME_CAPABILITY],
+  folderIds: string[] = []
 ) {
   const listMobileSessionTabs = vi.fn().mockResolvedValue(initial)
   const isLocalWearTerminalTarget = vi.fn().mockReturnValue(true)
+  const getWearSshTerminalRoute = vi.fn().mockReturnValue(null)
   const runtime = {
     listMobileSessionTabs,
-    listFolderWorkspaces: () => [],
-    isLocalWearTerminalTarget
+    listFolderWorkspaces: () => folderIds.map((id) => ({ id })),
+    isLocalWearTerminalTarget,
+    getWearSshTerminalRoute
   } as unknown as OrcaRuntimeService
   return {
     listMobileSessionTabs,
     isLocalWearTerminalTarget,
+    getWearSshTerminalRoute,
     rpc: {
       runtime,
       clientKind: 'mobile',
@@ -155,11 +159,147 @@ describe('wear.conversation.read', () => {
     })
   })
 
+  it('reads a real folder-key target on its owning SSH route', async () => {
+    const folderId = 'folder:folder-a'
+    const current = context({ ...snapshot(), worktree: folderId }, undefined, ['folder-a'])
+    current.isLocalWearTerminalTarget.mockReturnValue(false)
+    const requestHostRpc = vi.fn().mockResolvedValue({
+      state: 'ready',
+      messages: [
+        {
+          id: 'remote-a',
+          role: 'assistant',
+          text: 'From folder',
+          truncated: false,
+          observedAt: 123
+        }
+      ],
+      hasOlder: false
+    })
+    current.getWearSshTerminalRoute.mockReturnValue({
+      connectionId: 'ssh-a',
+      provider: {},
+      requestHostRpc
+    })
+    expect(
+      await method.handler(
+        { ...target, workspaceId: folderId, workspaceKind: 'folder' },
+        current.rpc
+      )
+    ).toMatchObject({
+      state: 'ready',
+      messages: [{ text: 'From folder' }]
+    })
+    expect(current.getWearSshTerminalRoute).toHaveBeenCalledWith('term-a', 'pty-a', folderId)
+    expect(current.listMobileSessionTabs).toHaveBeenCalledWith(`id:${folderId}`, 'phone-a')
+  })
+
   it('refuses remote terminal reads without falling back to local transcript files', async () => {
     const current = context(snapshot())
     current.isLocalWearTerminalTarget.mockReturnValue(false)
     expect(await method.handler(target, current.rpc)).toEqual({ state: 'unavailable' })
     expect(readTranscript).not.toHaveBeenCalled()
+  })
+
+  it('reads a bounded SSH-host projection under the same exact tab fence', async () => {
+    const current = context(snapshot())
+    current.isLocalWearTerminalTarget.mockReturnValue(false)
+    const provider = {}
+    const requestHostRpc = vi.fn().mockResolvedValue({
+      state: 'ready',
+      messages: [
+        {
+          id: 'remote-a',
+          role: 'assistant',
+          text: 'Remote answer',
+          truncated: false,
+          observedAt: 123
+        }
+      ],
+      hasOlder: false
+    })
+    current.getWearSshTerminalRoute.mockReturnValue({
+      connectionId: 'ssh-a',
+      provider,
+      requestHostRpc
+    })
+    expect(await method.handler(target, current.rpc)).toEqual({
+      state: 'ready',
+      kind: 'terminal',
+      messages: [
+        {
+          id: 'remote-a',
+          role: 'assistant',
+          text: 'Remote answer',
+          truncated: false,
+          observedAt: 123
+        }
+      ],
+      hasOlder: false
+    })
+    expect(requestHostRpc).toHaveBeenCalledWith(
+      'wear.conversation.tail',
+      {
+        agent: 'codex',
+        sessionId: 'provider-a',
+        transcriptPath: 'trusted.jsonl'
+      },
+      { signal: undefined, timeoutMs: 15_000 }
+    )
+    expect(current.getWearSshTerminalRoute).toHaveBeenCalledTimes(2)
+    expect(readTranscript).not.toHaveBeenCalled()
+  })
+
+  it('keeps old, disconnected, or changed SSH routes unavailable', async () => {
+    const current = context(snapshot())
+    current.isLocalWearTerminalTarget.mockReturnValue(false)
+    const provider = {}
+    const requestHostRpc = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('MethodNotFound'))
+      .mockResolvedValue({ state: 'ready', messages: [], hasOlder: false })
+    current.getWearSshTerminalRoute.mockReturnValue({
+      connectionId: 'ssh-a',
+      provider,
+      requestHostRpc
+    })
+    expect(await method.handler(target, current.rpc)).toEqual({ state: 'unavailable' })
+    current.getWearSshTerminalRoute
+      .mockReturnValueOnce({
+        connectionId: 'ssh-a',
+        provider,
+        requestHostRpc
+      })
+      .mockReturnValueOnce({
+        connectionId: 'ssh-a',
+        provider: {},
+        requestHostRpc
+      })
+    expect(await method.handler(target, current.rpc)).toEqual({ state: 'unavailable' })
+    expect(readTranscript).not.toHaveBeenCalled()
+  })
+
+  it('rejects an oversized SSH response before watch publication', async () => {
+    const current = context(snapshot())
+    current.isLocalWearTerminalTarget.mockReturnValue(false)
+    current.getWearSshTerminalRoute.mockReturnValue({
+      connectionId: 'ssh-a',
+      provider: {},
+      requestHostRpc: vi.fn().mockResolvedValue({
+        state: 'ready',
+        messages: [
+          {
+            id: 'remote-a',
+            role: 'assistant',
+            text: '🙂'.repeat(1_000),
+            truncated: false,
+            observedAt: 123
+          }
+        ],
+        hasOlder: false
+      })
+    })
+    expect(await method.handler(target, current.rpc)).toEqual({ state: 'unavailable' })
   })
 
   it('rechecks the publication and transcript identity after a read', async () => {

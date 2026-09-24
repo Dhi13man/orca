@@ -10,6 +10,7 @@ import { projectSessionTabsForClient } from './session-tabs-inventory'
 import { encodeWearAction } from '../../../../../wear/packages/wear-companion-contract/src/action'
 import { wearSendAction } from './wear-send-action'
 import { wearLedgerBindingId } from './wear-command-identity'
+import { folderWorkspaceKey } from '../../../../shared/workspace-scope'
 import { WEAR_STRUCTURED_SEND_RUNTIME_CAPABILITY } from '../../../../shared/protocol-version'
 import { getStructuredAgentSessionHost } from '../../../native-chat/agent-session-wire/structured-agent-session-registry'
 
@@ -57,7 +58,7 @@ export const WEAR_TARGET_METHODS: RpcAnyMethod[] = [
       )
       const kind = context.runtime
         .listFolderWorkspaces()
-        .some((folder) => folder.id === params.workspaceId)
+        .some((folder) => folderWorkspaceKey(folder.id) === params.workspaceId)
         ? 'folder'
         : 'worktree'
       return resolveWearActionTarget(snapshot, params, kind)
@@ -135,7 +136,7 @@ export const WEAR_TARGET_METHODS: RpcAnyMethod[] = [
         )
         const kind = context.runtime
           .listFolderWorkspaces()
-          .some((folder) => folder.id === params.target.workspaceId)
+          .some((folder) => folderWorkspaceKey(folder.id) === params.target.workspaceId)
           ? 'folder'
           : 'worktree'
         return resolveWearActionTarget(

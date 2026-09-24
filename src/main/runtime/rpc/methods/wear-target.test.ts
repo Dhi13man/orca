@@ -20,12 +20,13 @@ const target = {
 
 function context(
   snapshot: RuntimeMobileSessionTabsResult,
-  capabilities: string[] = [WEAR_ACTION_TARGET_RUNTIME_CAPABILITY]
+  capabilities: string[] = [WEAR_ACTION_TARGET_RUNTIME_CAPABILITY],
+  folderIds: string[] = []
 ) {
   const listMobileSessionTabs = vi.fn().mockResolvedValue(snapshot)
   const runtime = {
     listMobileSessionTabs,
-    listFolderWorkspaces: () => []
+    listFolderWorkspaces: () => folderIds.map((id) => ({ id }))
   } as unknown as OrcaRuntimeService
   return {
     listMobileSessionTabs,
@@ -82,6 +83,21 @@ describe('wear.target.resolve', () => {
   it('rejects a folder/worktree kind mismatch', async () => {
     const current = context(snapshot)
     expect(await method.handler({ ...target, workspaceKind: 'folder' }, current.rpc)).toBeNull()
+  })
+
+  it('resolves a folder workspace by its published scoped key', async () => {
+    const folderId = 'folder:folder-a'
+    const current = context({ ...snapshot, worktree: folderId }, undefined, ['folder-a'])
+    expect(
+      await method.handler(
+        { ...target, workspaceId: folderId, workspaceKind: 'folder' },
+        current.rpc
+      )
+    ).toEqual({
+      kind: 'terminal',
+      terminal: 'term-a',
+      ptyId: 'pty-a'
+    })
   })
 
   it('rejects unknown fields before dispatch', () => {

@@ -4717,13 +4717,36 @@ export class OrcaRuntimeService {
     )
   }
 
+  getWearSshTerminalRoute(
+    handle: string,
+    ptyId: string,
+    workspaceId: string
+  ): {
+    connectionId: string
+    provider: IPtyProvider
+    requestHostRpc: NonNullable<IPtyProvider['requestHostRpc']>
+  } | null {
+    const pty = this.ptysById.get(ptyId)
+    if (
+      !pty?.connectionId ||
+      pty.worktreeId !== workspaceId ||
+      this.resolveLiveLeafForHandle(handle)?.ptyId !== ptyId
+    ) {
+      return null
+    }
+    const provider = this.getSshProviderFn?.(pty.connectionId)
+    return provider?.requestHostRpc
+      ? { connectionId: pty.connectionId, provider, requestHostRpc: provider.requestHostRpc }
+      : null
+  }
+
   isCurrentLocalWearTerminalTarget(
     fence: WearActionTargetFence,
     pairedDeviceId: string,
     handle: string,
     ptyId: string
   ): boolean {
-    const kind = this.listFolderWorkspaces().some((folder) => folder.id === fence.workspaceId)
+    const kind = this.listFolderWorkspaces().some((folder) => folderWorkspaceKey(folder.id) === fence.workspaceId)
       ? 'folder'
       : 'worktree'
     const resolved = resolveWearActionTarget(
@@ -4744,7 +4767,7 @@ export class OrcaRuntimeService {
     pairedDeviceId: string,
     sessionId: string
   ): boolean {
-    const kind = this.listFolderWorkspaces().some((folder) => folder.id === fence.workspaceId)
+    const kind = this.listFolderWorkspaces().some((folder) => folderWorkspaceKey(folder.id) === fence.workspaceId)
       ? 'folder'
       : 'worktree'
     const resolved = resolveWearActionTarget(

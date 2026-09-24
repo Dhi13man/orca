@@ -1234,3 +1234,15 @@ watch refresh advanced the snapshot to 5:35 PM while the phone reported
 Doze timing, an authenticated host read, or physical-watch behavior. The test
 phone's sole desktop pairing reports invalid authentication, so paired
 conversation/reply delivery remains unproved.
+
+SSH terminal conversation reads now execute on the owning relay host through a
+bounded text-only transcript-tail RPC. The desktop rechecks the published tab,
+PTY, transcript identity, and SSH provider after the read; an older relay or
+disconnected route returns unavailable without reading a local file. Folder
+workspace targets now match their published `folder:<id>` key during Wear
+resolution, including send and current-target checks. Twenty-four focused
+host/relay tests, 15 cross-version wire tests, node/CLI typechecks, relay
+bundle build, and scoped lint pass. The SSH path has no live paired-host proof;
+SSH replies still lack host-side durable issue/deduplication. Host-initiated
+background delivery, authenticated PAGE/reply, and physical-watch acceptance
+remain open.
