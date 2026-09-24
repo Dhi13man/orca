@@ -18,6 +18,7 @@ const dashboard = {
   expiresAt: now + 60_000,
   companionState: 'connected',
   hostPage: { total: 0, included: 0, truncated: false, nextCursor: null },
+  usagePage: { total: 0, included: 0, truncated: false, nextCursor: null },
   usageGroups: [],
   hosts: []
 } as const

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { decodeWearDashboard, encodeWearDashboard, type WearDashboard } from './dashboard'
+import {
+  decodeWearDashboard,
+  encodeWearDashboard,
+  WEAR_DASHBOARD_MAX_PLAINTEXT_BYTES,
+  type WearDashboard
+} from './dashboard'
 
 const now = 1_800_000_000_000
 const groupKey = 'c4c67006-8492-4f45-93fb-6501e4c34891'
@@ -14,6 +19,7 @@ function dashboard(): WearDashboard {
     expiresAt: now + 86_400_000,
     companionState: 'connected',
     hostPage: { total: 1, included: 1, truncated: false, nextCursor: null },
+    usagePage: { total: 1, included: 1, truncated: false, nextCursor: null },
     usageGroups: [
       {
         groupKey,
@@ -44,6 +50,14 @@ function dashboard(): WearDashboard {
 }
 
 describe('Wear dashboard admission', () => {
+  it('reserves the native authenticated-envelope overhead inside the wire cap', () => {
+    expect(WEAR_DASHBOARD_MAX_PLAINTEXT_BYTES + 133).toBe(32_768)
+    expect(decodeWearDashboard(' '.repeat(WEAR_DASHBOARD_MAX_PLAINTEXT_BYTES + 1), now)).toEqual({
+      ok: false,
+      reason: 'too-large'
+    })
+  })
+
   it('round-trips the bounded active-provider dashboard and expires at the exact deadline', () => {
     const encoded = encodeWearDashboard(dashboard())
     expect(decodeWearDashboard(encoded, now)).toEqual({ ok: true, dashboard: dashboard() })

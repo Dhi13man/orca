@@ -41,6 +41,7 @@ export type WearDashboard = {
   expiresAt: number
   companionState: 'connected' | 'offline' | 'incompatible' | 'revoked' | 'unavailable'
   hostPage: { total: number; included: number; truncated: boolean; nextCursor: string | null }
+  usagePage: { total: number; included: number; truncated: boolean; nextCursor: string | null }
   usageGroups: WearUsageGroup[]
   hosts: WearDashboardHost[]
 }
@@ -49,7 +50,9 @@ export type DashboardDecodeResult =
   | { ok: true; dashboard: WearDashboard }
   | { ok: false; reason: 'too-large' | 'invalid-dashboard' | 'expired' }
 
-const MAX_BYTES = 32_768
+// Dashboard envelope: 133 bytes of v1 header, nonce, and GCM tag surround the plaintext.
+export const WEAR_DASHBOARD_MAX_PLAINTEXT_BYTES = 32_768 - 133
+const MAX_BYTES = WEAR_DASHBOARD_MAX_PLAINTEXT_BYTES
 const MAX_ID_BYTES = 256
 const MAX_LABEL_BYTES = 256
 const MAX_AGE_MS = 86_400_000
@@ -170,6 +173,7 @@ function validDashboard(value: unknown): value is WearDashboard {
       'expiresAt',
       'companionState',
       'hostPage',
+      'usagePage',
       'usageGroups',
       'hosts'
     ]) ||
@@ -196,7 +200,16 @@ function validDashboard(value: unknown): value is WearDashboard {
     value.hostPage.included !== value.hosts.length ||
     value.hostPage.total < value.hosts.length ||
     value.hostPage.truncated !== value.hostPage.total > value.hosts.length ||
-    value.hostPage.truncated !== (value.hostPage.nextCursor !== null)
+    value.hostPage.truncated !== (value.hostPage.nextCursor !== null) ||
+    !exact(value.usagePage, ['total', 'included', 'truncated', 'nextCursor']) ||
+    !timestamp(value.usagePage.total) ||
+    !timestamp(value.usagePage.included) ||
+    typeof value.usagePage.truncated !== 'boolean' ||
+    (value.usagePage.nextCursor !== null && !id(value.usagePage.nextCursor)) ||
+    value.usagePage.included !== value.usageGroups.length ||
+    value.usagePage.total < value.usageGroups.length ||
+    value.usagePage.truncated !== value.usagePage.total > value.usageGroups.length ||
+    value.usagePage.truncated !== (value.usagePage.nextCursor !== null)
   ) {
     return false
   }

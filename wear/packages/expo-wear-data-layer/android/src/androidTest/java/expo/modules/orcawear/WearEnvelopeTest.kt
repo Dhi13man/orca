@@ -6,6 +6,18 @@ import java.util.UUID
 import javax.crypto.AEADBadTagException
 
 class WearEnvelopeTest {
+    @Test fun dashboardPlaintextBudgetFitsExactAuthenticatedWireLimit() = withPeers { phone, watch, id ->
+        val metadata = WearEnvelopeMetadata(id, WearEnvelopeKind.DASHBOARD,
+            UUID.randomUUID().toString(), 1, "dashboard", 1000)
+        val bytes = ByteArray(32768 - 133) { 1 }
+        val wire = WearEnvelope(phone).seal(metadata, bytes, 0)
+        assertEquals(32768, wire.size)
+        assertArrayEquals(bytes, WearEnvelope(watch).open(metadata.path, "phone", wire, 0).plaintext)
+        assertThrows(IllegalArgumentException::class.java) {
+            WearEnvelope(phone).seal(metadata, ByteArray(bytes.size + 1), 0)
+        }
+    }
+
     @Test fun rejectsAnEnvelopeThatExpiresWhileCryptoIsRunning() = withPeers { phone, watch, id ->
         val metadata = WearEnvelopeMetadata(id, WearEnvelopeKind.DASHBOARD, UUID.randomUUID().toString(), 0, "snapshot", 1000)
         val wire = WearEnvelope(phone).seal(metadata, byteArrayOf(1), 0)
