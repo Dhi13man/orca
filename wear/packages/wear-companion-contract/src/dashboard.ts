@@ -106,7 +106,7 @@ function providerUsage(value: unknown): value is WearProviderUsage {
   )
 }
 
-function usageGroup(value: unknown): value is WearUsageGroup {
+export function isWearUsageGroup(value: unknown): value is WearUsageGroup {
   return (
     exact(value, [
       'groupKey',
@@ -194,7 +194,7 @@ function validDashboard(value: unknown): value is WearDashboard {
     typeof value.hostPage.truncated !== 'boolean' ||
     (value.hostPage.nextCursor !== null && !id(value.hostPage.nextCursor)) ||
     !Array.isArray(value.usageGroups) ||
-    !value.usageGroups.every(usageGroup) ||
+    !value.usageGroups.every(isWearUsageGroup) ||
     !Array.isArray(value.hosts) ||
     !value.hosts.every(isWearDashboardHost) ||
     value.hostPage.included !== value.hosts.length ||

@@ -32,6 +32,7 @@ const unfenced = {
 const send: WearAction = { ...fenced, action: 'sendAgentMessage', payload: { text: 'Hello 🙂' } }
 const actions: WearAction[] = [
   { ...unfenced, action: 'readHostPage', payload: { cursor: null } },
+  { ...unfenced, action: 'readUsagePage', payload: { cursor: 'start' } },
   {
     ...unfenced,
     action: 'readHostAgents',
@@ -180,7 +181,9 @@ describe('closed Wear action admission', () => {
   })
 
   it('requires null session fences for non-session actions', () => {
-    const refresh = JSON.parse(encodeWearAction(actions[8]!))
+    const refresh = JSON.parse(
+      encodeWearAction(actions.find((action) => action.action === 'refresh')!)
+    )
     refresh.targetPublicationEpoch = 'extra-authority'
     expect(decodeWearAction(JSON.stringify(refresh), 1000)).toEqual({
       ok: false,

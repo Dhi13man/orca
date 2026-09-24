@@ -30,6 +30,12 @@
     "accepted": true
   },
   {
+    "name": "readUsagePage",
+    "serialized": "{\"schemaVersion\":1,\"bindingId\":\"binding\",\"requestId\":\"request\",\"expiresAt\":2000,\"action\":\"readUsagePage\",\"target\":{},\"publisherEpoch\":\"phone\",\"expectedRevision\":2,\"targetPublicationEpoch\":null,\"targetSnapshotVersion\":null,\"payload\":{\"cursor\":null}}",
+    "now": 1000,
+    "accepted": true
+  },
+  {
     "name": "readNotificationsPage",
     "serialized": "{\"schemaVersion\":1,\"bindingId\":\"binding\",\"requestId\":\"request\",\"expiresAt\":2000,\"action\":\"readNotificationsPage\",\"target\":{},\"publisherEpoch\":\"phone\",\"expectedRevision\":2,\"targetPublicationEpoch\":null,\"targetSnapshotVersion\":null,\"payload\":{\"cursor\":null}}",
     "now": 1000,

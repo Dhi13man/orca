@@ -11,6 +11,7 @@ internal object ActionManifest {
     val envelopeOrder = listOf("schemaVersion", "bindingId", "requestId", "expiresAt", "action", "target", "publisherEpoch", "expectedRevision", "targetPublicationEpoch", "targetSnapshotVersion", "payload")
     val actions = mapOf(
         "readHostPage" to ActionSchema(linkedMapOf<String, List<String>>(), linkedMapOf<String, List<String>>("cursor" to listOf("nullableId")), false),
+        "readUsagePage" to ActionSchema(linkedMapOf<String, List<String>>(), linkedMapOf<String, List<String>>("cursor" to listOf("nullableId")), false),
         "readHostAgents" to ActionSchema(linkedMapOf<String, List<String>>("hostId" to listOf("id")), linkedMapOf<String, List<String>>("cursor" to listOf("nullableId")), false),
         "readNotificationsPage" to ActionSchema(linkedMapOf<String, List<String>>(), linkedMapOf<String, List<String>>("cursor" to listOf("nullableId")), false),
         "openConversation" to ActionSchema(linkedMapOf<String, List<String>>("hostId" to listOf("id"), "workspaceId" to listOf("id"), "workspaceKind" to listOf("worktree", "folder"), "sessionTabId" to listOf("id")), linkedMapOf<String, List<String>>(), true),

@@ -380,6 +380,10 @@ internal class WearCompanionOwner private constructor(private val context: Conte
         completed: (Exception?) -> Unit) =
         sendPage(bindingId, requestId, serialized, "readHostPage", 13, completed)
 
+    fun sendUsagePage(bindingId: String, requestId: String, serialized: String,
+        completed: (Exception?) -> Unit) =
+        sendPage(bindingId, requestId, serialized, "readUsagePage", 13, completed)
+
     fun sendAgentPage(bindingId: String, requestId: String, serialized: String,
         completed: (Exception?) -> Unit) =
         sendPage(bindingId, requestId, serialized, "readHostAgents", 16, completed)
@@ -444,6 +448,10 @@ internal class WearCompanionOwner private constructor(private val context: Conte
     }
 
     fun readHostPage(bindingId: String, requestId: String,
+        completed: (WearTransientPage?, Exception?) -> Unit) =
+        readPage(bindingId, requestId, completed)
+
+    fun readUsagePage(bindingId: String, requestId: String,
         completed: (WearTransientPage?, Exception?) -> Unit) =
         readPage(bindingId, requestId, completed)
 

@@ -1,17 +1,19 @@
 import * as ExpoCrypto from 'expo-crypto'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppState } from 'react-native'
 import { wearDataLayer } from '@orca/expo-wear-data-layer'
 import { encodeWearAction } from '../packages/wear-companion-contract/src/action'
 import type {
   WearDashboard,
-  WearDashboardHost
+  WearDashboardHost,
+  WearUsageGroup
 } from '../packages/wear-companion-contract/src/dashboard'
 import type { WearAgentRow } from '../packages/wear-companion-contract/src/agent-page'
 import { acceptHostPage, type HostPageRequest } from './host-page-repository'
 import { acceptAgentPage } from './agent-page-repository'
+import { acceptUsagePage } from './usage-page-repository'
 
-type PageItem = WearDashboardHost | WearAgentRow
+type PageItem = WearDashboardHost | WearAgentRow | WearUsageGroup
 type PagesState = {
   status: 'idle' | 'loading' | 'ready' | 'unavailable'
   items: PageItem[]
@@ -29,10 +31,14 @@ const initial: PagesState = {
 }
 
 function itemId(item: PageItem): string {
-  return 'hostId' in item ? item.hostId : `${item.workspaceId}\0${item.sessionTabId}`
+  return 'hostId' in item
+    ? item.hostId
+    : 'groupKey' in item
+      ? item.groupKey
+      : `${item.workspaceId}\0${item.sessionTabId}`
 }
 
-function useWearPages(dashboard: WearDashboard | null, hostId: string | null) {
+function useWearPages(dashboard: WearDashboard | null, hostId: string | null, usage = false) {
   const [state, setState] = useState<PagesState>(initial)
   const [stateKey, setStateKey] = useState<string | null>(null)
   const snapshot = useRef(initial)
@@ -40,8 +46,21 @@ function useWearPages(dashboard: WearDashboard | null, hostId: string | null) {
   const sequence = useRef(0)
   const pageCycle = useRef(0)
   const pageExpiresAt = useRef<number | null>(null)
+  const seed: PagesState = useMemo(
+    () =>
+      usage && dashboard
+        ? {
+            status: 'ready',
+            items: dashboard.usageGroups,
+            total: dashboard.usagePage.total,
+            nextCursor: dashboard.usagePage.nextCursor,
+            inventoryAuthority: null
+          }
+        : initial,
+    [dashboard, usage]
+  )
   const key = dashboard
-    ? `${dashboard.bindingId}:${dashboard.publisherEpoch}:${dashboard.revision}:${hostId === null ? 'catalog' : `agents:${hostId}`}`
+    ? `${dashboard.bindingId}:${dashboard.publisherEpoch}:${dashboard.revision}:${usage ? 'usage' : hostId === null ? 'catalog' : `agents:${hostId}`}`
     : null
 
   useEffect(() => {
@@ -49,10 +68,10 @@ function useWearPages(dashboard: WearDashboard | null, hostId: string | null) {
     pageCycle.current += 1
     pageExpiresAt.current = null
     pending.current = null
-    snapshot.current = initial
-    setState(initial)
+    snapshot.current = seed
+    setState(seed)
     setStateKey(key)
-  }, [key])
+  }, [key, seed])
 
   const receive = useCallback(
     async (request: HostPageRequest) => {
@@ -61,9 +80,11 @@ function useWearPages(dashboard: WearDashboard | null, hostId: string | null) {
       }
       let native
       try {
-        native = await (hostId === null
-          ? wearDataLayer.readHostPage(request.bindingId, request.requestId)
-          : wearDataLayer.readAgentPage(request.bindingId, request.requestId))
+        native = await (usage
+          ? wearDataLayer.readUsagePage(request.bindingId, request.requestId)
+          : hostId === null
+            ? wearDataLayer.readHostPage(request.bindingId, request.requestId)
+            : wearDataLayer.readAgentPage(request.bindingId, request.requestId))
       } catch {
         if (pending.current === request) {
           pending.current = null
@@ -76,14 +97,16 @@ function useWearPages(dashboard: WearDashboard | null, hostId: string | null) {
       if (!native || pending.current !== request) {
         return
       }
-      const page =
-        hostId === null
+      const page = usage
+        ? acceptUsagePage(native, request, dashboard, Date.now())
+        : hostId === null
           ? acceptHostPage(native, request, dashboard, Date.now())
           : acceptAgentPage(native, { ...request, hostId }, dashboard, Date.now())
       if (!page) {
         return
       }
-      const items: PageItem[] = 'hosts' in page ? page.hosts : page.agents
+      const items: PageItem[] =
+        'hosts' in page ? page.hosts : 'agents' in page ? page.agents : page.groups
       if (
         request.offset > 0 &&
         (page.total !== snapshot.current.total ||
@@ -122,7 +145,7 @@ function useWearPages(dashboard: WearDashboard | null, hostId: string | null) {
         Math.max(0, page.expiresAt - Date.now())
       )
     },
-    [dashboard, hostId]
+    [dashboard, hostId, usage]
   )
 
   useEffect(() => {
@@ -184,8 +207,14 @@ function useWearPages(dashboard: WearDashboard | null, hostId: string | null) {
           targetPublicationEpoch: null,
           targetSnapshotVersion: null
         } as const
-        const canonical =
-          hostId === null
+        const canonical = usage
+          ? encodeWearAction({
+              ...envelope,
+              action: 'readUsagePage',
+              target: {},
+              payload: { cursor }
+            })
+          : hostId === null
             ? encodeWearAction({
                 ...envelope,
                 action: 'readHostPage',
@@ -233,7 +262,7 @@ function useWearPages(dashboard: WearDashboard | null, hostId: string | null) {
         setState(unavailable)
       }
     },
-    [dashboard, hostId, receive]
+    [dashboard, hostId, receive, usage]
   )
 
   useEffect(() => {
@@ -252,7 +281,7 @@ function useWearPages(dashboard: WearDashboard | null, hostId: string | null) {
     return () => listener.remove()
   }, [])
 
-  return { state: stateKey === key ? state : initial, load }
+  return { state: stateKey === key ? state : seed, load }
 }
 
 export function useHostPages(dashboard: WearDashboard | null) {
@@ -268,4 +297,9 @@ export function useAgentPages(dashboard: WearDashboard | null, hostId: string | 
     }
   }, [dashboard, hostId, state.status, load])
   return { state: { ...state, agents: state.items as WearAgentRow[] }, load }
+}
+
+export function useUsagePages(dashboard: WearDashboard | null) {
+  const { state, load } = useWearPages(dashboard, null, true)
+  return { state: { ...state, groups: state.items as WearUsageGroup[] }, load }
 }

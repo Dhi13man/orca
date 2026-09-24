@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
   startFeed: vi.fn(),
   reserve: vi.fn(),
   publish: vi.fn(),
+  saveUsage: vi.fn(),
+  removeUsage: vi.fn(),
+  reconcileUsage: vi.fn(),
   closeFeed: vi.fn(),
   removeState: vi.fn(),
   removeAppState: vi.fn(),
@@ -37,6 +40,11 @@ vi.mock('./wear-host-feed', () => ({ startWearHostFeed: mocks.startFeed }))
 vi.mock('./wear-dashboard-publication', () => ({
   reserveWearDashboardRevision: mocks.reserve,
   publishWearDashboard: mocks.publish
+}))
+vi.mock('./wear-usage-page-snapshot', () => ({
+  saveWearUsagePageSnapshot: mocks.saveUsage,
+  removeWearUsagePageSnapshot: mocks.removeUsage,
+  reconcileWearUsagePageSnapshots: mocks.reconcileUsage
 }))
 
 import { startWearDashboardPublisher } from './wear-dashboard-publisher'
@@ -86,6 +94,9 @@ beforeEach(() => {
   })
   mocks.reserve.mockResolvedValue(1)
   mocks.publish.mockResolvedValue(undefined)
+  mocks.saveUsage.mockResolvedValue(undefined)
+  mocks.removeUsage.mockResolvedValue(undefined)
+  mocks.reconcileUsage.mockResolvedValue(undefined)
 })
 afterEach(() => vi.useRealTimers())
 
@@ -157,6 +168,7 @@ describe('Wear dashboard publisher', () => {
     finish(1)
     await Promise.resolve()
     await Promise.resolve()
+    await vi.advanceTimersByTimeAsync(0)
     expect(mocks.publish.mock.calls[0][0].hostPage.total).toBe(0)
     stop()
   })
@@ -404,5 +416,38 @@ describe('Wear dashboard publisher', () => {
     await vi.advanceTimersByTimeAsync(2_000)
     expect(mocks.publish).not.toHaveBeenCalled()
     expect(mocks.closeFeed).toHaveBeenCalledOnce()
+  })
+
+  it('does not publish after revocation during an in-flight usage snapshot write', async () => {
+    let finishSave: (() => void) | undefined
+    mocks.saveUsage.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishSave = resolve
+        })
+    )
+    mocks.getState.mockReturnValue(state([bindingA]))
+    const stop = startWearDashboardPublisher(vi.fn())
+    feedUpdate()
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(mocks.saveUsage).toHaveBeenCalledOnce()
+    mocks.onState?.(state([]))
+    expect(mocks.removeUsage).toHaveBeenCalledWith(bindingA)
+    finishSave?.()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(mocks.publish).not.toHaveBeenCalled()
+    stop()
+  })
+
+  it('does not publish while startup usage cache cleanup is unavailable', async () => {
+    mocks.reconcileUsage.mockRejectedValueOnce(new Error('storage unavailable'))
+    mocks.getState.mockReturnValue(state([bindingA]))
+    const onError = vi.fn()
+    const stop = startWearDashboardPublisher(onError)
+    feedUpdate()
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(mocks.publish).not.toHaveBeenCalled()
+    expect(onError).toHaveBeenCalled()
+    stop()
   })
 })

@@ -6,6 +6,7 @@ import type {
 } from '../packages/wear-companion-contract/src/dashboard'
 import type { PhoneDashboardView } from './use-phone-dashboard'
 import { WearButton } from './wear-button'
+import { useUsagePages } from './use-wear-pages'
 import { wearColors } from './wear-theme'
 
 export type DashboardPage = 'Attention' | 'Agents' | 'Usage'
@@ -144,16 +145,17 @@ function AgentsPage({
 }
 
 function UsagePage({ dashboard }: { dashboard: WearDashboard }) {
+  const { state, load } = useUsagePages(dashboard)
   return (
     <View style={styles.section}>
-      {dashboard.usageGroups.length === 0 ? (
+      {state.groups.length === 0 ? (
         <PageNotice>
           {dashboard.usagePage.total > 0
             ? 'Usage groups were omitted from this snapshot.'
             : 'No active Claude or Codex usage reported.'}
         </PageNotice>
       ) : null}
-      {dashboard.usageGroups.map((group) => {
+      {state.groups.map((group) => {
         const readingHost = dashboard.hosts.find((host) => host.hostId === group.readingHostId)
         return (
           <View key={group.groupKey} style={styles.card} accessible accessibilityRole="summary">
@@ -185,10 +187,21 @@ function UsagePage({ dashboard }: { dashboard: WearDashboard }) {
           </View>
         )
       })}
-      {dashboard.usagePage.truncated ? (
+      {state.nextCursor ? (
         <PageNotice>
-          Showing {dashboard.usagePage.included} of {dashboard.usagePage.total} account groups.
+          Showing {state.groups.length} of {state.total} account groups.
         </PageNotice>
+      ) : null}
+      {state.nextCursor && state.status !== 'unavailable' ? (
+        <WearButton
+          label={state.status === 'loading' ? 'Loading…' : 'More accounts'}
+          disabled={state.status === 'loading'}
+          quiet
+          onPress={() => void load(state.nextCursor)}
+        />
+      ) : null}
+      {state.status === 'unavailable' ? (
+        <PageNotice>More account groups are unavailable. Refresh from phone to retry.</PageNotice>
       ) : null}
       <PageNotice>Only active Claude and Codex accounts are included.</PageNotice>
     </View>

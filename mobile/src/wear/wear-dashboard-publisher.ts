@@ -6,11 +6,16 @@ import { loadHostCatalog } from '../transport/host-store'
 import { publishWearDashboard, reserveWearDashboardRevision } from './wear-dashboard-publication'
 import {
   hasWearDashboardContentChange,
-  projectWearHostFeedDashboard,
+  projectWearHostFeedPublication,
   wearDashboardContentSignature
 } from './wear-dashboard-projection'
 import { startWearHostFeed, type WearHostFeedSnapshot } from './wear-host-feed'
 import { WearUsageGroupKeys } from './wear-usage-group-keys'
+import {
+  reconcileWearUsagePageSnapshots,
+  removeWearUsagePageSnapshot,
+  saveWearUsagePageSnapshot
+} from './wear-usage-page-snapshot'
 
 const PUBLISH_COALESCE_MS = 2_000
 const PUBLISH_RETRY_MS = 30_000
@@ -27,6 +32,18 @@ function createWearDashboardPublisher(
   const keys = new Map<string, WearUsageGroupKeys>()
   const published = new Map<string, string>()
   const forced = new Set<string>()
+  const initialState = native.getState()
+  const cleanupReady = reconcileWearUsagePageSnapshots(() => {
+    const state = native.getState()
+    return new Set(
+      state.role === 'phone' ? (state.bindings ?? []).map((binding) => binding.bindingId) : []
+    )
+  })
+    .then(() => true)
+    .catch((error) => {
+      onError(error)
+      return false
+    })
   let snapshot: WearHostFeedSnapshot | null = null
   let closeFeed: (() => void) | null = null
   let refreshFeed: (() => Promise<boolean>) | null = null
@@ -75,7 +92,7 @@ function createWearDashboardPublisher(
           continue
         }
         const sentContent = wearDashboardContentSignature(bindingId, owner, current, epoch)
-        const dashboard = projectWearHostFeedDashboard(
+        const { dashboard, usageGroups } = projectWearHostFeedPublication(
           bindingId,
           epoch,
           revision,
@@ -86,7 +103,20 @@ function createWearDashboardPublisher(
         if (stopped || keys.get(bindingId) !== owner) {
           continue
         }
+        if (!(await cleanupReady)) {
+          throw new Error('Wear usage cache cleanup unavailable')
+        }
+        if (stopped || keys.get(bindingId) !== owner) {
+          continue
+        }
+        await saveWearUsagePageSnapshot(dashboard, usageGroups)
+        if (stopped || keys.get(bindingId) !== owner) {
+          continue
+        }
         await publishWearDashboard(dashboard)
+        if (stopped || keys.get(bindingId) !== owner) {
+          continue
+        }
         published.set(bindingId, sentContent)
         onPublished(bindingId, cycle)
       } catch (error) {
@@ -117,6 +147,7 @@ function createWearDashboardPublisher(
         published.delete(bindingId)
         forced.delete(bindingId)
         owner.dispose()
+        void removeWearUsagePageSnapshot(bindingId).catch(onError)
       }
     }
     let added = false
@@ -172,7 +203,7 @@ function createWearDashboardPublisher(
       schedule(0)
     }
   }, 5 * 60_000)
-  updateBindings(native.getState())
+  updateBindings(initialState)
   const stop = () => {
     if (stopped) {
       return

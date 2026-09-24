@@ -36,7 +36,7 @@ for (const action of ['openConversation', 'requestPhoneHandoff']) {
 for (const action of ['renewConversation', 'closeConversation']) {
   add(action, envelope(action, { leaseId: 'lease' }), true)
 }
-for (const action of ['readHostPage', 'readNotificationsPage']) {
+for (const action of ['readHostPage', 'readUsagePage', 'readNotificationsPage']) {
   add(action, envelope(action, { cursor: null }, false, {}), true)
 }
 add('refresh', envelope('refresh', {}, false, {}), true)

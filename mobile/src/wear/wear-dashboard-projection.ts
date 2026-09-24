@@ -1,7 +1,8 @@
 import {
   decodeWearDashboard,
   type WearDashboard,
-  type WearDashboardHost
+  type WearDashboardHost,
+  type WearUsageGroup
 } from '@orca/wear-companion-contract/dashboard'
 import type { ConnectionState, HostCatalogEntry } from '../transport/types'
 import { activeWearUsageSources } from './wear-active-provider-sources'
@@ -38,11 +39,29 @@ export function projectWearHostFeedDashboard(
   feed: WearHostFeedSnapshot,
   opaqueKeyFor: WearDashboardProjectionInput['opaqueKeyFor']
 ): WearDashboard {
+  return projectWearHostFeedPublication(
+    bindingId,
+    publisherEpoch,
+    revision,
+    generatedAt,
+    feed,
+    opaqueKeyFor
+  ).dashboard
+}
+
+export function projectWearHostFeedPublication(
+  bindingId: string,
+  publisherEpoch: string,
+  revision: number,
+  generatedAt: number,
+  feed: WearHostFeedSnapshot,
+  opaqueKeyFor: WearDashboardProjectionInput['opaqueKeyFor']
+): { dashboard: WearDashboard; usageGroups: WearUsageGroup[] } {
   const paired = new Set(feed.catalog.map((host) => host.id))
   const usageSources = [...feed.accounts].flatMap(([hostId, account]) =>
     paired.has(hostId) ? activeWearUsageSources(hostId, account) : []
   )
-  return projectWearDashboard({
+  return projectWearDashboardPublication({
     bindingId,
     publisherEpoch,
     revision,
@@ -126,6 +145,13 @@ function connectionState(
 }
 
 export function projectWearDashboard(input: WearDashboardProjectionInput): WearDashboard {
+  return projectWearDashboardPublication(input).dashboard
+}
+
+export function projectWearDashboardPublication(input: WearDashboardProjectionInput): {
+  dashboard: WearDashboard
+  usageGroups: WearUsageGroup[]
+} {
   const sorted = [...input.catalog].sort((left, right) => {
     const leftLive = connectionState(left, input.observations.get(left.id)) === 'connected' ? 1 : 0
     const rightLive =
@@ -222,5 +248,5 @@ export function projectWearDashboard(input: WearDashboardProjectionInput): WearD
     }
     accepted = dashboard
   }
-  return accepted
+  return { dashboard: accepted, usageGroups: usage.groups }
 }

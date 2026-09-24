@@ -104,10 +104,12 @@ type WearDataLayerModule = {
   ): Promise<boolean>
   readDashboard(bindingId: string): Promise<WearNativeDashboard | null>
   sendHostPage(bindingId: string, requestId: string, serialized: string): Promise<void>
+  sendUsagePage(bindingId: string, requestId: string, serialized: string): Promise<void>
   sendAgentPage(bindingId: string, requestId: string, serialized: string): Promise<void>
   sendConversationPage(bindingId: string, requestId: string, serialized: string): Promise<void>
   sendNotificationsPage(bindingId: string, requestId: string, serialized: string): Promise<void>
   readHostPage(bindingId: string, requestId: string): Promise<WearNativeHostPage | null>
+  readUsagePage(bindingId: string, requestId: string): Promise<WearNativeHostPage | null>
   readAgentPage(bindingId: string, requestId: string): Promise<WearNativeHostPage | null>
   readConversationPage(bindingId: string, requestId: string): Promise<WearNativeHostPage | null>
   readNotificationsPage(bindingId: string, requestId: string): Promise<WearNativeHostPage | null>

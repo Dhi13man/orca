@@ -213,7 +213,7 @@ internal class WearActionInbox(context: Context, private val admissionTime: (Lon
     }
 
     private fun actionClass(name: String): String = when (name) {
-        "readHostPage", "readHostAgents", "readNotificationsPage", "openConversation",
+        "readHostPage", "readUsagePage", "readHostAgents", "readNotificationsPage", "openConversation",
         "renewConversation", "closeConversation" -> "read"
         "sendAgentMessage" -> "send"
         "refresh" -> "refresh"

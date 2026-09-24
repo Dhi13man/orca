@@ -2,9 +2,8 @@ import { wearDataLayer } from '@orca/expo-wear-data-layer'
 import { decodeWearAction } from '@orca/wear-companion-contract'
 import { wearReceiptReasons, type WearReceiptReason } from '@orca/wear-companion-contract/receipt'
 import { requestWearHostCommand, withWearHostClient } from './wear-host-command-client'
-import { loadHostCatalog } from '../transport/host-store'
-import { encodeWearHostPage } from '@orca/wear-companion-contract/host-page'
-import { projectWearHostPage } from './wear-host-page-projection'
+import { sendWearHostPage } from './wear-host-page-action'
+import { sendWearUsagePage } from './wear-usage-page-action'
 import { encodeWearAgentPage } from '@orca/wear-companion-contract/agent-page'
 import { readWearHostAgentInventory } from './wear-host-agent-inventory'
 import { projectWearAgentPage } from './wear-agent-page-projection'
@@ -185,17 +184,14 @@ async function drain(): Promise<void> {
       }
     } else if (decoded.ok && decoded.action.action === 'readHostPage') {
       try {
-        const page = await projectWearHostPage({
-          bindingId: claim.bindingId,
-          requestId: claim.requestId,
-          actionHash: claim.actionHash,
-          publisherEpoch: decoded.action.publisherEpoch,
-          revision: decoded.action.expectedRevision,
-          cursor: decoded.action.payload.cursor,
-          now: Date.now(),
-          catalog: await loadHostCatalog()
-        })
-        await native.sendHostPage(claim.bindingId, claim.requestId, encodeWearHostPage(page))
+        await sendWearHostPage(claim, decoded.action)
+        outcome = { outcome: 'accepted', reason: null }
+      } catch {
+        outcome = { outcome: 'unknown', reason: null }
+      }
+    } else if (decoded.ok && decoded.action.action === 'readUsagePage') {
+      try {
+        await sendWearUsagePage(claim, decoded.action)
         outcome = { outcome: 'accepted', reason: null }
       } catch {
         outcome = { outcome: 'unknown', reason: null }

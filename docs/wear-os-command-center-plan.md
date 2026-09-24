@@ -1589,11 +1589,21 @@ its AsyncStorage cursor cannot be read or written, logging a generic warning.
 A failed read does not overwrite the last persisted cursor. Focused replay and
 background tests pass; no physical notification delivery was observed.
 
-Usage-group paging remains open for dashboards clipped by the 32-KiB bound.
-The existing host-page path can carry a separate usage page, but the phone must
-first retain the complete opaque group set for the exact published dashboard
-revision. Recomputing from a newer live feed or generating new group keys in
-the action drain could return the wrong account or leak an identity. The
-closed action manifest, generated Kotlin validator, native transient page
-bridge, and watch correlation must then advance together; no partial usage
-page path has been enabled.
+Usage-group paging is now wired through the closed action manifest and generated
+Kotlin validator, journal-backed native PAGE transport, phone action drain, and
+watch "More accounts" view. The phone saves the complete opaque groups with the
+dashboard before publication and retains the previous revision during a new
+publication; page reads require the requested epoch/revision, and native send
+requires the current published epoch/revision. Watch acceptance additionally
+checks the pending action hash, cursor, offset, total, expiry, and dashboard.
+Writes, binding removal, and startup cleanup share one phone-JS queue across
+publisher instances. Cleanup checks current bindings when it runs and removes
+only this cache's absent-binding keys before another publication. Publication
+rechecks binding ownership after each wait. A read-only review found the
+cross-publisher races; ordering tests cover them. The 160-group
+page-walk test, all
+mobile Wear and watch tests, both TypeScript checks, generated-source check,
+Kotlin contract conformance test, scoped lint/format, and phone/watch release
+Kotlin compiles pass. An individual group with enough source hosts to exceed
+the 32-KiB page bound still cannot be displayed; no physical Usage page fetch
+or process-death cache cleanup has been observed.

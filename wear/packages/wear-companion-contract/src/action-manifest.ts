@@ -28,6 +28,13 @@ export const actionManifest = {
       },
       "sessionFenced": false
     },
+    "readUsagePage": {
+      "target": {},
+      "payload": {
+        "cursor": "nullableId"
+      },
+      "sessionFenced": false
+    },
     "readHostAgents": {
       "target": {
         "hostId": "id"
