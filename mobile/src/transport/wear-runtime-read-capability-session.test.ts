@@ -154,15 +154,76 @@ describe('Wear runtime read capability session', () => {
     close()
   })
 
-  it('fails closed when the host cannot declare capabilities', async () => {
+  it('keeps old hosts readable but marks their inventory incomplete', async () => {
     const fake = fakeClient()
     fake.client.sendRequest = vi.fn(async () => ok({ capabilities: [] }))
     const ready = vi.fn()
     const unavailable = vi.fn()
     const close = startWearRuntimeReadCapabilitySession(fake.client, ready, unavailable)
     await flush()
-    expect(ready).not.toHaveBeenCalled()
+    expect(ready).toHaveBeenCalledWith({ authoritativeInventory: false, structuredAgents: false })
     expect(unavailable).toHaveBeenCalledTimes(1)
     close()
+  })
+
+  it('degrades a malformed declaration acknowledgement to incomplete legacy inventory', async () => {
+    const fake = fakeClient()
+    fake.client.sendRequest = vi.fn(async (method: string) =>
+      method === 'status.get' ? ok({ capabilities }) : ok({ capabilities: [] })
+    )
+    const ready = vi.fn()
+    const close = startWearRuntimeReadCapabilitySession(fake.client, ready, vi.fn())
+    await flush()
+    expect(ready).toHaveBeenCalledWith({ authoritativeInventory: false, structuredAgents: false })
+    close()
+  })
+
+  it('retries a transient declaration failure on the same socket and cancels after disposal', async () => {
+    vi.useFakeTimers()
+    try {
+      const fake = fakeClient()
+      let declarations = 0
+      fake.client.sendRequest = vi.fn(async (method: string, params?: unknown) => {
+        if (method === 'status.get') {
+          return ok({ capabilities })
+        }
+        declarations++
+        if (declarations === 1) {
+          return {
+            id: 'response',
+            ok: false,
+            error: { code: 'temporarily_unavailable', message: 'retry' },
+            _meta: { runtimeId: 'host' }
+          } as RpcResponse
+        }
+        return ok({ capabilities: (params as { capabilities: string[] }).capabilities })
+      })
+      const ready = vi.fn()
+      const close = startWearRuntimeReadCapabilitySession(fake.client, ready, vi.fn())
+      await flush()
+      expect(declarations).toBe(1)
+      expect(ready).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1_000)
+      await flush()
+      expect(declarations).toBe(2)
+      expect(ready).toHaveBeenCalledWith({ authoritativeInventory: true, structuredAgents: true })
+      close()
+
+      const second = fakeClient()
+      second.client.sendRequest = vi.fn(async (method: string) => {
+        if (method === 'status.get') {
+          return ok({ capabilities })
+        }
+        throw new Error('temporary timeout')
+      })
+      const stop = startWearRuntimeReadCapabilitySession(second.client, vi.fn(), vi.fn())
+      await flush()
+      expect(second.client.sendRequest).toHaveBeenCalledTimes(2)
+      stop()
+      await vi.advanceTimersByTimeAsync(15_000)
+      expect(second.client.sendRequest).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

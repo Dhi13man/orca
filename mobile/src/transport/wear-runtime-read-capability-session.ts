@@ -20,7 +20,13 @@ export function startWearRuntimeReadCapabilitySession(
   let active = true
   let generation = 0
   let cancelProbe: (() => void) | null = null
+  let retryTimer: ReturnType<typeof setTimeout> | null = null
+  let declarationRetries = 0
   let available: boolean | null = null
+  const setLegacyReady = (): void => {
+    available = true
+    onReady({ authoritativeInventory: false, structuredAgents: false })
+  }
   const setUnavailable = (): void => {
     if (available === false) {
       return
@@ -34,6 +40,11 @@ export function startWearRuntimeReadCapabilitySession(
     const current = generation
     cancelProbe?.()
     cancelProbe = null
+    if (retryTimer) {
+      clearTimeout(retryTimer)
+      retryTimer = null
+    }
+    declarationRetries = 0
     setUnavailable()
     if (client.getState() !== 'connected') {
       return
@@ -43,7 +54,7 @@ export function startWearRuntimeReadCapabilitySession(
         return
       }
       if (!hostCapabilities.includes(CLIENT_CAPABILITIES_SET_RUNTIME_CAPABILITY)) {
-        setUnavailable()
+        setLegacyReady()
         return
       }
       const requested = [
@@ -57,38 +68,55 @@ export function startWearRuntimeReadCapabilitySession(
           ? [AGENT_SESSION_BOUNDARY_RUNTIME_CAPABILITY]
           : [])
       ]
-      void client.sendRequest('client.capabilities.set', { capabilities: requested }).then(
-        (response) => {
-          if (!active || generation !== current) {
-            return
-          }
-          if (!response.ok) {
-            setUnavailable()
-            return
-          }
-          const result = response.result
-          const accepted =
-            result && typeof result === 'object' && 'capabilities' in result
-              ? result.capabilities
-              : null
-          if (!Array.isArray(accepted) || requested.some((item) => !accepted.includes(item))) {
-            setUnavailable()
-            return
-          }
-          available = true
-          onReady({
-            authoritativeInventory: requested.includes(
-              SESSION_TABS_AUTHORITATIVE_INVENTORY_RUNTIME_CAPABILITY
-            ),
-            structuredAgents: requested.includes(STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY)
-          })
-        },
-        () => {
-          if (active && generation === current) {
-            setUnavailable()
-          }
+      const retryDeclaration = (): void => {
+        if (!active || generation !== current) {
+          return
         }
-      )
+        setUnavailable()
+        const delay = Math.min(1_000 * 2 ** Math.min(declarationRetries++, 4), 15_000)
+        retryTimer = setTimeout(() => {
+          retryTimer = null
+          declare()
+        }, delay)
+      }
+      const declare = (): void => {
+        void client
+          .sendRequest(
+            'client.capabilities.set',
+            { capabilities: requested },
+            { timeoutMs: 5_000, failWhenDisconnected: true }
+          )
+          .then((response) => {
+            if (!active || generation !== current) {
+              return
+            }
+            if (!response.ok) {
+              if (response.error.code === 'method_not_found') {
+                setLegacyReady()
+              } else {
+                retryDeclaration()
+              }
+              return
+            }
+            const result = response.result
+            const accepted =
+              result && typeof result === 'object' && 'capabilities' in result
+                ? result.capabilities
+                : null
+            if (!Array.isArray(accepted) || requested.some((item) => !accepted.includes(item))) {
+              setLegacyReady()
+              return
+            }
+            available = true
+            onReady({
+              authoritativeInventory: requested.includes(
+                SESSION_TABS_AUTHORITATIVE_INVENTORY_RUNTIME_CAPABILITY
+              ),
+              structuredAgents: requested.includes(STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY)
+            })
+          }, retryDeclaration)
+      }
+      declare()
     })
   }
 
@@ -98,6 +126,9 @@ export function startWearRuntimeReadCapabilitySession(
     active = false
     generation++
     cancelProbe?.()
+    if (retryTimer) {
+      clearTimeout(retryTimer)
+    }
     unsubscribe()
   }
 }
