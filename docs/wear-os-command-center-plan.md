@@ -1258,7 +1258,8 @@ PAGE after dashboard revision changes and retains the selected host's display
 name. This is authenticated host and empty-inventory PAGE evidence, not agent
 conversation or reply evidence. The catalog PAGE currently labels connection
 status unverified even when the dashboard has a live connected observation;
-that presentation gap and a disposable live-agent roundtrip remain open.
+that presentation gap and a live roundtrip through an existing authenticated
+agent remain open.
 
 An Orca-managed Codex terminal was created only in that throwaway repository.
 The source-built host published it; the watch Agents dashboard changed from
@@ -1534,3 +1535,10 @@ unavailable. The route still rechecks its target and provider after the host
 read. Three focused test files (75 tests), node typecheck, scoped lint/format,
 and independent read-only review pass. This does not enable SSH Wear sends or
 prove a physical SSH transcript read.
+
+Owner scope correction: validation uses the existing configured, authenticated
+agents and paired machines. No disposable Codex profile, login, or new account
+is required. The previously created isolated sign-in attempt is historical
+evidence, not an active blocker. Before a reply test, reverify an existing
+agent session's exact identity and idle state, then send only a bounded,
+harmless acknowledgement; leave busy sessions and all profile data untouched.
