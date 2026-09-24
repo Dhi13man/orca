@@ -1075,3 +1075,13 @@ no paired phone/watch command delivery or physical background recovery is yet
 proved. Structured-agent and SSH execution-host sends, actual conversation
 views, notifications, background refresh, and installed-product acceptance
 remain open.
+
+The portable host-page contract now defines a bounded, 120-second, encrypted
+PAGE payload correlated to the exact watch action hash and dashboard
+epoch/revision. It validates each host with the dashboard's existing host
+schema, limits pages to 16 distinct entries, checks offset/total and cursor
+progress, and reserves 512 bytes of envelope headroom. Contract and dashboard
+tests (22 total), Wear typecheck, lint, and format pass. This is a schema unit
+only: the phone does not yet answer `readHostPage`, the native receiver does
+not yet accept/store PAGE, and the watch cannot page beyond its dashboard
+snapshot. Those transport/UI gates and paired-device proof remain open.

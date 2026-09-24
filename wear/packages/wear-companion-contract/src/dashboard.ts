@@ -130,7 +130,7 @@ function usageGroup(value: unknown): value is WearUsageGroup {
   )
 }
 
-function dashboardHost(value: unknown): value is WearDashboardHost {
+export function isWearDashboardHost(value: unknown): value is WearDashboardHost {
   return (
     exact(value, [
       'hostId',
@@ -196,7 +196,7 @@ function validDashboard(value: unknown): value is WearDashboard {
     !Array.isArray(value.usageGroups) ||
     !value.usageGroups.every(usageGroup) ||
     !Array.isArray(value.hosts) ||
-    !value.hosts.every(dashboardHost) ||
+    !value.hosts.every(isWearDashboardHost) ||
     value.hostPage.included !== value.hosts.length ||
     value.hostPage.total < value.hosts.length ||
     value.hostPage.truncated !== value.hostPage.total > value.hosts.length ||

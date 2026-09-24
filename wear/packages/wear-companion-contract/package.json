@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/action.ts",
     "./dashboard": "./src/dashboard.ts",
+    "./host-page": "./src/host-page.ts",
     "./receipt": "./src/receipt.ts",
     "./package.json": "./package.json"
   },
