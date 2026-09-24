@@ -1187,3 +1187,17 @@ API-36 native tests pass; paired watch delivery remains unproved. This is
 not yet the planned session-scoped Attention feed: safe event-to-agent
 navigation, autonomous background refresh, and physical notification parity
 remain open.
+
+On 2026-09-24, a fresh Wear API-33 emulator and disposable Android API-36
+phone paired at the OS level and discovered each other in Orca. Their first
+app enrollment reached the binding acknowledgment, which the phone rejected:
+the watch clock was about four seconds ahead, while native envelope admission
+allowed no skew beyond the declared 120-second lifetime. The receiver now
+allows 30 seconds of clock skew without extending the packet's absolute
+expiry; seven API-36 envelope instrumentation tests pass. With rebuilt APKs,
+both screens showed the same comparison code, the phone showed “1 paired
+watch,” and the watch showed Attention, Agents, Usage, Inbox, and an actual
+phone snapshot timestamp and attention counts. This proves native binding
+and paired DASHBOARD delivery on disposable emulators. Command PAGE delivery,
+real host data and replies, autonomous background behavior, and physical
+watch acceptance remain unproved.

@@ -45,6 +45,38 @@ class WearEnvelopeTest {
         assertThrows(IllegalArgumentException::class.java) { slowWriter.seal(metadata, byteArrayOf(1), 0) }
     }
 
+    @Test fun acceptsBoundedPeerClockSkewWithoutExtendingExpiry() = withPeers { phone, watch, id ->
+        val metadata = WearEnvelopeMetadata(id, WearEnvelopeKind.ACTION,
+            UUID.randomUUID().toString(), 1, "request", 160_000)
+        val wire = WearEnvelope(watch).seal(metadata, byteArrayOf(1), 40_000)
+        assertArrayEquals(byteArrayOf(1), WearEnvelope(phone).open(metadata.path, "watch", wire, 10_000).plaintext)
+        assertThrows(IllegalArgumentException::class.java) {
+            WearEnvelope(phone).open(metadata.path, "watch", wire, 9_999)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            WearEnvelope(phone).open(metadata.path, "watch", wire, 160_000)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            WearEnvelope(watch).seal(metadata, byteArrayOf(1), 10_000)
+        }
+    }
+
+    @Test fun pendingBindingAcknowledgementAcceptsPeerClockSkew() {
+        withWearTestDatabase { phoneContext -> withWearTestDatabase { watchContext ->
+            WearBindingStore(phoneContext).use { phone -> WearBindingStore(watchContext).use { watch ->
+                val id = UUID.randomUUID().toString()
+                val wrapped = WearKeyStore.wrapBindingKey(id, ByteArray(32) { it.toByte() })
+                phone.insertPending(id, CompanionRole.PHONE, watch.installId(), "watch", wrapped)
+                watch.insertPending(id, CompanionRole.WATCH, phone.installId(), "phone", wrapped)
+                val metadata = WearEnvelopeMetadata(id, WearEnvelopeKind.ACKNOWLEDGEMENT,
+                    UUID.randomUUID().toString(), 0, "enrollment", 160_000)
+                val wire = WearEnvelope(watch).seal(metadata, "bound".toByteArray(), 40_000)
+                assertArrayEquals("bound".toByteArray(),
+                    WearEnvelope(phone).open(metadata.path, "watch", wire, 10_000).plaintext)
+            } }
+        } }
+    }
+
     @Test fun authenticatesMetadataPathDirectionNodeCiphertextAndExpiry() = withPeers { phone, watch, id ->
         val phoneWire = WearEnvelope(phone)
         val watchWire = WearEnvelope(watch)

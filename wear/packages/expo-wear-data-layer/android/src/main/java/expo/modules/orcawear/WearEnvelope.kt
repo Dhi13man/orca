@@ -64,7 +64,7 @@ internal class WearEnvelope(
         val metadata = WearEnvelopeMetadata(readText(input), kind, readText(input),
             input.readLong(), readText(input), input.readLong())
         if (kind == WearEnvelopeKind.ACTION) require(wire.size <= 8192)
-        validate(metadata, now)
+        validate(metadata, now, 30_000)
         require(metadata.path == path) { "wear_envelope_wrong_path" }
         val nonce = ByteArray(12).also { input.readFully(it) }
         val headerSize = wire.size - stream.available()
@@ -81,7 +81,7 @@ internal class WearEnvelope(
                 plaintext.fill(0)
                 error("wear_action_too_large")
             }
-            try { validate(metadata, Math.addExact(now, elapsedRealtime() - started)) }
+            try { validate(metadata, Math.addExact(now, elapsedRealtime() - started), 30_000) }
             catch (error: Exception) {
                 plaintext.fill(0)
                 throw error
@@ -117,7 +117,7 @@ internal class WearEnvelope(
         }) { "wear_binding_not_active" }
     }
 
-    private fun validate(metadata: WearEnvelopeMetadata, now: Long) {
+    private fun validate(metadata: WearEnvelopeMetadata, now: Long, clockSkew: Long = 0) {
         require(UUID.fromString(metadata.bindingId).toString() == metadata.bindingId)
         require(UUID.fromString(metadata.publisherEpoch).toString() == metadata.publisherEpoch)
         require(metadata.revision in 0..9_007_199_254_740_991L)
@@ -127,7 +127,7 @@ internal class WearEnvelope(
             86_400_000 else 120_000
         require(now in 0..9_007_199_254_740_991L)
         require(metadata.expiresAt in 0..9_007_199_254_740_991L &&
-            metadata.expiresAt > now && metadata.expiresAt - now <= lifetime) { "wear_envelope_expired" }
+            metadata.expiresAt > now && metadata.expiresAt - now <= lifetime + clockSkew) { "wear_envelope_expired" }
     }
 
     private fun encodeHeader(metadata: WearEnvelopeMetadata, nonce: ByteArray): ByteArray {
