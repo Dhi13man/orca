@@ -10,8 +10,10 @@ import type { RuntimeMobileSessionTabsResult } from '../../../../shared/runtime-
 import { isNativeChatSupportedAgent } from '../../../../shared/native-chat-agent-support'
 import { SSH_WEAR_CONVERSATION_TAIL_METHOD } from '../../../../shared/ssh-wear-conversation'
 import { folderWorkspaceKey } from '../../../../shared/workspace-scope'
-import { toWindowsWslPath } from '../../../../shared/wsl-paths'
+import { parseWslUncPath, toWindowsWslPath } from '../../../../shared/wsl-paths'
+import { resolveSessionFilePath } from '../../../native-chat/session-file-resolver'
 import { readNativeChatTranscriptTail } from '../../../native-chat/transcript-watch'
+import { wearWslTranscriptRoots } from './wear-wsl-transcript-roots'
 import { resolveWearActionTarget } from '../../wear-action-target'
 import { defineMethod, type RpcAnyMethod, type RpcContext } from '../core'
 import { projectSessionTabsForClient } from './session-tabs-inventory'
@@ -126,11 +128,42 @@ export const WEAR_CONVERSATION_READ_METHODS: RpcAnyMethod[] = [
           first.resolved.ptyId,
           target.workspaceId
         )
-        if (
-          wslDistro &&
-          (!identity.transcriptPath?.startsWith('/') || !identity.transcriptPath.endsWith('.jsonl'))
-        ) {
-          return { state: 'unavailable' as const }
+        let wslFilePath: string | null = null
+        if (wslDistro) {
+          if (identity.transcriptPath) {
+            if (
+              !/^\/(?!\/)/.test(identity.transcriptPath) ||
+              !identity.transcriptPath.endsWith('.jsonl')
+            ) {
+              return { state: 'unavailable' as const }
+            }
+            wslFilePath = toWindowsWslPath(identity.transcriptPath, wslDistro)
+          } else {
+            const lookupSignal = context.signal
+              ? AbortSignal.any([context.signal, AbortSignal.timeout(15_000)])
+              : AbortSignal.timeout(15_000)
+            try {
+              const roots = await wearWslTranscriptRoots(wslDistro, lookupSignal)
+              if (!roots) {
+                return { state: 'unavailable' as const }
+              }
+              wslFilePath = await resolveSessionFilePath(
+                identity.agent,
+                identity.sessionId,
+                roots,
+                lookupSignal
+              )
+            } catch {
+              context.signal?.throwIfAborted()
+              return { state: 'unavailable' as const }
+            }
+            if (
+              !wslFilePath ||
+              parseWslUncPath(wslFilePath)?.distro.toLowerCase() !== wslDistro.toLowerCase()
+            ) {
+              return { state: 'unavailable' as const }
+            }
+          }
         }
         if (
           wslDistro ||
@@ -140,8 +173,8 @@ export const WEAR_CONVERSATION_READ_METHODS: RpcAnyMethod[] = [
             {
               agent: identity.agent,
               sessionId: identity.sessionId,
-              ...(wslDistro
-                ? { filePath: toWindowsWslPath(identity.transcriptPath!, wslDistro) }
+              ...(wslFilePath
+                ? { filePath: wslFilePath }
                 : identity.transcriptPath
                   ? { transcriptPath: identity.transcriptPath }
                   : {}),

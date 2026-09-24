@@ -8,10 +8,16 @@ import type { OrcaRuntimeService } from '../../orca-runtime'
 import type { RpcContext, RpcMethod } from '../core'
 
 const readTranscript = vi.hoisted(() => vi.fn())
+const resolveTranscriptPath = vi.hoisted(() => vi.fn())
+const getWslRoots = vi.hoisted(() => vi.fn())
 const history = vi.hoisted(() => vi.fn())
 vi.mock('../../../native-chat/transcript-watch', () => ({
   readNativeChatTranscriptTail: readTranscript
 }))
+vi.mock('../../../native-chat/session-file-resolver', () => ({
+  resolveSessionFilePath: resolveTranscriptPath
+}))
+vi.mock('./wear-wsl-transcript-roots', () => ({ wearWslTranscriptRoots: getWslRoots }))
 vi.mock('./structured-agent-session-gate', () => ({ requireStructuredHost: () => ({ history }) }))
 
 import { WEAR_CONVERSATION_READ_METHODS } from './wear-conversation-read'
@@ -97,6 +103,15 @@ function context(
 
 beforeEach(() => {
   vi.clearAllMocks()
+  getWslRoots.mockResolvedValue({
+    claudeProjectsDir: '\\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.claude\\projects',
+    codexSessionsDirs: [
+      '\\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.local\\share\\orca\\codex-runtime-home\\home\\sessions',
+      '\\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.codex\\sessions'
+    ],
+    grokSessionsDir: '\\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.grok\\sessions',
+    ompSessionsDir: '\\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.omp\\agent\\sessions'
+  })
   readTranscript.mockResolvedValue({
     messages: [
       {
@@ -242,6 +257,103 @@ describe('wear.conversation.read', () => {
       .mockReturnValueOnce('Ubuntu-24.04')
       .mockReturnValueOnce('Ubuntu-22.04')
     expect(await method.handler(target, current.rpc)).toEqual({ state: 'target-changed' })
+  })
+
+  it('resolves a pathless OMP session only inside its owning WSL distro', async () => {
+    const wslSnapshot = snapshot()
+    const terminal = wslSnapshot.tabs[0] as {
+      agentStatus: { agentType: string; providerSession: { id: string; transcriptPath?: string } }
+    }
+    terminal.agentStatus.agentType = 'omp'
+    delete terminal.agentStatus.providerSession.transcriptPath
+    const current = context(wslSnapshot)
+    current.isLocalWearTerminalTarget.mockReturnValue(false)
+    current.getWearWslTerminalDistro.mockReturnValue('Ubuntu-24.04')
+    resolveTranscriptPath.mockResolvedValue(
+      '\\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.omp\\agent\\sessions\\agent.jsonl'
+    )
+
+    expect(await method.handler(target, current.rpc)).toMatchObject({ state: 'ready' })
+    expect(resolveTranscriptPath).toHaveBeenCalledWith(
+      'omp',
+      'provider-a',
+      expect.objectContaining({
+        ompSessionsDir: '\\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.omp\\agent\\sessions',
+        codexSessionsDirs: [
+          '\\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.local\\share\\orca\\codex-runtime-home\\home\\sessions',
+          '\\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.codex\\sessions'
+        ]
+      }),
+      expect.any(AbortSignal)
+    )
+    expect(readTranscript).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: 'omp',
+        filePath: '\\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.omp\\agent\\sessions\\agent.jsonl'
+      }),
+      undefined
+    )
+  })
+
+  it('refuses a pathless WSL session resolved from another distro', async () => {
+    const wslSnapshot = snapshot()
+    const terminal = wslSnapshot.tabs[0] as {
+      agentStatus: { providerSession: { id: string; transcriptPath?: string } }
+    }
+    delete terminal.agentStatus.providerSession.transcriptPath
+    const current = context(wslSnapshot)
+    current.isLocalWearTerminalTarget.mockReturnValue(false)
+    current.getWearWslTerminalDistro.mockReturnValue('Ubuntu-24.04')
+    resolveTranscriptPath.mockResolvedValue(
+      '\\\\wsl.localhost\\Ubuntu-22.04\\home\\user\\.codex\\sessions\\wrong.jsonl'
+    )
+    expect(await method.handler(target, current.rpc)).toEqual({ state: 'unavailable' })
+    expect(readTranscript).not.toHaveBeenCalled()
+  })
+
+  it('refuses an unavailable WSL root probe before scanning', async () => {
+    const wslSnapshot = snapshot()
+    const terminal = wslSnapshot.tabs[0] as {
+      agentStatus: { providerSession: { id: string; transcriptPath?: string } }
+    }
+    delete terminal.agentStatus.providerSession.transcriptPath
+    const current = context(wslSnapshot)
+    current.isLocalWearTerminalTarget.mockReturnValue(false)
+    current.getWearWslTerminalDistro.mockReturnValue('Ubuntu-24.04')
+    getWslRoots.mockResolvedValue(null)
+    expect(await method.handler(target, current.rpc)).toEqual({ state: 'unavailable' })
+    expect(resolveTranscriptPath).not.toHaveBeenCalled()
+    expect(readTranscript).not.toHaveBeenCalled()
+  })
+
+  it('cancels a pathless WSL scan at the whole-lookup deadline', async () => {
+    const wslSnapshot = snapshot()
+    const terminal = wslSnapshot.tabs[0] as {
+      agentStatus: { providerSession: { id: string; transcriptPath?: string } }
+    }
+    delete terminal.agentStatus.providerSession.transcriptPath
+    const current = context(wslSnapshot)
+    current.isLocalWearTerminalTarget.mockReturnValue(false)
+    current.getWearWslTerminalDistro.mockReturnValue('Ubuntu-24.04')
+    const deadline = new AbortController()
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValueOnce(deadline.signal)
+    resolveTranscriptPath.mockImplementationOnce(
+      (_agent, _sessionId, _roots, signal: AbortSignal) =>
+        new Promise((_resolve, reject) =>
+          signal.addEventListener('abort', () => reject(new Error('scan cancelled')), {
+            once: true
+          })
+        )
+    )
+    try {
+      const pending = method.handler(target, current.rpc)
+      await vi.waitFor(() => expect(resolveTranscriptPath).toHaveBeenCalledOnce())
+      deadline.abort()
+      expect(await pending).toEqual({ state: 'unavailable' })
+      expect(readTranscript).not.toHaveBeenCalled()
+    } finally {
+      timeout.mockRestore()
+    }
   })
 
   it('reads a bounded SSH-host projection under the same exact tab fence', async () => {

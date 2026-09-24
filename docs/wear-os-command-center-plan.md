@@ -1743,3 +1743,15 @@ ADB still lists only four emulators. The advertised physical phone endpoint
 `192.168.68.106:45379` refused `adb connect` with 10061; the watch was not
 discovered. Physical acceptance therefore remains unobserved, with no change
 to either device or its installed app.
+
+WSL terminal conversation reads now also resolve pathless provider sessions
+from the terminal's named distro. The read probes that distro's login-shell
+`HOME` and `OMP_CODING_AGENT_DIR`, scopes all Claude/Codex/Grok/OMP roots to
+it, rejects a result from another distro, and aborts the whole lookup after
+15 seconds. Twenty focused read/root tests, node typecheck, direct lint, and
+read-only review pass. This is source-level validation: no live WSL agent
+conversation has been read. An OMP root set only inside one terminal command
+cannot be inferred from a separate login shell when its provider session has
+no transcript path; that exact session remains unavailable rather than
+showing a guessed file. Existing paired-agent validation, SSH send durability,
+and physical-device acceptance remain open.
