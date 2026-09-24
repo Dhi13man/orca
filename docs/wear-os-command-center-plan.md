@@ -1462,3 +1462,17 @@ source-text checks sensitive to this Windows checkout's CRLF text and a
 mock-server key-pair child-process import test. A phone/watch emulator
 handoff, notification timing, real-host exact conversation/reply, actual usage,
 and physical watch installation/operation are still required for acceptance.
+
+Both release APKs built from commit `8e95ad10c` with offline Gradle:
+watch SHA-256 `733FD05AA0E4CA057684515A0474D3BD3F4415082BFCC48CCE9BFE38BE80A875`
+and phone SHA-256 `2DD88D72930E99B80447B07774202BB62D5D5F16F9DB359A2B0B01B0C066D790`.
+Their signing certificate matched the already-installed emulator apps
+(`fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c`).
+Sideload updates succeeded on the existing paired API-36 phone emulator
+`emulator-5556` and bound Wear emulator `emulator-5562` without uninstalling
+either app. The watch launched to Attention with its binding intact; the phone
+launched with its existing hosts intact. Another unbound Wear emulator
+(`emulator-5560`) also accepted the watch APK and remained unbound. These
+observations prove startup and update continuity, not notification delivery or
+an agent conversation. The physical watch is still absent from `adb devices`
+and no physical APK install has occurred for this commit.
