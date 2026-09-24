@@ -10,6 +10,7 @@ import type { RuntimeMobileSessionTabsResult } from '../../../../shared/runtime-
 import { isNativeChatSupportedAgent } from '../../../../shared/native-chat-agent-support'
 import { SSH_WEAR_CONVERSATION_TAIL_METHOD } from '../../../../shared/ssh-wear-conversation'
 import { folderWorkspaceKey } from '../../../../shared/workspace-scope'
+import { toWindowsWslPath } from '../../../../shared/wsl-paths'
 import { readNativeChatTranscriptTail } from '../../../native-chat/transcript-watch'
 import { resolveWearActionTarget } from '../../wear-action-target'
 import { defineMethod, type RpcAnyMethod, type RpcContext } from '../core'
@@ -95,6 +96,7 @@ export const WEAR_CONVERSATION_READ_METHODS: RpcAnyMethod[] = [
       let hasOlder: boolean
       let identity: ReturnType<typeof terminalIdentity> = null
       let remoteRoute: ReturnType<typeof context.runtime.getWearSshTerminalRoute> = null
+      let wslDistro: string | null = null
       if (first.resolved.kind === 'structured') {
         const result = await requireStructuredHost(context).history({
           sessionId: first.resolved.sessionId,
@@ -119,14 +121,30 @@ export const WEAR_CONVERSATION_READ_METHODS: RpcAnyMethod[] = [
         if (!identity) {
           return { state: 'unavailable' as const }
         }
+        wslDistro = context.runtime.getWearWslTerminalDistro(
+          first.resolved.terminal,
+          first.resolved.ptyId,
+          target.workspaceId
+        )
         if (
+          wslDistro &&
+          (!identity.transcriptPath?.startsWith('/') || !identity.transcriptPath.endsWith('.jsonl'))
+        ) {
+          return { state: 'unavailable' as const }
+        }
+        if (
+          wslDistro ||
           context.runtime.isLocalWearTerminalTarget(first.resolved.terminal, first.resolved.ptyId)
         ) {
           const read = await readNativeChatTranscriptTail(
             {
               agent: identity.agent,
               sessionId: identity.sessionId,
-              ...(identity.transcriptPath ? { transcriptPath: identity.transcriptPath } : {}),
+              ...(wslDistro
+                ? { filePath: toWindowsWslPath(identity.transcriptPath!, wslDistro) }
+                : identity.transcriptPath
+                  ? { transcriptPath: identity.transcriptPath }
+                  : {}),
               limit: 20
             },
             context.signal
@@ -206,6 +224,16 @@ export const WEAR_CONVERSATION_READ_METHODS: RpcAnyMethod[] = [
             currentRoute.connectionId !== remoteRoute.connectionId
           ) {
             return { state: 'unavailable' as const }
+          }
+        } else if (wslDistro) {
+          if (
+            context.runtime.getWearWslTerminalDistro(
+              latest.resolved.terminal,
+              latest.resolved.ptyId,
+              target.workspaceId
+            ) !== wslDistro
+          ) {
+            return { state: 'target-changed' as const }
           }
         } else if (
           !context.runtime.isLocalWearTerminalTarget(

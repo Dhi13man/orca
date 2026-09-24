@@ -72,16 +72,19 @@ function context(
 ) {
   const listMobileSessionTabs = vi.fn().mockResolvedValue(initial)
   const isLocalWearTerminalTarget = vi.fn().mockReturnValue(true)
+  const getWearWslTerminalDistro = vi.fn().mockReturnValue(null)
   const getWearSshTerminalRoute = vi.fn().mockReturnValue(null)
   const runtime = {
     listMobileSessionTabs,
     listFolderWorkspaces: () => folderIds.map((id) => ({ id })),
     isLocalWearTerminalTarget,
+    getWearWslTerminalDistro,
     getWearSshTerminalRoute
   } as unknown as OrcaRuntimeService
   return {
     listMobileSessionTabs,
     isLocalWearTerminalTarget,
+    getWearWslTerminalDistro,
     getWearSshTerminalRoute,
     rpc: {
       runtime,
@@ -199,6 +202,46 @@ describe('wear.conversation.read', () => {
     current.isLocalWearTerminalTarget.mockReturnValue(false)
     expect(await method.handler(target, current.rpc)).toEqual({ state: 'unavailable' })
     expect(readTranscript).not.toHaveBeenCalled()
+  })
+
+  it('reads only the exact transcript in the terminal-owning WSL distro', async () => {
+    const current = context(snapshot())
+    current.isLocalWearTerminalTarget.mockReturnValue(false)
+    current.getWearWslTerminalDistro.mockReturnValue('Ubuntu-24.04')
+    expect(await method.handler(target, current.rpc)).toMatchObject({ state: 'unavailable' })
+    expect(readTranscript).not.toHaveBeenCalled()
+
+    const wslSnapshot = snapshot()
+    const terminal = wslSnapshot.tabs[0] as {
+      agentStatus: { providerSession: { id: string; transcriptPath: string } }
+    }
+    terminal.agentStatus.providerSession.transcriptPath = '/home/user/.codex/sessions/rollout.jsonl'
+    current.listMobileSessionTabs.mockResolvedValue(wslSnapshot)
+    expect(await method.handler(target, current.rpc)).toMatchObject({ state: 'ready' })
+    expect(readTranscript).toHaveBeenCalledWith(
+      {
+        agent: 'codex',
+        sessionId: 'provider-a',
+        filePath: '\\\\wsl.localhost\\Ubuntu-24.04\\home\\user\\.codex\\sessions\\rollout.jsonl',
+        limit: 20
+      },
+      undefined
+    )
+    expect(current.getWearSshTerminalRoute).not.toHaveBeenCalled()
+  })
+
+  it('rejects a WSL distro change during a transcript read', async () => {
+    const wslSnapshot = snapshot()
+    const terminal = wslSnapshot.tabs[0] as {
+      agentStatus: { providerSession: { id: string; transcriptPath: string } }
+    }
+    terminal.agentStatus.providerSession.transcriptPath = '/home/user/rollout.jsonl'
+    const current = context(wslSnapshot)
+    current.isLocalWearTerminalTarget.mockReturnValue(false)
+    current.getWearWslTerminalDistro
+      .mockReturnValueOnce('Ubuntu-24.04')
+      .mockReturnValueOnce('Ubuntu-22.04')
+    expect(await method.handler(target, current.rpc)).toEqual({ state: 'target-changed' })
   })
 
   it('reads a bounded SSH-host projection under the same exact tab fence', async () => {

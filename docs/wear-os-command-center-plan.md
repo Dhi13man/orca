@@ -1720,3 +1720,17 @@ these internal test-signed artifacts. It does not establish compatibility with
 Dhiman's installed production phone signature; that package must be inspected
 before any physical phone install and never replaced across a signature
 mismatch.
+
+The Wear terminal path now includes WSL source support: the local durable
+receipt and settled-prompt writer admit an exact workspace/PTY in a named WSL
+distro, and conversation reads use only the hook transcript path translated
+inside that same distro. The send pins the distro through both asynchronous
+and synchronous write fences; a changed namespace produces an unresolved
+receipt rather than a second attempt. Focused runtime/RPC tests (27), node
+typecheck, and direct scoped lint pass. A read-only review found the original
+distro-switch gap and the final code closes it. This is source evidence, not
+a live WSL agent conversation or reply. Validation remains on Dhiman's
+existing configured agents and paired machines; no disposable sign-in is a
+blocker. Before any reply test, reverify one exact idle session and send only
+a harmless bounded acknowledgement. Physical phone/watch acceptance, SSH
+atomic-send durability, and an actual WSL roundtrip remain open.

@@ -4717,6 +4717,28 @@ export class OrcaRuntimeService {
     )
   }
 
+  isLocalOrWslWearTerminalTarget(handle: string, ptyId: string, workspaceId: string): boolean {
+    const pty = this.ptysById.get(ptyId)
+    return Boolean(
+      pty &&
+      !pty.connectionId &&
+      pty.worktreeId === workspaceId &&
+      (!pty.isWsl || pty.wslDistro) &&
+      this.resolveLiveLeafForHandle(handle)?.ptyId === ptyId
+    )
+  }
+
+  getWearWslTerminalDistro(handle: string, ptyId: string, workspaceId: string): string | null {
+    const pty = this.ptysById.get(ptyId)
+    return pty &&
+      !pty.connectionId &&
+      pty.worktreeId === workspaceId &&
+      (pty.isWsl || pty.wslDistro) &&
+      this.resolveLiveLeafForHandle(handle)?.ptyId === ptyId
+      ? pty.wslDistro || null
+      : null
+  }
+
   getWearSshTerminalRoute(
     handle: string,
     ptyId: string,
@@ -4765,7 +4787,7 @@ export class OrcaRuntimeService {
       resolved?.kind === 'terminal' &&
       resolved.terminal === handle &&
       resolved.ptyId === ptyId &&
-      this.isLocalWearTerminalTarget(handle, ptyId)
+      this.isLocalOrWslWearTerminalTarget(handle, ptyId, fence.workspaceId)
     )
   }
 

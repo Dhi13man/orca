@@ -131,7 +131,8 @@ describe('wear.terminal.send', () => {
     const ledger = new WearCommandLedger(':memory:')
     const listMobileSessionTabs = vi.fn().mockResolvedValue(snapshot)
     const sendTerminalAgentPrompt = vi.fn().mockResolvedValue({ accepted: true })
-    const isLocalWearTerminalTarget = vi.fn().mockReturnValue(true)
+    const isLocalOrWslWearTerminalTarget = vi.fn().mockReturnValue(true)
+    const getWearWslTerminalDistro = vi.fn().mockReturnValue(null)
     const isCurrentLocalWearTerminalTarget = vi.fn().mockReturnValue(true)
     const isTerminalRunningSettledPromptAgent = vi.fn().mockResolvedValue(true)
     const runtime = {
@@ -139,7 +140,8 @@ describe('wear.terminal.send', () => {
       listMobileSessionTabs,
       listFolderWorkspaces: () => [],
       sendTerminalAgentPrompt,
-      isLocalWearTerminalTarget,
+      isLocalOrWslWearTerminalTarget,
+      getWearWslTerminalDistro,
       isCurrentLocalWearTerminalTarget,
       isTerminalRunningSettledPromptAgent
     } as unknown as OrcaRuntimeService
@@ -154,7 +156,8 @@ describe('wear.terminal.send', () => {
       rpc,
       listMobileSessionTabs,
       sendTerminalAgentPrompt,
-      isLocalWearTerminalTarget,
+      isLocalOrWslWearTerminalTarget,
+      getWearWslTerminalDistro,
       isCurrentLocalWearTerminalTarget,
       isTerminalRunningSettledPromptAgent
     }
@@ -290,9 +293,34 @@ describe('wear.terminal.send', () => {
     current.ledger.close()
   })
 
+  it('refuses a WSL send when the same PTY changes distro before the write', async () => {
+    const current = setup()
+    current.getWearWslTerminalDistro
+      .mockReturnValueOnce('Ubuntu-24.04')
+      .mockReturnValue('Ubuntu-22.04')
+    current.sendTerminalAgentPrompt.mockImplementationOnce(async (_handle, _text, options) => {
+      await options.beforeWrite('pty-a')
+    })
+    expect(await sendMethod.handler(action, current.rpc)).toMatchObject({ outcome: 'unknown' })
+    expect(current.sendTerminalAgentPrompt).toHaveBeenCalledOnce()
+    current.ledger.close()
+  })
+
+  it('refuses a WSL distro switch at the synchronous write fence', async () => {
+    const current = setup()
+    current.getWearWslTerminalDistro.mockReturnValue('Ubuntu-24.04')
+    current.sendTerminalAgentPrompt.mockImplementationOnce(async (_handle, _text, options) => {
+      await options.beforeWrite('pty-a')
+      current.getWearWslTerminalDistro.mockReturnValue('Ubuntu-22.04')
+      options.beforeWriteNow('pty-a')
+    })
+    expect(await sendMethod.handler(action, current.rpc)).toMatchObject({ outcome: 'unknown' })
+    current.ledger.close()
+  })
+
   it('blocks remote execution hosts and rejects unknown command fields', async () => {
     const current = setup()
-    current.isLocalWearTerminalTarget.mockReturnValue(false)
+    current.isLocalOrWslWearTerminalTarget.mockReturnValue(false)
     expect(await sendMethod.handler(action, current.rpc)).toEqual({
       outcome: 'rejected',
       reason: 'unsupported',

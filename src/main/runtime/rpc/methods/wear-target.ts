@@ -156,10 +156,19 @@ export const WEAR_TARGET_METHODS: RpcAnyMethod[] = [
         }
         if (
           resolved.kind !== 'terminal' ||
-          !context.runtime.isLocalWearTerminalTarget(resolved.terminal, resolved.ptyId)
+          !context.runtime.isLocalOrWslWearTerminalTarget(
+            resolved.terminal,
+            resolved.ptyId,
+            params.target.workspaceId
+          )
         ) {
           return finish('rejected', 'unsupported')
         }
+        const wslDistro = context.runtime.getWearWslTerminalDistro(
+          resolved.terminal,
+          resolved.ptyId,
+          params.target.workspaceId
+        )
         if (!(await context.runtime.isTerminalRunningSettledPromptAgent(resolved.terminal))) {
           return finish('rejected', 'unsupported')
         }
@@ -171,7 +180,16 @@ export const WEAR_TARGET_METHODS: RpcAnyMethod[] = [
               latest?.kind !== 'terminal' ||
               latest.terminal !== resolved.terminal ||
               latest.ptyId !== ptyId ||
-              !context.runtime.isLocalWearTerminalTarget(resolved.terminal, ptyId) ||
+              !context.runtime.isLocalOrWslWearTerminalTarget(
+                resolved.terminal,
+                ptyId,
+                params.target.workspaceId
+              ) ||
+              context.runtime.getWearWslTerminalDistro(
+                resolved.terminal,
+                ptyId,
+                params.target.workspaceId
+              ) !== wslDistro ||
               !(await context.runtime.isTerminalRunningSettledPromptAgent(resolved.terminal))
             ) {
               throw new Error('wear_terminal_target_changed')
@@ -189,7 +207,12 @@ export const WEAR_TARGET_METHODS: RpcAnyMethod[] = [
                 pairedDeviceId,
                 resolved.terminal,
                 ptyId
-              )
+              ) ||
+              context.runtime.getWearWslTerminalDistro(
+                resolved.terminal,
+                ptyId,
+                params.target.workspaceId
+              ) !== wslDistro
             ) {
               throw new Error('wear_terminal_target_changed')
             }
