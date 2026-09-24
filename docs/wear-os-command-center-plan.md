@@ -2018,3 +2018,16 @@ typechecks, scoped lint/format, and independent read-only review pass. The
 updated source has not been rebuilt or installed on physical devices; real
 usage values, host-originated notifications, safe idle replies, SSH durability,
 and physical watch acceptance remain unverified.
+
+After `b92127958`, both current-source release APKs built offline. The ARM64-only
+phone APK is 62,900,736 bytes, SHA-256
+`6A953E218991DB3ADCA37FEE9FBD579B644556DD5B25A4FA445D685FF5CDC48F`;
+the multi-ABI watch APK is 74,893,407 bytes, SHA-256
+`9A590E823F49CBD64F7FA2F0ECA35394AFED088419BAD2F504E5438AE1591106`.
+Both retain package `com.stably.orca.mobile` and certificate
+`fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c`.
+The watch APK replaced the same-signed app on paired emulator `5562` and
+launched to a rendered Attention page; Usage rendered one unverified Claude
+account as unavailable with its last-reported time and Host 2 source. The
+phone APK remains uninstalled. ADB still lists only emulators, so these checks
+do not close physical installation, real usage, or paired-agent acceptance.
