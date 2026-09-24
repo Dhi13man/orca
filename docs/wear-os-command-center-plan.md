@@ -1988,3 +1988,18 @@ autonomous scheduled phone-process wake and dashboard delivery on that emulator
 pair. It does not prove physical-device timing, host-originated notification
 delivery, a real conversation, or a safe reply. The freshly built ARM64 phone
 APK above remains uninstalled; the emulator used its earlier x86_64 package.
+
+Direct SSH Wear replies remain disabled after a second source audit. The
+authenticated relay route and exact-incarnation guarded PTY write exist, but
+that write has neither a host-owned durable receipt nor prompt-submission
+sequencing; replay could send again. The prior Node 18 file-journal prototype
+was removed after Windows power-loss and concurrent-relay races were found.
+The durable host ledger must live outside the content-hashed relay install
+directory, which deployment can collect. Keep existing Node 18 SSH hosts
+supported unless the owner chooses a runtime-floor change; no dependency or
+floor change has been made. An interrupted reservation must remain `unknown`
+and must never authorize another write. Current Crowley and Choisoonsil
+agents are busy, so neither is an eligible reply-test target; validation uses
+the existing authenticated agents and requires an exactly identified idle
+session. ADB still lists only the paired emulators, not the physical phone or
+watch.
