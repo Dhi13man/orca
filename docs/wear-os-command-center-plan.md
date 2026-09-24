@@ -1965,3 +1965,14 @@ remaining hosts; 14 focused notification/background tests, mobile typecheck,
 lint, and formatting pass. Physical phone and watch remain absent from ADB.
 Natural periodic refresh, real host conversation and safe idle reply, SSH
 durable send, and physical installed-device acceptance remain open.
+
+After commit `2ee2a8aad`, the current phone source rebuilt offline as an
+ARM64-only release APK. `:app:assembleRelease` passed; the 62,899,784-byte
+APK has SHA-256
+`047618327F2F6188BE7C473EA9AD68C8DF23A2FFAA2AB0079B5182859AF0C7BA`,
+package `com.stably.orca.mobile` versionCode 15, only `arm64-v8a` native code,
+and the existing test signing certificate
+`fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c`.
+It has not been installed on a physical device. ADB still lists only emulators;
+the advertised physical phone endpoint refuses the connection, and no watch
+endpoint is visible.
