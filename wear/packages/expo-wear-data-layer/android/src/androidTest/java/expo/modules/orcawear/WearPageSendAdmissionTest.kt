@@ -17,6 +17,8 @@ class WearPageSendAdmissionTest {
         assertTrue(admitsPageSend(metadata, published, action, "readHostPage", 1))
         assertTrue(admitsPageSend(metadata, published,
             action.copy(actionName = "readHostAgents"), "readHostAgents", 1))
+        assertTrue(admitsPageSend(metadata, published,
+            action.copy(actionName = "openConversation"), "openConversation", 1))
         assertFalse(admitsPageSend(metadata, published.copy(revision = 5), action, "readHostPage", 1))
         assertFalse(admitsPageSend(metadata, published.copy(publisherEpoch =
             UUID.randomUUID().toString()), action, "readHostPage", 1))

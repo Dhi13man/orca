@@ -9,17 +9,19 @@ const native = vi.hoisted(() => ({
   sendJournalReceipt: vi.fn(),
   sendHostPage: vi.fn(),
   sendAgentPage: vi.fn(),
+  sendConversationPage: vi.fn(),
   pendingJournalReceipts: vi.fn(),
   pendingJournalReconciliation: vi.fn()
 }))
 
 const requestWearHostCommand = vi.hoisted(() => vi.fn())
+const withWearHostClient = vi.hoisted(() => vi.fn())
 const loadHostCatalog = vi.hoisted(() => vi.fn())
 const readWearHostAgentInventory = vi.hoisted(() => vi.fn())
 const projectWearAgentPage = vi.hoisted(() => vi.fn())
 
 vi.mock('@orca/expo-wear-data-layer', () => ({ wearDataLayer: native }))
-vi.mock('./wear-host-command-client', () => ({ requestWearHostCommand }))
+vi.mock('./wear-host-command-client', () => ({ requestWearHostCommand, withWearHostClient }))
 vi.mock('../transport/host-store', () => ({ loadHostCatalog }))
 vi.mock('./wear-host-agent-inventory', () => ({ readWearHostAgentInventory }))
 vi.mock('./wear-agent-page-projection', () => ({ projectWearAgentPage }))
@@ -52,6 +54,7 @@ describe('Wear action drain', () => {
     native.sendJournalReceipt.mockResolvedValue(undefined)
     native.sendHostPage.mockResolvedValue(undefined)
     native.sendAgentPage.mockResolvedValue(undefined)
+    native.sendConversationPage.mockResolvedValue(undefined)
     loadHostCatalog.mockResolvedValue([])
     native.pendingJournalReceipts.mockResolvedValue([
       { bindingId: 'binding', requestId: 'request' }
@@ -336,6 +339,96 @@ describe('Wear action drain', () => {
     expect(native.finishActionEffect).toHaveBeenCalledWith(
       'binding',
       'agents-request',
+      actionHash,
+      'accepted',
+      null
+    )
+  })
+
+  it('reads an exact current conversation and sends only a journal-bound text PAGE', async () => {
+    const canonical = JSON.stringify({
+      schemaVersion: 1,
+      bindingId: 'binding',
+      requestId: 'conversation-request',
+      expiresAt: Date.now() + 60_000,
+      action: 'openConversation',
+      target: {
+        hostId: 'host-a',
+        workspaceId: 'workspace-a',
+        workspaceKind: 'worktree',
+        sessionTabId: 'tab-a'
+      },
+      publisherEpoch: 'epoch',
+      expectedRevision: 4,
+      targetPublicationEpoch: 'publication-a',
+      targetSnapshotVersion: 7,
+      payload: {}
+    })
+    const actionHash = createHash('sha256').update(canonical).digest('hex')
+    native.claimAction
+      .mockReset()
+      .mockResolvedValueOnce({
+        bindingId: 'binding',
+        requestId: 'conversation-request',
+        actionHash,
+        claimToken: 'token',
+        canonical
+      })
+      .mockResolvedValue(null)
+    const sendRequest = vi.fn().mockResolvedValue({
+      ok: true,
+      result: {
+        state: 'ready',
+        kind: 'terminal',
+        hasOlder: false,
+        messages: [
+          {
+            id: 'message-a',
+            role: 'assistant',
+            text: 'Real answer',
+            truncated: false,
+            observedAt: Date.now(),
+            transcriptPath: 'private.jsonl'
+          }
+        ]
+      }
+    })
+    withWearHostClient.mockImplementation(async (_hostId, admits, request) => {
+      expect(admits({ conversationRead: true })).toBe(true)
+      return request({ sendRequest })
+    })
+    await drainWearActions()
+    expect(withWearHostClient).toHaveBeenCalledWith(
+      'host-a',
+      expect.any(Function),
+      expect.any(Function)
+    )
+    expect(sendRequest).toHaveBeenCalledWith(
+      'wear.conversation.read',
+      {
+        workspaceId: 'workspace-a',
+        workspaceKind: 'worktree',
+        sessionTabId: 'tab-a',
+        targetPublicationEpoch: 'publication-a',
+        targetSnapshotVersion: 7
+      },
+      { timeoutMs: 8_000, failWhenDisconnected: true }
+    )
+    const serialized = native.sendConversationPage.mock.calls[0][2] as string
+    expect(JSON.parse(serialized)).toMatchObject({
+      bindingId: 'binding',
+      requestId: 'conversation-request',
+      actionHash,
+      hostId: 'host-a',
+      workspaceId: 'workspace-a',
+      sessionTabId: 'tab-a',
+      contentScope: 'text-only',
+      messages: [{ text: 'Real answer', truncated: false }]
+    })
+    expect(serialized).not.toContain('private.jsonl')
+    expect(native.finishActionEffect).toHaveBeenCalledWith(
+      'binding',
+      'conversation-request',
       actionHash,
       'accepted',
       null

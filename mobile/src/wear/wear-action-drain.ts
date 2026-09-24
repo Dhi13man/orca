@@ -1,13 +1,15 @@
 import { wearDataLayer } from '@orca/expo-wear-data-layer'
 import { decodeWearAction } from '@orca/wear-companion-contract'
 import { wearReceiptReasons, type WearReceiptReason } from '@orca/wear-companion-contract/receipt'
-import { requestWearHostCommand } from './wear-host-command-client'
+import { requestWearHostCommand, withWearHostClient } from './wear-host-command-client'
 import { loadHostCatalog } from '../transport/host-store'
 import { encodeWearHostPage } from '@orca/wear-companion-contract/host-page'
 import { projectWearHostPage } from './wear-host-page-projection'
 import { encodeWearAgentPage } from '@orca/wear-companion-contract/agent-page'
 import { readWearHostAgentInventory } from './wear-host-agent-inventory'
 import { projectWearAgentPage } from './wear-agent-page-projection'
+import { encodeWearConversationPage } from '@orca/wear-companion-contract/conversation-page'
+import { projectWearConversationPage } from './wear-conversation-page-projection'
 
 type HostOutcome =
   | { outcome: 'accepted' | 'unknown'; reason: null }
@@ -163,6 +165,62 @@ async function drain(): Promise<void> {
         outcome = { outcome: 'accepted', reason: null }
       } catch {
         outcome = { outcome: 'unknown', reason: null }
+      }
+    } else if (decoded.ok && decoded.action.action === 'openConversation') {
+      try {
+        const action = decoded.action
+        const response = await withWearHostClient(
+          action.target.hostId,
+          (capabilities) => capabilities.conversationRead,
+          (client) =>
+            client.sendRequest(
+              'wear.conversation.read',
+              {
+                workspaceId: action.target.workspaceId,
+                workspaceKind: action.target.workspaceKind,
+                sessionTabId: action.target.sessionTabId,
+                targetPublicationEpoch: action.targetPublicationEpoch,
+                targetSnapshotVersion: action.targetSnapshotVersion
+              },
+              { timeoutMs: 8_000, failWhenDisconnected: true }
+            )
+        )
+        if (response.ok) {
+          const result = response.result
+          const state =
+            result && typeof result === 'object' && 'state' in result ? result.state : null
+          if (state === 'target-changed' || state === 'unavailable') {
+            outcome = { outcome: 'rejected', reason: state }
+          } else {
+            const page = projectWearConversationPage({
+              bindingId: claim.bindingId,
+              requestId: claim.requestId,
+              actionHash: claim.actionHash,
+              publisherEpoch: action.publisherEpoch,
+              revision: action.expectedRevision,
+              ...action.target,
+              targetPublicationEpoch: action.targetPublicationEpoch,
+              targetSnapshotVersion: action.targetSnapshotVersion,
+              now: Date.now(),
+              result
+            })
+            await native.sendConversationPage(
+              claim.bindingId,
+              claim.requestId,
+              encodeWearConversationPage(page)
+            )
+            outcome = { outcome: 'accepted', reason: null }
+          }
+        } else if (response.error.code === 'method_not_found') {
+          outcome = { outcome: 'rejected', reason: 'unsupported' }
+        } else {
+          outcome = { outcome: 'unknown', reason: null }
+        }
+      } catch (error) {
+        outcome =
+          error instanceof Error && error.message === 'wear_host_unsupported'
+            ? { outcome: 'rejected', reason: 'unsupported' }
+            : { outcome: 'unknown', reason: null }
       }
     }
     await native.finishActionEffect(

@@ -8,6 +8,9 @@ import { usePhoneDashboard } from './src/use-phone-dashboard'
 import { useHostPages, useAgentPages } from './src/use-wear-pages'
 import { HostPagesView } from './src/host-pages-view'
 import { AgentPagesView } from './src/agent-pages-view'
+import type { WearAgentRow } from './packages/wear-companion-contract/src/agent-page'
+import { useConversationPage } from './src/use-conversation-page'
+import { ConversationView } from './src/conversation-view'
 
 export default function App() {
   const [state, setState] = useState<WearCompanionState | null>(
@@ -17,6 +20,7 @@ export default function App() {
   const [page, setPage] = useState<DashboardPage>('Attention')
   const [showAllMachines, setShowAllMachines] = useState(false)
   const [selectedHostId, setSelectedHostId] = useState<string | null>(null)
+  const [selectedAgent, setSelectedAgent] = useState<WearAgentRow | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const bindingId = state?.bindings?.[0]?.bindingId ?? null
@@ -25,6 +29,21 @@ export default function App() {
   const agentPages = useAgentPages(
     dashboard.state === 'ready' ? dashboard.dashboard : null,
     selectedHostId
+  )
+  const currentAgent =
+    agentPages.state.status === 'ready' && selectedAgent
+      ? (agentPages.state.agents.find(
+          (agent) =>
+            agent.workspaceId === selectedAgent.workspaceId &&
+            agent.sessionTabId === selectedAgent.sessionTabId &&
+            agent.targetPublicationEpoch === selectedAgent.targetPublicationEpoch &&
+            agent.targetSnapshotVersion === selectedAgent.targetSnapshotVersion
+        ) ?? null)
+      : null
+  const conversation = useConversationPage(
+    dashboard.state === 'ready' ? dashboard.dashboard : null,
+    selectedHostId,
+    currentAgent
   )
 
   useEffect(() => {
@@ -170,22 +189,40 @@ export default function App() {
                     setPage(name)
                     setShowAllMachines(false)
                     setSelectedHostId(null)
+                    setSelectedAgent(null)
                   }}
                 />
               ))}
             </View>
             <Text accessibilityRole="header" style={styles.heading}>
-              {selectedHostId ? 'Agents' : showAllMachines ? 'All machines' : page}
+              {currentAgent
+                ? 'Conversation'
+                : selectedHostId
+                  ? 'Agents'
+                  : showAllMachines
+                    ? 'All machines'
+                    : page}
             </Text>
-            {selectedHostId && dashboard.state === 'ready' ? (
+            {selectedHostId && currentAgent && dashboard.state === 'ready' ? (
+              <ConversationView
+                title={currentAgent.title}
+                {...conversation}
+                onBack={() => setSelectedAgent(null)}
+                onRetry={conversation.retry}
+              />
+            ) : selectedHostId && dashboard.state === 'ready' ? (
               <AgentPagesView
                 {...agentPages.state}
                 hostName={
                   hostPages.state.hosts.find((host) => host.hostId === selectedHostId)
                     ?.displayName ?? selectedHostId
                 }
-                onBack={() => setSelectedHostId(null)}
+                onBack={() => {
+                  setSelectedHostId(null)
+                  setSelectedAgent(null)
+                }}
                 onLoad={(cursor) => void agentPages.load(cursor)}
+                onSelectAgent={setSelectedAgent}
               />
             ) : showAllMachines && dashboard.state === 'ready' ? (
               <HostPagesView
@@ -201,6 +238,7 @@ export default function App() {
                 onAllMachines={() => {
                   setShowAllMachines(true)
                   setSelectedHostId(null)
+                  setSelectedAgent(null)
                   void hostPages.load(null)
                 }}
               />

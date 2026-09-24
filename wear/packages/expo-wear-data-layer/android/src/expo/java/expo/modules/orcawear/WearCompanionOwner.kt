@@ -367,6 +367,10 @@ internal class WearCompanionOwner private constructor(private val context: Conte
         completed: (Exception?) -> Unit) =
         sendPage(bindingId, requestId, serialized, "readHostAgents", 16, completed)
 
+    fun sendConversationPage(bindingId: String, requestId: String, serialized: String,
+        completed: (Exception?) -> Unit) =
+        sendPage(bindingId, requestId, serialized, "openConversation", 18, completed)
+
     private fun sendPage(bindingId: String, requestId: String, serialized: String,
         expectedAction: String, expectedFields: Int, completed: (Exception?) -> Unit) {
         if (role != CompanionRole.PHONE) {
@@ -423,6 +427,10 @@ internal class WearCompanionOwner private constructor(private val context: Conte
         readPage(bindingId, requestId, completed)
 
     fun readAgentPage(bindingId: String, requestId: String,
+        completed: (WearTransientPage?, Exception?) -> Unit) =
+        readPage(bindingId, requestId, completed)
+
+    fun readConversationPage(bindingId: String, requestId: String,
         completed: (WearTransientPage?, Exception?) -> Unit) =
         readPage(bindingId, requestId, completed)
 

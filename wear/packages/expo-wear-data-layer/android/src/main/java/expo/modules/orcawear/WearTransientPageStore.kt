@@ -23,7 +23,7 @@ internal class WearTransientPageStore {
             pendingAction.requestId == metadata.requestId &&
             pendingAction.status != "rejected") { "wear_page_unrequested" }
         val page = JSONObject(serialized)
-        require((page.length() == 13 || page.length() == 16) &&
+        require((page.length() == 13 || page.length() == 16 || page.length() == 18) &&
             page.getInt("schemaVersion") == 1 &&
             page.getString("bindingId") == metadata.bindingId &&
             page.getString("requestId") == metadata.requestId &&

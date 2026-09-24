@@ -1135,6 +1135,19 @@ capability. It rechecks the target after the read, returns at most 20 text
 messages under a 28-KiB body budget, and marks any clipped message. Six
 focused read tests, existing target tests, node/mobile typechecks, mobile
 negotiation tests, scoped lint/format, and read-only review pass. This is a
-host read primitive: phone action/PAGE transport and watch conversation UI are
-not wired, non-text blocks are outside this tail, and SSH transcript routing
-remains a named gap.
+host read primitive; non-text blocks and SSH transcript routing remain named
+gaps.
+
+The phone now executes `openConversation` through the negotiated exact-target
+host read and sends a closed, 18-field, journal-correlated encrypted PAGE. The
+watch verifies the action hash, dashboard, host/workspace/tab and publication
+fences before showing a transient text-only preview. It marks shortened
+messages and older-page limits, labels transcript authors without asserting
+who operated them, discards the view at expiry, and retries bounded native
+action/PAGE races without accepting a late result after rejection. The native
+watch store remains volatile. The contract and watch repository pass four
+focused tests, phone projection/drain pass 12 focused tests, and API-36 native
+acceptance passes 69 tests. This is a one-shot preview, not a completed
+conversation lease or live follow; rendered bound-device delivery, non-text
+history, older pages, typed/dictated replies, SSH relay reads, background
+refresh, and physical acceptance remain open.

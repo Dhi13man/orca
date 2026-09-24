@@ -33,7 +33,8 @@ export function AgentPagesView({
   nextCursor,
   inventoryAuthority,
   onBack,
-  onLoad
+  onLoad,
+  onSelectAgent
 }: {
   hostName: string
   status: 'idle' | 'loading' | 'ready' | 'unavailable'
@@ -43,6 +44,7 @@ export function AgentPagesView({
   inventoryAuthority: 'authoritative' | 'incomplete' | 'unavailable' | null
   onBack: () => void
   onLoad: (cursor: string | null) => void
+  onSelectAgent: (agent: WearAgentRow) => void
 }) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
@@ -74,17 +76,15 @@ export function AgentPagesView({
         {hostName} agents
       </Text>
       {agents.map((agent) => (
-        <View
-          key={`${agent.workspaceId}\0${agent.sessionTabId}`}
-          style={styles.card}
-          accessible
-          accessibilityRole="summary"
-        >
+        <View key={`${agent.workspaceId}\0${agent.sessionTabId}`} style={styles.card}>
           <Text style={styles.title}>{agent.title}</Text>
           <Text style={styles.detail}>
             {agent.kind === 'structured' ? 'Structured' : 'Terminal'} ·{' '}
             {agentState(agent, status !== 'unavailable', now)}
           </Text>
+          {status === 'ready' && agent.workspaceKind !== null ? (
+            <WearButton label="Open conversation" quiet onPress={() => onSelectAgent(agent)} />
+          ) : null}
           <Text style={styles.detail}>
             {agent.workspaceKind === null
               ? 'Workspace kind unverified'
