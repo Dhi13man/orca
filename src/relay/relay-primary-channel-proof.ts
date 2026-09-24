@@ -1,15 +1,23 @@
-import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { randomBytes, timingSafeEqual } from 'node:crypto'
 import type { RelayDispatcher, RequestContext } from './dispatcher'
 
 const PROOF_LIFETIME_MS = 30_000
 
 type Challenge = { value: Buffer; expiresAt: number; generation: number }
 
+export function relayPrimaryOwnerPrincipal(launchVersion: string): string {
+  return `relay-endpoint:${launchVersion}`
+}
+
 export class RelayPrimaryChannelProof {
   private challenge: Challenge | null = null
-  private readonly principal = `relay-primary:${randomUUID()}`
+  private readonly principal: string
 
-  constructor(private readonly dispatcher: RelayDispatcher) {
+  constructor(
+    private readonly dispatcher: RelayDispatcher,
+    launchVersion: string
+  ) {
+    this.principal = relayPrimaryOwnerPrincipal(launchVersion)
     dispatcher.onRequest('relay.attestPrimary', async (params, context) =>
       this.attest(params, context)
     )

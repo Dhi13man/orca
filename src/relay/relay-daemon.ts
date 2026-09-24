@@ -31,8 +31,8 @@ export async function runRelayDaemon(
   })
 
   const primaryChannel = new RelayPrimaryChannel()
-  const primaryProof = new RelayPrimaryChannelProof(primaryChannel.dispatcher)
   const launchVersion = readLaunchVersion()
+  const primaryProof = new RelayPrimaryChannelProof(primaryChannel.dispatcher, launchVersion)
   const runtime = new RelayRuntimeServices(
     primaryChannel.dispatcher,
     options.graceTimeMs,

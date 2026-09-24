@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RelayDispatcher } from './dispatcher'
-import { RelayPrimaryChannelProof } from './relay-primary-channel-proof'
+import { RelayPrimaryChannelProof, relayPrimaryOwnerPrincipal } from './relay-primary-channel-proof'
 
 const write = (_data: Buffer, settled: (result: { ok: true }) => void) => {
   settled({ ok: true })
@@ -12,7 +12,7 @@ const dispatchers: RelayDispatcher[] = []
 function setup() {
   const dispatcher = new RelayDispatcher(write)
   dispatchers.push(dispatcher)
-  const proof = new RelayPrimaryChannelProof(dispatcher)
+  const proof = new RelayPrimaryChannelProof(dispatcher, 'test-build')
   const primary = { clientId: 1, isStale: () => false }
   return { dispatcher, proof, primary }
 }
@@ -65,7 +65,7 @@ describe('relay primary channel proof', () => {
     dispatcher.setWrite(write)
     proof.attest({ challenge: proof.status(primary)!.challenge }, primary)
 
-    expect(firstPrincipal).toMatch(/^relay-primary:/)
+    expect(firstPrincipal).toBe(relayPrimaryOwnerPrincipal('test-build'))
     expect(authenticate.mock.calls[1]?.[2]).toBe(firstPrincipal)
   })
 })

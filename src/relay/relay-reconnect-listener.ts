@@ -3,6 +3,7 @@ import type { RelayDispatcher } from './dispatcher'
 import { setupDaemonHandshake } from './relay-handshake'
 import { relayLogLine } from './relay-diagnostic-log'
 import type { RelaySocketOwnership } from './relay-socket-ownership'
+import { relayPrimaryOwnerPrincipal } from './relay-primary-channel-proof'
 
 type RelayReconnectCallbacks = {
   detachPrimaryInput: () => void
@@ -100,7 +101,7 @@ export class RelayReconnectListener {
         }
       },
       {
-        principal: `relay-endpoint:${this.launchVersion}`,
+        principal: relayPrimaryOwnerPrincipal(this.launchVersion),
         authenticated: this.endpointCredential !== undefined,
         allowSessionOwner: this.endpointCredential !== undefined,
         authenticationKind: this.endpointCredential ? 'endpoint-credential' : 'unproved'

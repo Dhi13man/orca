@@ -1395,8 +1395,9 @@ SSH Wear send remains disabled. The first host-side unit now proves the relay's
 primary channel before exposing its multiplexer to Wear: a one-use,
 generation-bound challenge is accepted only from the live SSH primary, while
 an endpoint-credential-authenticated primary is already proved. Its logical
-owner principal survives a channel reconnect so existing PTY leases can be
-recovered; a superseded reconnect cannot replace the current proof. Older
+owner principal matches the endpoint-credential socket across reconnects so
+existing PTY leases can be recovered; a superseded reconnect cannot replace
+the current proof. Older
 relays fail closed for Wear send. Focused relay/SSH tests, the Node 18 relay
 subprocess suite, node typecheck, and scoped lint/format pass. The bundled
 conversation reader was also made Node 18 compatible. This is authentication
