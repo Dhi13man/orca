@@ -1843,3 +1843,12 @@ yet. The exact idle-session reply, SSH durable send, physical watch install,
 and installed-device acceptance remain open. Existing configured agents and
 paired machines are the test targets; no disposable profile or sign-in is
 required.
+
+After `fdfdf4c4e`, the phone `:app:assembleRelease` ARM64-only offline build
+passed with bundled JavaScript. The resulting `com.stably.orca.mobile`
+versionCode 15 APK is 62,899,740 bytes, SHA-256
+`A798C6C5099FB1E94F56F505B9D3B727195F3196E1820E97EEDCAB0DCD9A359F`,
+and verifies under test certificate
+`fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c`.
+ADB still lists only emulators; this build has not been installed on the
+physical phone. The physical watch remains unavailable over ADB.
