@@ -1943,3 +1943,13 @@ evidence, but does not prove an unforced periodic run or physical-device
 screen-off behavior. Read-only current inventory also showed the Crowley OMP
 agent with a pending wedding-project step and the Choisoonsil OMP agent busy;
 neither was used for a reply test.
+
+Read-only watch-emulator navigation reached all four product tabs after the
+screen-off job. Agents showed Host 2 connected but its inventory unavailable
+at that snapshot and Host 1 connection unverifiable; Usage showed one Claude
+account as unverified with usage unavailable, last reported at 4:25 AM from
+Host 2, rather than presenting a guessed quota. Inbox paged from unavailable
+Host 1 to Host 2 and reported no retained events since this watch first
+checked that machine. These are actual rendered states on the paired emulator,
+not evidence of a real agent conversation, verified quota, notification
+arrival, or physical watch operation.
