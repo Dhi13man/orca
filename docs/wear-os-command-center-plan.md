@@ -1259,3 +1259,12 @@ name. This is authenticated host and empty-inventory PAGE evidence, not agent
 conversation or reply evidence. The catalog PAGE currently labels connection
 status unverified even when the dashboard has a live connected observation;
 that presentation gap and a disposable live-agent roundtrip remain open.
+
+An Orca-managed Codex terminal was created only in that throwaway repository.
+The source-built host published it; the watch Agents dashboard changed from
+zero to one agent, and Host 2's agent PAGE displayed the terminal row with
+status unavailable. The isolated Codex profile is at its sign-in screen; no
+prompt was sent, no conversation was returned, and no reply can be claimed.
+The host catalog view now omits its static, misleading connection and
+inventory labels; live connection remains on the dashboard and detailed
+inventory authority on the agent page.

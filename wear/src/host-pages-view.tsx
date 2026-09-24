@@ -1,6 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native'
 import type { WearDashboardHost } from '../packages/wear-companion-contract/src/dashboard'
-import { connectionLabel } from './dashboard-pages'
 import { WearButton } from './wear-button'
 import { wearColors } from './wear-theme'
 
@@ -30,8 +29,6 @@ export function HostPagesView({
       {(status === 'unavailable' ? [] : hosts).map((host) => (
         <View key={host.hostId} style={styles.card}>
           <Text style={styles.title}>{host.displayName}</Text>
-          <Text style={styles.detail}>{connectionLabel(host.connectionState)}</Text>
-          <Text style={styles.detail}>Live agent inventory unavailable</Text>
           <WearButton label="Open agents" quiet onPress={() => onSelectHost(host.hostId)} />
         </View>
       ))}
