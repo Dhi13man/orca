@@ -95,6 +95,11 @@ type WearDataLayerModule = {
     expiresAt: number,
     serialized: string
   ): Promise<void>
+  isDashboardPublished(
+    bindingId: string,
+    publisherEpoch: string,
+    revision: number
+  ): Promise<boolean>
   readDashboard(bindingId: string): Promise<WearNativeDashboard | null>
   sendHostPage(bindingId: string, requestId: string, serialized: string): Promise<void>
   sendAgentPage(bindingId: string, requestId: string, serialized: string): Promise<void>
@@ -121,13 +126,15 @@ type WearDataLayerModule = {
   ): Promise<boolean>
   sendJournalReceipt(bindingId: string, requestId: string): Promise<void>
   pendingJournalReceipts(): Promise<{ bindingId: string; requestId: string }[]>
-  pendingJournalReconciliation(): Promise<{
-    bindingId: string
-    requestId: string
-    actionHash: string
-    hostId: string
-    state: 'effect_started' | 'unknown'
-  }[]>
+  pendingJournalReconciliation(): Promise<
+    {
+      bindingId: string
+      requestId: string
+      actionHash: string
+      hostId: string
+      state: 'effect_started' | 'unknown'
+    }[]
+  >
   sendAction(
     canonical: string
   ): Promise<'transmitted' | 'unknown' | 'duplicate' | 'conflict' | 'full'>

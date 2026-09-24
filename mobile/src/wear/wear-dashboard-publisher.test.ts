@@ -40,6 +40,7 @@ vi.mock('./wear-dashboard-publication', () => ({
 }))
 
 import {
+  refreshWearDashboardOnce,
   startForegroundWearDashboardPublisher,
   startWearDashboardPublisher
 } from './wear-dashboard-publisher'
@@ -81,7 +82,10 @@ beforeEach(() => {
     mocks.onState = listener
     return { remove: mocks.removeState }
   })
-  mocks.startFeed.mockReturnValue(mocks.closeFeed)
+  mocks.startFeed.mockImplementation((args) => {
+    args.onRefreshReady?.(async () => true)
+    return mocks.closeFeed
+  })
   mocks.reserve.mockResolvedValue(1)
   mocks.publish.mockResolvedValue(undefined)
 })
@@ -253,5 +257,59 @@ describe('Wear dashboard publisher', () => {
     stop()
     expect(mocks.closeFeed).toHaveBeenCalledTimes(2)
     expect(mocks.removeAppState).toHaveBeenCalledOnce()
+  })
+
+  it('shares one publisher between foreground and an awaitable watch refresh', async () => {
+    mocks.getState.mockReturnValue(state([bindingA]))
+    const stop = startForegroundWearDashboardPublisher(vi.fn())
+    mocks.onAppState?.('active')
+    feedUpdate()
+    const result = refreshWearDashboardOnce(bindingA)
+    expect(mocks.startFeed).toHaveBeenCalledOnce()
+    mocks.onAppState?.('background')
+    expect(mocks.closeFeed).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(await result).toBe(true)
+    expect(mocks.publish).toHaveBeenCalledOnce()
+    expect(mocks.closeFeed).toHaveBeenCalledOnce()
+    stop()
+  })
+
+  it('does not satisfy a refresh from a publish already in flight', async () => {
+    mocks.getState.mockReturnValue(state([bindingA]))
+    let finishFirst!: () => void
+    mocks.publish.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishFirst = resolve
+        })
+    )
+    const stop = startForegroundWearDashboardPublisher(vi.fn())
+    mocks.onAppState?.('active')
+    feedUpdate()
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(mocks.publish).toHaveBeenCalledOnce()
+    const refreshed = refreshWearDashboardOnce(bindingA)
+    await Promise.resolve()
+    finishFirst()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(mocks.publish).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(await refreshed).toBe(true)
+    expect(mocks.publish).toHaveBeenCalledTimes(2)
+    stop()
+  })
+
+  it('leaves a failed or missing-binding refresh unacknowledged', async () => {
+    mocks.getState.mockReturnValue(state([bindingA]))
+    expect(await refreshWearDashboardOnce(bindingB)).toBe(false)
+    expect(mocks.startFeed).not.toHaveBeenCalled()
+    const result = refreshWearDashboardOnce(bindingA, 5_000)
+    feedUpdate()
+    mocks.publish.mockRejectedValueOnce(new Error('offline'))
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(await result).toBe(false)
+    expect(mocks.closeFeed).toHaveBeenCalledOnce()
   })
 })

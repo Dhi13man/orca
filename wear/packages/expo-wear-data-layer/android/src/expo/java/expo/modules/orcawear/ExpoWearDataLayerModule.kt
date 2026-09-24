@@ -76,6 +76,16 @@ class ExpoWearDataLayerModule : Module() {
                 owner.publishDashboard(metadata, bytes) { complete(promise, it) }
             } catch (error: Exception) { complete(promise, error) }
         }
+        AsyncFunction("isDashboardPublished") { bindingId: String, publisherEpoch: String,
+            revision: Double, promise: Promise ->
+            try {
+                require(revision >= 0 && revision <= 9_007_199_254_740_991.0 && revision % 1.0 == 0.0)
+                owner.isDashboardPublished(bindingId, publisherEpoch, revision.toLong()) { published, error ->
+                    if (error != null) complete(promise, error)
+                    else promise.resolve(published)
+                }
+            } catch (error: Exception) { complete(promise, error) }
+        }
         AsyncFunction("readDashboard") { bindingId: String, promise: Promise ->
             owner.readDashboard(bindingId) { result, error ->
                 if (error != null) complete(promise, error)

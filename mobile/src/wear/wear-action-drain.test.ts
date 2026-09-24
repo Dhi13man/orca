@@ -19,12 +19,14 @@ const withWearHostClient = vi.hoisted(() => vi.fn())
 const loadHostCatalog = vi.hoisted(() => vi.fn())
 const readWearHostAgentInventory = vi.hoisted(() => vi.fn())
 const projectWearAgentPage = vi.hoisted(() => vi.fn())
+const refreshWearDashboardOnce = vi.hoisted(() => vi.fn())
 
 vi.mock('@orca/expo-wear-data-layer', () => ({ wearDataLayer: native }))
 vi.mock('./wear-host-command-client', () => ({ requestWearHostCommand, withWearHostClient }))
 vi.mock('../transport/host-store', () => ({ loadHostCatalog }))
 vi.mock('./wear-host-agent-inventory', () => ({ readWearHostAgentInventory }))
 vi.mock('./wear-agent-page-projection', () => ({ projectWearAgentPage }))
+vi.mock('./wear-dashboard-publisher', () => ({ refreshWearDashboardOnce }))
 vi.mock('expo-crypto', async () => {
   const { createHash } = await import('node:crypto')
   return {
@@ -64,6 +66,7 @@ describe('Wear action drain', () => {
       ok: true,
       result: { outcome: 'accepted', reason: null, actionHash: 'a'.repeat(64) }
     })
+    refreshWearDashboardOnce.mockResolvedValue(true)
   })
 
   it('serializes concurrent wakes and sends a receipt only after journal completion', async () => {
@@ -88,6 +91,49 @@ describe('Wear action drain', () => {
     expect(native.sendJournalReceipt).toHaveBeenCalledWith('binding', 'request')
     expect(native.finishActionEffect.mock.invocationCallOrder[0]).toBeLessThan(
       native.sendJournalReceipt.mock.invocationCallOrder[0]
+    )
+  })
+
+  it('accepts refresh only after its binding dashboard was published', async () => {
+    native.claimAction
+      .mockReset()
+      .mockResolvedValueOnce({
+        bindingId: 'binding',
+        requestId: 'refresh-request',
+        actionHash: 'a'.repeat(64),
+        claimToken: 'token',
+        canonical: JSON.stringify({
+          schemaVersion: 1,
+          bindingId: 'binding',
+          requestId: 'refresh-request',
+          expiresAt: Date.now() + 60_000,
+          action: 'refresh',
+          target: {},
+          publisherEpoch: 'epoch',
+          expectedRevision: 4,
+          targetPublicationEpoch: null,
+          targetSnapshotVersion: null,
+          payload: {}
+        })
+      })
+      .mockResolvedValue(null)
+    let complete!: (published: boolean) => void
+    refreshWearDashboardOnce.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        complete = resolve
+      })
+    )
+    const drain = drainWearActions()
+    await vi.waitFor(() => expect(refreshWearDashboardOnce).toHaveBeenCalledWith('binding'))
+    expect(native.finishActionEffect).not.toHaveBeenCalled()
+    complete(true)
+    await drain
+    expect(native.finishActionEffect).toHaveBeenCalledWith(
+      'binding',
+      'refresh-request',
+      'a'.repeat(64),
+      'accepted',
+      null
     )
   })
 

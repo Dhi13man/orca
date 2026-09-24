@@ -168,11 +168,16 @@ function UsagePage({ dashboard }: { dashboard: WearDashboard }) {
 export function DashboardPages({
   page,
   view,
-  onAllMachines
+  onAllMachines,
+  refresh
 }: {
   page: DashboardPage
   view: PhoneDashboardView
   onAllMachines: () => void
+  refresh: {
+    status: 'idle' | 'pending' | 'accepted' | 'rejected' | 'unknown'
+    refresh: () => Promise<void>
+  }
 }) {
   if (view.state !== 'ready') {
     return (
@@ -193,6 +198,20 @@ export function DashboardPages({
       <Text style={styles.secondary}>
         Phone snapshot sent {snapshotLabel(dashboard.generatedAt)}
       </Text>
+      <WearButton
+        label={refresh.status === 'pending' ? 'Refreshing…' : 'Refresh from phone'}
+        disabled={refresh.status === 'pending'}
+        quiet
+        onPress={() => void refresh.refresh()}
+      />
+      {refresh.status === 'unknown' ? (
+        <PageNotice>
+          Phone refresh is uncertain. Check the snapshot time before retrying.
+        </PageNotice>
+      ) : null}
+      {refresh.status === 'rejected' ? (
+        <PageNotice>Phone refresh was rejected. Reconnect and try again.</PageNotice>
+      ) : null}
       {page === 'Attention' ? <AttentionPage dashboard={dashboard} /> : null}
       {page === 'Agents' ? (
         <AgentsPage dashboard={dashboard} onAllMachines={onAllMachines} />

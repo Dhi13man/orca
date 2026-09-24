@@ -26,6 +26,7 @@ export function startWearHostFeed(args: {
   loadCatalog: () => Promise<HostCatalogEntry[]>
   onUpdate: (snapshot: WearHostFeedSnapshot) => void
   onError: (error: unknown) => void
+  onRefreshReady?: (refresh: () => Promise<boolean>) => void
 }): () => void {
   const { owner, coordinator, loadCatalog, onUpdate, onError } = args
   const releaseLifetime = owner.retainLifetime()
@@ -37,6 +38,7 @@ export function startWearHostFeed(args: {
   let stopped = false
   let loading = false
   let refreshAgain = false
+  let queuedRefreshes: Array<(fresh: boolean) => void> = []
 
   const publish = () => {
     if (!catalog || stopped) {
@@ -101,16 +103,19 @@ export function startWearHostFeed(args: {
   }
 
   const closeAllHosts = owner.subscribeAllHosts(wireClients)
-  const refresh = async () => {
+  const refresh = async (): Promise<boolean> => {
+    if (stopped) {
+      return false
+    }
     if (loading) {
       refreshAgain = true
-      return
+      return new Promise((resolve) => queuedRefreshes.push(resolve))
     }
     loading = true
     try {
       const loaded = await loadCatalog()
       if (stopped) {
-        return
+        return false
       }
       catalog = loaded
       const readyIds = new Set(
@@ -143,18 +148,25 @@ export function startWearHostFeed(args: {
         entry.client = owner.acquire(host.id, acquisition, host.profile!)
       }
       wireClients()
+      return true
     } catch (error) {
       if (!stopped) {
         onError(error)
       }
+      return false
     } finally {
       loading = false
       if (refreshAgain && !stopped) {
         refreshAgain = false
-        void refresh()
+        const waiting = queuedRefreshes
+        queuedRefreshes = []
+        void refresh().then((fresh) => waiting.forEach((resolve) => resolve(fresh)))
+      } else if (queuedRefreshes.length > 0) {
+        queuedRefreshes.splice(0).forEach((resolve) => resolve(false))
       }
     }
   }
+  args.onRefreshReady?.(refresh)
   const timer = setInterval(() => void refresh(), WEAR_HOST_ROTATION_MS)
   void refresh()
   return () => {
@@ -162,6 +174,7 @@ export function startWearHostFeed(args: {
       return
     }
     stopped = true
+    queuedRefreshes.splice(0).forEach((resolve) => resolve(false))
     clearInterval(timer)
     closeAllHosts()
     for (const hostId of active.keys()) {

@@ -13,19 +13,24 @@ import { WearUsageGroupKeys } from './wear-usage-group-keys'
 const PUBLISH_COALESCE_MS = 2_000
 const PUBLISH_RETRY_MS = 30_000
 
-export function startWearDashboardPublisher(onError: (error: unknown) => void): () => void {
+function createWearDashboardPublisher(
+  onError: (error: unknown) => void,
+  onPublished: (bindingId: string, cycle: number) => void
+): { stop: () => void; refresh: () => Promise<number | null> } {
   if (!wearDataLayer) {
-    return () => {}
+    return { stop: () => {}, refresh: async () => null }
   }
   const native = wearDataLayer
   const epoch = ExpoCrypto.randomUUID()
   const keys = new Map<string, WearUsageGroupKeys>()
   let snapshot: WearHostFeedSnapshot | null = null
   let closeFeed: (() => void) | null = null
+  let refreshFeed: (() => Promise<boolean>) | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
   let publishing = false
   let dirty = false
   let stopped = false
+  let publicationCycle = 0
 
   const schedule = (delay = PUBLISH_COALESCE_MS) => {
     dirty = true
@@ -44,6 +49,7 @@ export function startWearDashboardPublisher(onError: (error: unknown) => void): 
     }
     dirty = false
     publishing = true
+    const cycle = ++publicationCycle
     let failed = false
     for (const [bindingId, owner] of keys) {
       if (stopped) {
@@ -77,6 +83,7 @@ export function startWearDashboardPublisher(onError: (error: unknown) => void): 
           continue
         }
         await publishWearDashboard(dashboard)
+        onPublished(bindingId, cycle)
       } catch (error) {
         failed = true
         onError(error)
@@ -112,6 +119,7 @@ export function startWearDashboardPublisher(onError: (error: unknown) => void): 
     if (keys.size === 0) {
       closeFeed?.()
       closeFeed = null
+      refreshFeed = null
       snapshot = null
       if (timer) {
         clearTimeout(timer)
@@ -128,6 +136,9 @@ export function startWearDashboardPublisher(onError: (error: unknown) => void): 
         snapshot = next
         schedule()
       },
+      onRefreshReady: (refresh) => {
+        refreshFeed = refresh
+      },
       onError
     })
     if (added) {
@@ -137,7 +148,7 @@ export function startWearDashboardPublisher(onError: (error: unknown) => void): 
 
   const stateListener = native.addListener('onState', updateBindings)
   updateBindings(native.getState())
-  return () => {
+  const stop = () => {
     if (stopped) {
       return
     }
@@ -147,31 +158,144 @@ export function startWearDashboardPublisher(onError: (error: unknown) => void): 
       clearTimeout(timer)
     }
     closeFeed?.()
+    refreshFeed = null
     for (const owner of keys.values()) {
       owner.dispose()
     }
     keys.clear()
     snapshot = null
   }
+  return {
+    stop,
+    refresh: async () => {
+      if (!refreshFeed || !(await refreshFeed())) {
+        return null
+      }
+      const minimumCycle = publicationCycle + 1
+      schedule(0)
+      return minimumCycle
+    }
+  }
+}
+
+export function startWearDashboardPublisher(onError: (error: unknown) => void): () => void {
+  return createWearDashboardPublisher(onError, () => {}).stop
+}
+
+type PublisherOwner = {
+  controller: ReturnType<typeof createWearDashboardPublisher>
+  references: number
+  published: Set<(bindingId: string, cycle: number) => void>
+  errors: Set<(error: unknown) => void>
+}
+let publisherOwner: PublisherOwner | null = null
+
+function retainPublisher(
+  onPublished: (bindingId: string, cycle: number) => void,
+  onError: (error: unknown) => void
+): { refresh: () => Promise<number | null>; release: () => void } {
+  if (!publisherOwner) {
+    const owner: PublisherOwner = {
+      controller: { stop: () => {}, refresh: async () => null },
+      references: 0,
+      published: new Set(),
+      errors: new Set()
+    }
+    publisherOwner = owner
+    owner.controller = createWearDashboardPublisher(
+      (error) => {
+        for (const listener of owner.errors) {
+          listener(error)
+        }
+      },
+      (bindingId, cycle) => {
+        for (const listener of owner.published) {
+          listener(bindingId, cycle)
+        }
+      }
+    )
+  }
+  const owner = publisherOwner
+  owner.references++
+  owner.published.add(onPublished)
+  owner.errors.add(onError)
+  let released = false
+  return {
+    refresh: owner.controller.refresh,
+    release: () => {
+      if (released) {
+        return
+      }
+      released = true
+      owner.published.delete(onPublished)
+      owner.errors.delete(onError)
+      owner.references--
+      if (owner.references === 0) {
+        owner.controller.stop()
+        if (publisherOwner === owner) {
+          publisherOwner = null
+        }
+      }
+    }
+  }
+}
+
+export function refreshWearDashboardOnce(bindingId: string, timeoutMs = 15_000): Promise<boolean> {
+  if (!wearDataLayer?.getState().bindings?.some((binding) => binding.bindingId === bindingId)) {
+    return Promise.resolve(false)
+  }
+  return new Promise((resolve) => {
+    let settled = false
+    let minimumCycle = Number.POSITIVE_INFINITY
+    let timer: ReturnType<typeof setTimeout>
+    const done = (published: boolean) => {
+      if (settled) {
+        return
+      }
+      settled = true
+      clearTimeout(timer)
+      retained.release()
+      resolve(published)
+    }
+    const retained = retainPublisher(
+      (publishedId, cycle) => {
+        if (publishedId === bindingId && cycle >= minimumCycle) {
+          done(true)
+        }
+      },
+      () => {}
+    )
+    timer = setTimeout(() => done(false), timeoutMs)
+    void retained
+      .refresh()
+      .then((cycle) => {
+        if (cycle === null) {
+          done(false)
+        } else {
+          minimumCycle = cycle
+        }
+      })
+      .catch(() => done(false))
+  })
 }
 
 export function startForegroundWearDashboardPublisher(
   onError: (error: unknown) => void
 ): () => void {
-  let closePublisher: (() => void) | null = null
+  let publisher: ReturnType<typeof retainPublisher> | null = null
   const update = (state: AppStateStatus) => {
     if (state === 'active') {
-      closePublisher ??= startWearDashboardPublisher(onError)
+      publisher ??= retainPublisher(() => {}, onError)
     } else {
-      closePublisher?.()
-      closePublisher = null
+      publisher?.release()
+      publisher = null
     }
   }
   const subscription = AppState.addEventListener('change', update)
   update(AppState.currentState)
   return () => {
     subscription.remove()
-    closePublisher?.()
-    closePublisher = null
+    publisher?.release()
+    publisher = null
   }
 }

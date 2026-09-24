@@ -122,6 +122,23 @@ internal class WearCompanionOwner private constructor(private val context: Conte
         }
     }
 
+    fun isDashboardPublished(bindingId: String, publisherEpoch: String, revision: Long,
+        completed: (Boolean?, Exception?) -> Unit) {
+        if (role != CompanionRole.PHONE) {
+            completed(null, IllegalStateException("wear_dashboard_wrong_role"))
+            return
+        }
+        var result = false
+        submit({ completed(result, it) }, false) {
+            bindings.withBinding(bindingId) { binding ->
+                check(binding.state == "active") { "wear_binding_not_active" }
+                val published = dashboards.publishedDashboard(bindingId)
+                result = published?.publisherEpoch == publisherEpoch && published.revision == revision &&
+                    published.expiresAt > System.currentTimeMillis()
+            }
+        }
+    }
+
     private fun reconcilePublicationCompletion(metadata: WearEnvelopeMetadata, succeeded: Boolean) {
         val intent = dashboards.publicationIntent(metadata.bindingId, metadata.revision)
         if (intent == null) {

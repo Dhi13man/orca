@@ -90,6 +90,27 @@ const flush = async () => {
 afterEach(() => vi.useRealTimers())
 
 describe('Wear host feed', () => {
+  it('reloads the paired catalog for an explicit watch refresh', async () => {
+    const h = harness()
+    const loadCatalog = vi.fn(async () => [host('a')])
+    let refresh!: () => Promise<boolean>
+    const stop = startWearHostFeed({
+      owner: h.owner,
+      coordinator: h.coordinator,
+      loadCatalog,
+      onUpdate: (snapshot) => h.snapshots.push(snapshot),
+      onError: vi.fn(),
+      onRefreshReady: (control) => {
+        refresh = control
+      }
+    })
+    await flush()
+    expect(loadCatalog).toHaveBeenCalledOnce()
+    expect(await refresh()).toBe(true)
+    expect(loadCatalog).toHaveBeenCalledTimes(2)
+    stop()
+  })
+
   it('observes an already-open Home client without waiting for a host event', async () => {
     const h = harness()
     const existing = { getState: () => 'connected' } as RpcClient

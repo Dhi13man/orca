@@ -12,6 +12,7 @@ import type { WearAgentRow } from './packages/wear-companion-contract/src/agent-
 import { useConversationPage } from './src/use-conversation-page'
 import { ConversationView } from './src/conversation-view'
 import { useWearReply } from './src/use-wear-reply'
+import { useDashboardRefresh } from './src/use-dashboard-refresh'
 
 export default function App() {
   const [state, setState] = useState<WearCompanionState | null>(
@@ -26,6 +27,9 @@ export default function App() {
   const [error, setError] = useState('')
   const bindingId = state?.bindings?.[0]?.bindingId ?? null
   const dashboard = usePhoneDashboard(bindingId)
+  const dashboardRefresh = useDashboardRefresh(
+    dashboard.state === 'ready' ? dashboard.dashboard : null
+  )
   const hostPages = useHostPages(dashboard.state === 'ready' ? dashboard.dashboard : null)
   const agentPages = useAgentPages(
     dashboard.state === 'ready' ? dashboard.dashboard : null,
@@ -244,6 +248,7 @@ export default function App() {
               <DashboardPages
                 page={page}
                 view={dashboard}
+                refresh={dashboardRefresh}
                 onAllMachines={() => {
                   setShowAllMachines(true)
                   setSelectedHostId(null)

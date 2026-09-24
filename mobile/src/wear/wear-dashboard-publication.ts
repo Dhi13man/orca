@@ -28,4 +28,17 @@ export async function publishWearDashboard(dashboard: WearDashboard): Promise<vo
     dashboard.expiresAt,
     serialized
   )
+  for (let attempt = 0; attempt < 40; attempt++) {
+    if (
+      await wearDataLayer.isDashboardPublished(
+        dashboard.bindingId,
+        dashboard.publisherEpoch,
+        dashboard.revision
+      )
+    ) {
+      return
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200))
+  }
+  throw new Error('Wear dashboard publication was not confirmed')
 }

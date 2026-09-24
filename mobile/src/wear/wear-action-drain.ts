@@ -10,6 +10,7 @@ import { readWearHostAgentInventory } from './wear-host-agent-inventory'
 import { projectWearAgentPage } from './wear-agent-page-projection'
 import { encodeWearConversationPage } from '@orca/wear-companion-contract/conversation-page'
 import { projectWearConversationPage } from './wear-conversation-page-projection'
+import { refreshWearDashboardOnce } from './wear-dashboard-publisher'
 
 type HostOutcome =
   | { outcome: 'accepted' | 'unknown'; reason: null }
@@ -114,7 +115,15 @@ async function drain(): Promise<void> {
     }
     const decoded = decodeWearAction(claim.canonical, -1)
     let outcome: HostOutcome = { outcome: 'rejected', reason: 'unsupported' }
-    if (decoded.ok && decoded.action.action === 'sendAgentMessage') {
+    if (decoded.ok && decoded.action.action === 'refresh') {
+      try {
+        outcome = (await refreshWearDashboardOnce(claim.bindingId))
+          ? { outcome: 'accepted', reason: null }
+          : { outcome: 'unknown', reason: null }
+      } catch {
+        outcome = { outcome: 'unknown', reason: null }
+      }
+    } else if (decoded.ok && decoded.action.action === 'sendAgentMessage') {
       try {
         const response = await requestWearHostCommand(
           decoded.action.target.hostId,

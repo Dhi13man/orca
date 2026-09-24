@@ -1163,3 +1163,14 @@ independent safety review fixes, and a release APK build/install/start on a
 disposable emulator pass. A bound paired-device reply and post-restart UI
 recovery remain unproved; structured/SSH replies, live conversation updates,
 notifications/background refresh, and physical acceptance remain open.
+
+A current dashboard can now request an on-demand phone refresh. Foreground and
+Headless JS share one publisher; the phone reloads the paired-host catalog and
+acknowledges the watch action only after the exact binding, epoch, and revision
+are recorded as published by the native Data Layer. The watch shows pending,
+rejected, and uncertain states and retains the snapshot timestamp. Four focused
+mobile test files (29 tests), both TypeScript checks, scoped lint/format, phone
+Kotlin compile, and a release APK build/install/start on a disposable Wear
+emulator pass. A paired watch receipt, refreshed data while the phone is
+backgrounded, autonomous background/notification refresh, and refresh after
+dashboard expiry remain unproved.
