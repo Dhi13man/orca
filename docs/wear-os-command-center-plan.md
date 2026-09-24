@@ -1412,3 +1412,14 @@ establish durable cross-process safety. SSH Wear send stays disabled until a
 host-owned transactional receipt store passes concurrent reservation, pruning,
 crash-recovery, and exact-PTY acceptance tests; no receipt from the generic
 relay PTY notification is authoritative.
+
+The bound watch now uses a single previous/current/next page row and places
+each page's primary data before snapshot and refresh controls. On the paired
+API-33 round emulator, the release APK
+(`F5DC6C1CB79E44164B5D73B58673E753F007F8350387F24529CD2C3AAFC10FAC`)
+installed over the existing test app
+without losing its binding; Attention, Agents, Usage, and Inbox rendered after
+page taps, with the Attention count visible on the first screen. All 140 Wear
+tests, typecheck, scoped lint/format, and release build pass. This is emulator
+layout evidence, not physical rotary, TalkBack, real usage, or host-message
+delivery acceptance.

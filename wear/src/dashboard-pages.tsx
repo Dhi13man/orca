@@ -195,6 +195,11 @@ export function DashboardPages({
   const { dashboard } = view
   return (
     <View style={styles.section}>
+      {page === 'Attention' ? <AttentionPage dashboard={dashboard} /> : null}
+      {page === 'Agents' ? (
+        <AgentsPage dashboard={dashboard} onAllMachines={onAllMachines} />
+      ) : null}
+      {page === 'Usage' ? <UsagePage dashboard={dashboard} /> : null}
       <Text style={styles.secondary}>
         Phone snapshot sent {snapshotLabel(dashboard.generatedAt)}
       </Text>
@@ -212,11 +217,6 @@ export function DashboardPages({
       {refresh.status === 'rejected' ? (
         <PageNotice>Phone refresh was rejected. Reconnect and try again.</PageNotice>
       ) : null}
-      {page === 'Attention' ? <AttentionPage dashboard={dashboard} /> : null}
-      {page === 'Agents' ? (
-        <AgentsPage dashboard={dashboard} onAllMachines={onAllMachines} />
-      ) : null}
-      {page === 'Usage' ? <UsagePage dashboard={dashboard} /> : null}
     </View>
   )
 }

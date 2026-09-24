@@ -24,6 +24,7 @@ import { useDashboardRefresh } from './src/use-dashboard-refresh'
 import { useNotificationPages } from './src/use-notification-pages'
 import { NotificationInboxView } from './src/notification-inbox-view'
 import { selectCurrentWearAgent } from './src/selected-wear-agent'
+import { WearPageNavigation } from './src/wear-page-navigation'
 
 export default function App() {
   const [state, setState] = useState<WearCompanionState | null>(
@@ -179,9 +180,11 @@ export default function App() {
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={wearColors.background} />
       <ScrollView contentContainerStyle={styles.content}>
-        <Text accessibilityRole="header" style={styles.title}>
-          Orca
-        </Text>
+        {!bound ? (
+          <Text accessibilityRole="header" style={styles.title}>
+            Orca
+          </Text>
+        ) : null}
         {!wearDataLayer || state?.phase === 'unsupported' ? (
           <Text style={styles.detail}>
             This watch needs the Orca companion on Android 12 or newer.
@@ -266,31 +269,20 @@ export default function App() {
         ) : null}
         {bound ? (
           <>
-            <View style={styles.pages}>
-              {(['Attention', 'Agents', 'Usage', 'Inbox'] as const).map((name) => (
-                <WearButton
-                  key={name}
-                  compact={false}
-                  label={name}
-                  quiet={page !== name}
-                  onPress={() => {
-                    setPage(name)
-                    setShowAllMachines(false)
-                    setSelectedHost(null)
-                    setSelectedAgent(null)
-                  }}
-                />
-              ))}
-            </View>
-            <Text accessibilityRole="header" style={styles.heading}>
-              {currentAgent
-                ? 'Conversation'
-                : selectedHostId
-                  ? 'Agents'
-                  : showAllMachines
-                    ? 'All machines'
-                    : page}
-            </Text>
+            <WearPageNavigation
+              page={page}
+              onSelect={(next) => {
+                setPage(next)
+                setShowAllMachines(false)
+                setSelectedHost(null)
+                setSelectedAgent(null)
+              }}
+            />
+            {selectedHostId || showAllMachines ? (
+              <Text accessibilityRole="header" style={styles.heading}>
+                {currentAgent ? 'Conversation' : selectedHostId ? 'Agents' : 'All machines'}
+              </Text>
+            ) : null}
             {selectedHost && currentAgent && dashboard.state === 'ready' ? (
               <ConversationView
                 title={currentAgent.title}
