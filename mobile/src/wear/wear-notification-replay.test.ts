@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { RpcClient } from '../transport/rpc-client'
 
@@ -67,6 +67,8 @@ beforeEach(() => {
   })
 })
 
+afterEach(() => vi.restoreAllMocks())
+
 describe('background Wear notification replay', () => {
   it('waits for each host to open and replay, then visits the fourth host', async () => {
     const task = replayWearNotifications(new AbortController().signal)
@@ -132,4 +134,26 @@ describe('background Wear notification replay', () => {
     secondStop.abort()
     await second
   })
+
+  it.each(['getItem', 'setItem'] as const)(
+    'replays a bounded host batch when cursor %s fails',
+    async (method) => {
+      const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      if (method === 'getItem') {
+        mocks.stored.set('orca:wearNotificationReplayCursor', '3')
+      }
+      vi.mocked(AsyncStorage[method]).mockRejectedValueOnce(new Error('storage unavailable'))
+      const cancellation = new AbortController()
+      const task = replayWearNotifications(cancellation.signal)
+      await vi.waitFor(() => expect(mocks.acquire).toHaveBeenCalledTimes(3))
+      expect(mocks.acquire.mock.calls.map(([id]) => id)).toEqual(['host-a', 'host-b', 'host-c'])
+      cancellation.abort()
+      await task
+      expect(warning).toHaveBeenCalledOnce()
+      if (method === 'getItem') {
+        expect(AsyncStorage.setItem).not.toHaveBeenCalled()
+        expect(mocks.stored.get('orca:wearNotificationReplayCursor')).toBe('3')
+      }
+    }
+  )
 })

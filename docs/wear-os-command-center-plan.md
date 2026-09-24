@@ -1583,3 +1583,17 @@ package `com.stably.orca.mobile`. The watch manifest has `standalone=false`;
 the phone manifest has the non-exported Wear Headless JS service. The physical
 phone ADB endpoint still refuses TCP and the watch is absent from ADB, so
 neither current artifact was installed on Dhiman's devices.
+
+The scheduled notification replay now continues with a bounded host batch if
+its AsyncStorage cursor cannot be read or written, logging a generic warning.
+A failed read does not overwrite the last persisted cursor. Focused replay and
+background tests pass; no physical notification delivery was observed.
+
+Usage-group paging remains open for dashboards clipped by the 32-KiB bound.
+The existing host-page path can carry a separate usage page, but the phone must
+first retain the complete opaque group set for the exact published dashboard
+revision. Recomputing from a newer live feed or generating new group keys in
+the action drain could return the wrong account or leak an identity. The
+closed action manifest, generated Kotlin validator, native transient page
+bridge, and watch correlation must then advance together; no partial usage
+page path has been enabled.

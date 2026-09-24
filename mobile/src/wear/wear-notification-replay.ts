@@ -86,7 +86,14 @@ export async function replayWearNotifications(signal: AbortSignal): Promise<void
   if (hosts.length === 0 || signal.aborted) {
     return
   }
-  const rawCursor = await AsyncStorage.getItem(CURSOR_KEY)
+  let rawCursor: string | null = null
+  let cursorRead = true
+  try {
+    rawCursor = await AsyncStorage.getItem(CURSOR_KEY)
+  } catch {
+    cursorRead = false
+    console.warn('Wear notification replay cursor read unavailable')
+  }
   if (signal.aborted) {
     return
   }
@@ -94,7 +101,13 @@ export async function replayWearNotifications(signal: AbortSignal): Promise<void
   const start =
     Number.isSafeInteger(storedCursor) && storedCursor >= 0 ? storedCursor % hosts.length : 0
   const ordered = [...hosts.slice(start), ...hosts.slice(0, start)]
-  await AsyncStorage.setItem(CURSOR_KEY, String((start + CONCURRENT_HOSTS) % hosts.length))
+  if (cursorRead) {
+    try {
+      await AsyncStorage.setItem(CURSOR_KEY, String((start + CONCURRENT_HOSTS) % hosts.length))
+    } catch {
+      console.warn('Wear notification replay cursor write unavailable')
+    }
+  }
   if (signal.aborted) {
     return
   }
