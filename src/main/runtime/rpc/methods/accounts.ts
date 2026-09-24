@@ -111,6 +111,14 @@ export const ACCOUNT_METHODS: readonly RpcAnyMethod[] = [
     }
   }),
   defineMethod({
+    name: 'accounts.refreshIfStale',
+    params: null,
+    handler: async (_params, { runtime }) => {
+      await runtime.refreshWearUsageIfStale()
+      return runtime.getAccountsSnapshot()
+    }
+  }),
+  defineMethod({
     name: 'accounts.selectClaude',
     params: SelectAccountParams,
     handler: async (params, { runtime }) => runtime.selectClaudeAccount(params.accountId)

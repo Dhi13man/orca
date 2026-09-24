@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import type { AccountsSnapshot } from '../components/accounts-snapshot'
+import { decodeAccountsSnapshot, type AccountsSnapshot } from '../components/accounts-snapshot'
 import type { HostObservationCoordinator } from '../transport/host-observation-coordinator'
 import type { HostClientProcessOwner } from '../transport/host-client-process-owner'
 import type { HostCatalogEntry } from '../transport/types'
@@ -28,7 +28,7 @@ export function startWearHostFeed(args: {
   loadCatalog: () => Promise<HostCatalogEntry[]>
   onUpdate: (snapshot: WearHostFeedSnapshot) => void
   onError: (error: unknown) => void
-  onRefreshReady?: (refresh: () => Promise<boolean>) => void
+  onRefreshReady?: (refresh: () => Promise<boolean>, refreshUsage: () => Promise<void>) => void
 }): () => void {
   const { owner, coordinator, loadCatalog, onUpdate, onError } = args
   const releaseLifetime = owner.retainLifetime()
@@ -188,7 +188,33 @@ export function startWearHostFeed(args: {
       }
     }
   }
-  args.onRefreshReady?.(refresh)
+  const refreshUsage = async (): Promise<void> => {
+    await Promise.all(
+      [...active].map(async ([hostId, entry]) => {
+        const client = entry.client
+        if (!client || client.getState() !== 'connected') {
+          return
+        }
+        try {
+          const response = await client.sendRequest('accounts.refreshIfStale', null, {
+            timeoutMs: 15_000,
+            failWhenDisconnected: true
+          })
+          if (response.ok && !stopped && active.get(hostId) === entry && entry.client === client) {
+            accounts.set(hostId, decodeAccountsSnapshot(response.result))
+            publish()
+          } else if (!stopped && !response.ok && response.error.code !== 'method_not_found') {
+            onError(new Error(`Wear usage refresh failed: ${response.error.code}`))
+          }
+        } catch (error) {
+          if (!stopped) {
+            onError(error)
+          }
+        }
+      })
+    )
+  }
+  args.onRefreshReady?.(refresh, refreshUsage)
   const timer = setInterval(() => void refresh(), WEAR_HOST_ROTATION_MS)
   void refresh()
   return () => {

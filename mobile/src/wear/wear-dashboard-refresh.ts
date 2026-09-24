@@ -3,7 +3,7 @@ import { retainPublisher } from './wear-dashboard-publisher'
 
 export function refreshWearDashboardOnce(
   bindingId: string,
-  timeoutMs = 15_000,
+  timeoutMs = 25_000,
   signal?: AbortSignal
 ): Promise<boolean> {
   if (signal?.aborted) {

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getState: vi.fn(),
   addListener: vi.fn(),
   startFeed: vi.fn(),
+  refreshUsage: vi.fn(),
   reserve: vi.fn(),
   publish: vi.fn(),
   saveUsage: vi.fn(),
@@ -89,9 +90,10 @@ beforeEach(() => {
     return { remove: mocks.removeState }
   })
   mocks.startFeed.mockImplementation((args) => {
-    args.onRefreshReady?.(async () => true)
+    args.onRefreshReady?.(async () => true, mocks.refreshUsage)
     return mocks.closeFeed
   })
+  mocks.refreshUsage.mockResolvedValue(undefined)
   mocks.reserve.mockResolvedValue(1)
   mocks.publish.mockResolvedValue(undefined)
   mocks.saveUsage.mockResolvedValue(undefined)
@@ -333,6 +335,7 @@ describe('Wear dashboard publisher', () => {
     expect(mocks.publish).toHaveBeenCalledOnce()
     await vi.advanceTimersByTimeAsync(5 * 60_000 - 2_000 + 1)
     expect(mocks.publish).toHaveBeenCalledTimes(2)
+    expect(mocks.refreshUsage).toHaveBeenCalledOnce()
     stop()
   })
 
@@ -354,18 +357,53 @@ describe('Wear dashboard publisher', () => {
 
   it('shares one publisher between foreground and an awaitable watch refresh', async () => {
     mocks.getState.mockReturnValue(state([bindingA]))
+    let finishUsage!: () => void
+    mocks.refreshUsage.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishUsage = resolve
+        })
+    )
     const stop = startForegroundWearDashboardPublisher(vi.fn())
     mocks.onAppState?.('active')
     feedUpdate()
+    await vi.advanceTimersByTimeAsync(2_000)
+    mocks.publish.mockClear()
     const result = refreshWearDashboardOnce(bindingA)
     expect(mocks.startFeed).toHaveBeenCalledOnce()
     mocks.onAppState?.('background')
     expect(mocks.closeFeed).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(2_000)
+    expect(mocks.publish).not.toHaveBeenCalled()
+    expect(mocks.closeFeed).not.toHaveBeenCalled()
+    finishUsage()
+    await vi.advanceTimersByTimeAsync(2_000)
     expect(await result).toBe(true)
+    expect(mocks.refreshUsage).toHaveBeenCalledOnce()
     expect(mocks.publish).toHaveBeenCalledOnce()
     expect(mocks.closeFeed).toHaveBeenCalledOnce()
     stop()
+  })
+
+  it('keeps a cold refresh publisher alive until its usage read can publish', async () => {
+    mocks.getState.mockReturnValue(state([bindingA]))
+    let finishUsage!: () => void
+    mocks.refreshUsage.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishUsage = resolve
+        })
+    )
+    const result = refreshWearDashboardOnce(bindingA)
+    feedUpdate()
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(mocks.publish).toHaveBeenCalledOnce()
+    expect(mocks.closeFeed).not.toHaveBeenCalled()
+    finishUsage()
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(await result).toBe(true)
+    expect(mocks.publish).toHaveBeenCalledTimes(2)
+    expect(mocks.closeFeed).toHaveBeenCalledOnce()
   })
 
   it('does not satisfy a refresh from a publish already in flight', async () => {

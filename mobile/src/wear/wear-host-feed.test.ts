@@ -105,6 +105,56 @@ afterEach(() => {
 })
 
 describe('Wear host feed', () => {
+  it('refreshes connected host usage without forcing old hosts or losing the cached catalog', async () => {
+    const h = harness()
+    const account = {
+      claude: { accounts: [], activeAccountId: null },
+      codex: { accounts: [], activeAccountId: null },
+      rateLimits: {
+        claude: null,
+        codex: null,
+        inactiveClaudeAccounts: [],
+        inactiveCodexAccounts: []
+      }
+    }
+    const sendRequest = vi.fn().mockResolvedValue({ ok: true, result: account })
+    const oldHostRequest = vi
+      .fn()
+      .mockResolvedValue({ ok: false, error: { code: 'method_not_found' } })
+    h.clients.set('a', { getState: () => 'connected', sendRequest } as unknown as RpcClient)
+    h.clients.set('b', {
+      getState: () => 'connected',
+      sendRequest: oldHostRequest
+    } as unknown as RpcClient)
+    let refreshUsage!: () => Promise<void>
+    const onError = vi.fn()
+    const stop = startWearHostFeed({
+      owner: h.owner,
+      coordinator: h.coordinator,
+      loadCatalog: async () => [host('a'), host('b')],
+      onUpdate: (snapshot) => h.snapshots.push(snapshot),
+      onError,
+      onRefreshReady: (_refresh, usage) => {
+        refreshUsage = usage
+      }
+    })
+    await flush()
+    await refreshUsage()
+    expect(sendRequest).toHaveBeenCalledExactlyOnceWith('accounts.refreshIfStale', null, {
+      timeoutMs: 15_000,
+      failWhenDisconnected: true
+    })
+    expect(h.snapshots.at(-1)?.accounts.get('a')?.rateLimits.claude).toBeNull()
+    expect(h.snapshots.at(-1)?.accounts.has('b')).toBe(false)
+    expect(h.snapshots.at(-1)?.catalog).toHaveLength(2)
+    expect(onError).not.toHaveBeenCalled()
+    oldHostRequest.mockResolvedValueOnce({ ok: false, error: { code: 'forbidden' } })
+    await refreshUsage()
+    expect(onError).toHaveBeenCalledWith(new Error('Wear usage refresh failed: forbidden'))
+    expect(h.snapshots.at(-1)?.accounts.has('b')).toBe(false)
+    stop()
+  })
+
   it('reloads the paired catalog for an explicit watch refresh', async () => {
     const h = harness()
     const loadCatalog = vi.fn(async () => [host('a')])

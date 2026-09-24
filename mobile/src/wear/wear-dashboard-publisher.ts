@@ -47,6 +47,7 @@ function createWearDashboardPublisher(
   let snapshot: WearHostFeedSnapshot | null = null
   let closeFeed: (() => void) | null = null
   let refreshFeed: (() => Promise<boolean>) | null = null
+  let refreshUsageFeed: (() => Promise<void>) | null = null
   let timer: ReturnType<typeof setTimeout> | null = null
   let publishing = false
   let dirty = false
@@ -161,6 +162,7 @@ function createWearDashboardPublisher(
       closeFeed?.()
       closeFeed = null
       refreshFeed = null
+      refreshUsageFeed = null
       snapshot = null
       if (timer) {
         clearTimeout(timer)
@@ -184,8 +186,9 @@ function createWearDashboardPublisher(
           schedule()
         }
       },
-      onRefreshReady: (refresh) => {
+      onRefreshReady: (refresh, refreshUsage) => {
         refreshFeed = refresh
+        refreshUsageFeed = refreshUsage
       },
       onError
     })
@@ -196,11 +199,16 @@ function createWearDashboardPublisher(
 
   const stateListener = native.addListener('onState', updateBindings)
   const heartbeat = setInterval(() => {
-    if (snapshot && keys.size > 0) {
-      for (const bindingId of keys.keys()) {
-        forced.add(bindingId)
-      }
-      schedule(0)
+    if (snapshot && keys.size > 0 && refreshUsageFeed) {
+      void refreshUsageFeed()
+        .then(() => {
+          if (stopped) {
+            return
+          }
+          keys.forEach((_, bindingId) => forced.add(bindingId))
+          schedule(0)
+        })
+        .catch(onError)
     }
   }, 5 * 60_000)
   updateBindings(initialState)
@@ -228,6 +236,7 @@ function createWearDashboardPublisher(
       if (!refreshFeed || !(await refreshFeed())) {
         return null
       }
+      await refreshUsageFeed?.()
       const minimumCycle = publicationCycle + 1
       forced.add(bindingId)
       schedule(0)

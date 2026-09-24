@@ -104,6 +104,21 @@ describe('account RPC methods', () => {
     expect(runtime.refreshAccountsForMobile).not.toHaveBeenCalled()
   })
 
+  it('refreshes Wear account readings through the stale-aware lane', async () => {
+    const snapshot = { claude: null, codex: null }
+    const runtime = {
+      refreshWearUsageIfStale: vi.fn().mockResolvedValue(undefined),
+      getAccountsSnapshot: vi.fn(() => snapshot)
+    } as unknown as OrcaRuntimeService
+    const refresh = method('accounts.refreshIfStale')
+    if (isStreamingMethod(refresh)) {
+      throw new Error('accounts.refreshIfStale must be a request method')
+    }
+
+    await expect(refresh.handler(null, { runtime })).resolves.toBe(snapshot)
+    expect(runtime.refreshWearUsageIfStale).toHaveBeenCalledOnce()
+  })
+
   it('forwards a client idempotency key when consuming a Codex reset credit', async () => {
     const idempotencyKey = '11111111-1111-4111-8111-111111111111'
     const expectedScope = {

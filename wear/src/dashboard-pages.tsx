@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native'
 import type { ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import type {
   WearDashboard,
   WearProviderUsage
@@ -23,11 +24,11 @@ function snapshotLabel(timestamp: number): string {
 
 const USAGE_STALE_AFTER_MS = 10 * 60_000
 
-function usageLabel(usage: WearProviderUsage, sourceConnected: boolean): string {
+function usageLabel(usage: WearProviderUsage, sourceConnected: boolean, now: number): string {
   const session = usage.session
   const weekly = usage.weekly
   const current =
-    sourceConnected && usage.updatedAt > 0 && Date.now() - usage.updatedAt <= USAGE_STALE_AFTER_MS
+    sourceConnected && usage.updatedAt > 0 && now - usage.updatedAt <= USAGE_STALE_AFTER_MS
   if (!session && !weekly) {
     return !current
       ? 'Usage not recently verified'
@@ -149,6 +150,18 @@ function AgentsPage({
 
 function UsagePage({ dashboard }: { dashboard: WearDashboard }) {
   const { state, load } = useUsagePages(dashboard)
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const next = state.groups
+      .map((group) => group.providerUsage.updatedAt + USAGE_STALE_AFTER_MS + 1)
+      .filter((deadline) => deadline > now)
+      .sort((a, b) => a - b)[0]
+    if (next === undefined) {
+      return
+    }
+    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, next - Date.now()))
+    return () => clearTimeout(timer)
+  }, [now, state.groups])
   return (
     <View style={styles.section}>
       {state.groups.length === 0 ? (
@@ -167,7 +180,7 @@ function UsagePage({ dashboard }: { dashboard: WearDashboard }) {
               {group.identityConfidence === 'verified' ? 'Verified account' : 'Unverified account'}
             </Text>
             <Text style={styles.detail}>
-              {usageLabel(group.providerUsage, readingHost?.connectionState === 'connected')}
+              {usageLabel(group.providerUsage, readingHost?.connectionState === 'connected', now)}
             </Text>
             {group.providerUsage.session ? (
               <Text style={styles.secondary}>

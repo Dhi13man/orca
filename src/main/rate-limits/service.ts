@@ -415,6 +415,44 @@ export class RateLimitService {
     return this.getState()
   }
 
+  async refreshWearUsageIfStale(): Promise<RateLimitState> {
+    if (this.isFetching) {
+      return this.getState()
+    }
+    const now = Date.now()
+    const due = (provider: 'claude' | 'codex'): boolean => {
+      const limits = this.state[provider]
+      if (!limits || limits.status === 'idle') {
+        return true
+      }
+      if (limits.status === 'fetching' || this.isRetryAfterActive(limits)) {
+        return false
+      }
+      if (limits.status === 'error') {
+        const throttleMs = Math.min(
+          ACTIVE_FAILURE_REFETCH_MS *
+            2 ** Math.max(0, this.activeFailureStreakByProvider[provider] - 1),
+          MAX_ACTIVE_FAILURE_REFETCH_MS
+        )
+        if (now - this.lastActiveFailureRetryAtByProvider[provider] < throttleMs) {
+          return false
+        }
+        this.lastActiveFailureRetryAtByProvider[provider] = now
+        return true
+      }
+      return now - limits.updatedAt >= MIN_REFETCH_MS
+    }
+    const claudeDue = due('claude')
+    const codexDue = due('codex')
+    if (claudeDue) {
+      await this.fetchClaudeOnly()
+    }
+    if (codexDue) {
+      await this.fetchCodexOnly()
+    }
+    return this.getState()
+  }
+
   async refreshGrok(): Promise<RateLimitState> {
     await this.fetchGrokOnly({ force: true })
     return this.getState()

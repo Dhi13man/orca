@@ -205,6 +205,23 @@ describe('RateLimitService', () => {
     expect(fetchCodexRateLimits).toHaveBeenCalledOnce()
   })
 
+  it('refreshes only stale active Wear providers without reading other usage sources', async () => {
+    const service = new RateLimitService()
+    vi.mocked(fetchClaudeRateLimits).mockResolvedValue(okProvider('claude', 10))
+    vi.mocked(fetchCodexRateLimits).mockResolvedValue(okProvider('codex', 20))
+
+    await service.refreshWearUsageIfStale()
+    await service.refreshWearUsageIfStale()
+
+    expect(fetchClaudeRateLimits).toHaveBeenCalledOnce()
+    expect(fetchCodexRateLimits).toHaveBeenCalledOnce()
+    expect(fetchGeminiRateLimits).not.toHaveBeenCalled()
+    expect(fetchOpenCodeGoRateLimits).not.toHaveBeenCalled()
+    expect(fetchKimiRateLimits).not.toHaveBeenCalled()
+    expect(fetchMiniMaxRateLimits).not.toHaveBeenCalled()
+    expect(fetchGrokRateLimits).not.toHaveBeenCalled()
+  })
+
   it('does not queue a follow-up fetch when a mobile subscription replays mid-fetch', async () => {
     const service = new RateLimitService()
     const claude = deferred<ProviderRateLimits>()
@@ -388,7 +405,7 @@ describe('RateLimitService', () => {
       expect.objectContaining({
         authPreparation: undefined,
         allowPtyFallback: false,
-        allowUsagePanelSupplement: true,
+        allowUsagePanelSupplement: process.platform !== 'win32',
         signal: expect.any(AbortSignal)
       })
     )

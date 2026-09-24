@@ -2003,3 +2003,18 @@ agents are busy, so neither is an eligible reply-test target; validation uses
 the existing authenticated agents and requires an exactly identified idle
 session. ADB still lists only the paired emulators, not the physical phone or
 watch.
+
+The Usage path now requests stale-aware active Claude/Codex readings through a
+new optional host RPC. It does not fetch inactive accounts or other providers;
+the existing provider retry and rate-limit gates still apply. A watch Refresh
+waits for the bounded host attempt before its final dashboard publication,
+including when the phone publisher started cold. Older or failing hosts retain
+their last-known reading, which the watch labels stale after ten minutes or
+when its source is disconnected; an open Usage screen schedules its own stale
+transition. The mobile allowlist also now admits the existing Wear conversation
+read RPC, which had blocked paired-phone transcript requests. Focused host,
+allowlist, and mobile tests (33 and 123), all 147 Wear tests, node/mobile/watch
+typechecks, scoped lint/format, and independent read-only review pass. The
+updated source has not been rebuilt or installed on physical devices; real
+usage values, host-originated notifications, safe idle replies, SSH durability,
+and physical watch acceptance remain unverified.
