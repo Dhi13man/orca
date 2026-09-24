@@ -1734,3 +1734,12 @@ existing configured agents and paired machines; no disposable sign-in is a
 blocker. Before any reply test, reverify one exact idle session and send only
 a harmless bounded acknowledgement. Physical phone/watch acceptance, SSH
 atomic-send durability, and an actual WSL roundtrip remain open.
+
+Read-only current Orca inventory on the three existing paired runtimes shows
+one OMP terminal with ongoing wedding work on Crowley, one OMP terminal
+waiting on its own Codex work on Choisoonsil, and no terminal on Rasputin.
+None is an exactly verified idle reply target, so no test prompt was sent.
+ADB still lists only four emulators. The advertised physical phone endpoint
+`192.168.68.106:45379` refused `adb connect` with 10061; the watch was not
+discovered. Physical acceptance therefore remains unobserved, with no change
+to either device or its installed app.
