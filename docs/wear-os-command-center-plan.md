@@ -1815,3 +1815,15 @@ The watch ARM64 release rebuilt after `68f262713` has SHA-256
 `02DE7068265F02CC1416FEF5B56404EB35F66A039F13B56CFBC1A422545CC423`;
 its package, ARM64 ABI, and test signing certificate were reverified. It has
 not been installed on the physical watch.
+
+The structured-status publication gap is narrower than the journal itself:
+`StructuredAgentSessionHost` has the full reduced journal, and its subscriber
+publisher receives live changes, but that publisher does not emit a
+`session.tabs` change. The Wear phone observer therefore cannot update either
+the dashboard count or selected-agent row from structured turn/prompt events.
+Close this at the host boundary: derive from the full reduced journal only
+while its owner state is verifiable, attach a bounded freshness timestamp as
+an optional field on the existing structured tab projection, publish a tab
+change when that verdict changes, and keep older hosts/clients at unavailable.
+Acceptance must cover a pending prompt beyond the conversation tail, completed
+turn, crash/restart stale running state, and old-host/new-phone absence.
