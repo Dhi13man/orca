@@ -2,7 +2,8 @@ import {
   AGENT_SESSION_BOUNDARY_RUNTIME_CAPABILITY,
   CLIENT_CAPABILITIES_SET_RUNTIME_CAPABILITY,
   SESSION_TABS_AUTHORITATIVE_INVENTORY_RUNTIME_CAPABILITY,
-  STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY
+  STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY,
+  WEAR_ACTION_TARGET_RUNTIME_CAPABILITY
 } from '../../../src/shared/protocol-version'
 import type { RpcClient } from './rpc-client'
 import { startRuntimeCapabilityProbe } from './runtime-capability-probe'
@@ -10,6 +11,7 @@ import { startRuntimeCapabilityProbe } from './runtime-capability-probe'
 export type WearRuntimeReadCapabilities = {
   authoritativeInventory: boolean
   structuredAgents: boolean
+  exactTargets: boolean
 }
 
 export function startWearRuntimeReadCapabilitySession(
@@ -25,7 +27,7 @@ export function startWearRuntimeReadCapabilitySession(
   let available: boolean | null = null
   const setLegacyReady = (): void => {
     available = true
-    onReady({ authoritativeInventory: false, structuredAgents: false })
+    onReady({ authoritativeInventory: false, structuredAgents: false, exactTargets: false })
   }
   const setUnavailable = (): void => {
     if (available === false) {
@@ -66,6 +68,9 @@ export function startWearRuntimeReadCapabilitySession(
           : []),
         ...(hostCapabilities.includes(AGENT_SESSION_BOUNDARY_RUNTIME_CAPABILITY)
           ? [AGENT_SESSION_BOUNDARY_RUNTIME_CAPABILITY]
+          : []),
+        ...(hostCapabilities.includes(WEAR_ACTION_TARGET_RUNTIME_CAPABILITY)
+          ? [WEAR_ACTION_TARGET_RUNTIME_CAPABILITY]
           : [])
       ]
       const retryDeclaration = (): void => {
@@ -112,7 +117,8 @@ export function startWearRuntimeReadCapabilitySession(
               authoritativeInventory: requested.includes(
                 SESSION_TABS_AUTHORITATIVE_INVENTORY_RUNTIME_CAPABILITY
               ),
-              structuredAgents: requested.includes(STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY)
+              structuredAgents: requested.includes(STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY),
+              exactTargets: requested.includes(WEAR_ACTION_TARGET_RUNTIME_CAPABILITY)
             })
           }, retryDeclaration)
       }

@@ -3,7 +3,8 @@ import {
   AGENT_SESSION_BOUNDARY_RUNTIME_CAPABILITY,
   CLIENT_CAPABILITIES_SET_RUNTIME_CAPABILITY,
   SESSION_TABS_AUTHORITATIVE_INVENTORY_RUNTIME_CAPABILITY,
-  STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY
+  STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY,
+  WEAR_ACTION_TARGET_RUNTIME_CAPABILITY
 } from '../../../src/shared/protocol-version'
 import type { RpcClient } from './rpc-client'
 import type { ConnectionState, RpcResponse } from './types'
@@ -13,7 +14,8 @@ const capabilities = [
   CLIENT_CAPABILITIES_SET_RUNTIME_CAPABILITY,
   SESSION_TABS_AUTHORITATIVE_INVENTORY_RUNTIME_CAPABILITY,
   STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY,
-  AGENT_SESSION_BOUNDARY_RUNTIME_CAPABILITY
+  AGENT_SESSION_BOUNDARY_RUNTIME_CAPABILITY,
+  WEAR_ACTION_TARGET_RUNTIME_CAPABILITY
 ]
 
 const ok = (result: unknown): RpcResponse => ({
@@ -72,7 +74,11 @@ describe('Wear runtime read capability session', () => {
         params: { capabilities: capabilities.slice(1) }
       }
     ])
-    expect(ready).toHaveBeenCalledWith({ authoritativeInventory: true, structuredAgents: true })
+    expect(ready).toHaveBeenCalledWith({
+      authoritativeInventory: true,
+      structuredAgents: true,
+      exactTargets: true
+    })
     expect(unavailable).toHaveBeenCalledTimes(1)
     close()
   })
@@ -161,7 +167,11 @@ describe('Wear runtime read capability session', () => {
     const unavailable = vi.fn()
     const close = startWearRuntimeReadCapabilitySession(fake.client, ready, unavailable)
     await flush()
-    expect(ready).toHaveBeenCalledWith({ authoritativeInventory: false, structuredAgents: false })
+    expect(ready).toHaveBeenCalledWith({
+      authoritativeInventory: false,
+      structuredAgents: false,
+      exactTargets: false
+    })
     expect(unavailable).toHaveBeenCalledTimes(1)
     close()
   })
@@ -174,7 +184,11 @@ describe('Wear runtime read capability session', () => {
     const ready = vi.fn()
     const close = startWearRuntimeReadCapabilitySession(fake.client, ready, vi.fn())
     await flush()
-    expect(ready).toHaveBeenCalledWith({ authoritativeInventory: false, structuredAgents: false })
+    expect(ready).toHaveBeenCalledWith({
+      authoritativeInventory: false,
+      structuredAgents: false,
+      exactTargets: false
+    })
     close()
   })
 
@@ -206,7 +220,11 @@ describe('Wear runtime read capability session', () => {
       await vi.advanceTimersByTimeAsync(1_000)
       await flush()
       expect(declarations).toBe(2)
-      expect(ready).toHaveBeenCalledWith({ authoritativeInventory: true, structuredAgents: true })
+      expect(ready).toHaveBeenCalledWith({
+        authoritativeInventory: true,
+        structuredAgents: true,
+        exactTargets: true
+      })
       close()
 
       const second = fakeClient()
