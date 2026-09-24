@@ -1932,3 +1932,14 @@ host-owned durable reservation suppresses replay and the runtime probes this
 capability before use; the Node 18 storage decision remains open. The current
 paired watch emulator lists Host 2 connected with zero agents and Host 1
 inventory incomplete, so it has no verified idle target for a reply test.
+
+A second app-specific forced job check ran with the paired phone emulator's
+screen off. The phone reported `mWakefulness=Dozing` then `Asleep` from normal
+screen-off behavior; no device-wide Doze command or setting was used. The
+existing Wear job was force-run, and the paired watch's visible snapshot moved
+from 4:13 to 4:25 AM without a watch tap. The phone screen was restored and
+the job returned to `waiting`. This strengthens emulator background/screen-off
+evidence, but does not prove an unforced periodic run or physical-device
+screen-off behavior. Read-only current inventory also showed the Crowley OMP
+agent with a pending wedding-project step and the Choisoonsil OMP agent busy;
+neither was used for a reply test.
