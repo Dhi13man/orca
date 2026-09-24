@@ -1,10 +1,11 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SSH_WEAR_CONVERSATION_TAIL_METHOD } from '../shared/ssh-wear-conversation'
-import type { RelayDispatcher, RequestContext } from './dispatcher'
-import { relayPrimaryOwnerPrincipal } from './relay-primary-channel-proof'
+import { RelayDispatcher, type RequestContext } from './dispatcher'
+import { RelayPrimaryChannelProof, relayPrimaryOwnerPrincipal } from './relay-primary-channel-proof'
+import { encodeJsonRpcFrame, HEADER_LENGTH, parseJsonRpcMessage } from './protocol'
 import { WearConversationTailHandler } from './wear-conversation-tail-handler'
 
 const roots: string[] = []
@@ -136,5 +137,49 @@ describe('SSH Wear transcript tail', () => {
         }
       })(params)
     ).resolves.toEqual({ state: 'unavailable' })
+  })
+
+  it('admits only the currently attested primary through the dispatcher', async () => {
+    const frames: Buffer[] = []
+    const write = (frame: Buffer) => {
+      frames.push(Buffer.from(frame))
+      return true
+    }
+    const dispatcher = new RelayDispatcher(write)
+    const proof = new RelayPrimaryChannelProof(dispatcher, 'test-version')
+    new WearConversationTailHandler(dispatcher, 'test-version')
+    let sequence = 0
+    const request = async () => {
+      const id = ++sequence
+      dispatcher.feed(
+        encodeJsonRpcFrame(
+          {
+            jsonrpc: '2.0',
+            id,
+            method: SSH_WEAR_CONVERSATION_TAIL_METHOD,
+            params: { agent: 'claude', sessionId: 'session-a', transcriptPath: null }
+          },
+          id,
+          0
+        )
+      )
+      await vi.waitFor(() => expect(frames.length).toBeGreaterThan(0))
+      const frame = frames.shift()!
+      return parseJsonRpcMessage(
+        frame.subarray(HEADER_LENGTH, HEADER_LENGTH + frame.readUInt32BE(9))
+      )
+    }
+    try {
+      expect(await request()).toMatchObject({ error: { message: 'wear_relay_primary_unproved' } })
+      const primary = { clientId: 1, isStale: () => false }
+      proof.attest({ challenge: proof.status(primary)!.challenge }, primary)
+      expect(await request()).toMatchObject({ result: { state: 'unavailable' } })
+      dispatcher.invalidateClient()
+      dispatcher.setWrite(write)
+      sequence = 0
+      expect(await request()).toMatchObject({ error: { message: 'wear_relay_primary_unproved' } })
+    } finally {
+      dispatcher.dispose()
+    }
   })
 })
