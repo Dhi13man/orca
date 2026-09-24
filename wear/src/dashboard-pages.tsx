@@ -21,17 +21,23 @@ function snapshotLabel(timestamp: number): string {
   })
 }
 
-function usageLabel(usage: WearProviderUsage): string {
+const USAGE_STALE_AFTER_MS = 10 * 60_000
+
+function usageLabel(usage: WearProviderUsage, sourceConnected: boolean): string {
   const session = usage.session
   const weekly = usage.weekly
+  const current =
+    sourceConnected && usage.updatedAt > 0 && Date.now() - usage.updatedAt <= USAGE_STALE_AFTER_MS
   if (!session && !weekly) {
-    return usage.status === 'fetching'
-      ? 'Updating'
-      : usage.status === 'idle'
-        ? 'Waiting for usage'
-        : usage.status === 'ok'
-          ? 'No usage window reported'
-          : 'Usage unavailable'
+    return !current
+      ? 'Usage not recently verified'
+      : usage.status === 'fetching'
+        ? 'Updating'
+        : usage.status === 'idle'
+          ? 'Waiting for usage'
+          : usage.status === 'ok'
+            ? 'No usage window reported'
+            : 'Usage unavailable'
   }
   const percent = (value: number) => `${Math.round(value * 10) / 10}%`
   const reading = [
@@ -40,7 +46,7 @@ function usageLabel(usage: WearProviderUsage): string {
   ]
     .filter(Boolean)
     .join(' · ')
-  return usage.status === 'ok' ? reading : `Last known · ${reading}`
+  return usage.status === 'ok' && current ? reading : `Last known · ${reading}`
 }
 
 function usageWindowDetails(window: NonNullable<WearProviderUsage['session']>): string {
@@ -160,7 +166,9 @@ function UsagePage({ dashboard }: { dashboard: WearDashboard }) {
               {group.provider === 'claude' ? 'Claude' : 'Codex'} ·{' '}
               {group.identityConfidence === 'verified' ? 'Verified account' : 'Unverified account'}
             </Text>
-            <Text style={styles.detail}>{usageLabel(group.providerUsage)}</Text>
+            <Text style={styles.detail}>
+              {usageLabel(group.providerUsage, readingHost?.connectionState === 'connected')}
+            </Text>
             {group.providerUsage.session ? (
               <Text style={styles.secondary}>
                 Session: {usageWindowDetails(group.providerUsage.session)}
