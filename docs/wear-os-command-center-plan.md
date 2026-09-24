@@ -1282,3 +1282,16 @@ typecheck, lint, 140 tests, and rebuilt release APK pass on the paired emulator.
 The existing authenticated host inventory can be inspected read-only, but no
 currently observed agent has yet met the idle, exact-identity gate for a
 harmless reply; none has received a test prompt.
+
+The open watch conversation now requests a fresh preview every 30 seconds
+while foregrounded, and again on foreground return, including after an expired
+page. Refresh pauses while reply delivery is pending or uncertain. Wear
+typecheck, lint, 140 tests, release build, and installation/launch on the
+already-paired disposable watch emulator pass. This does not prove a live
+conversation changed on screen: the disposable host has no authenticated
+agent. Read-only checks of three existing configured agent terminals found
+work-in-progress previews and no explicit idle/wait state, so no reply test
+was sent. The physical watch remains absent from ADB. Outstanding acceptance:
+an authenticated existing-agent conversation and harmless exact-target reply,
+SSH host-side send durability, autonomous host-originated notification delivery,
+real usage/freshness, and physical watch installation and operation.

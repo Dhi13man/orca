@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ActivityIndicator, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native'
+import {
+  ActivityIndicator,
+  AppState,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View
+} from 'react-native'
 import { wearDataLayer, type WearCompanionState, type WearPeer } from '@orca/expo-wear-data-layer'
 import { WearButton } from './src/wear-button'
 import { wearColors } from './src/wear-theme'
@@ -59,6 +67,38 @@ export default function App() {
     conversation.status === 'ready' ? conversation.page : null,
     selectedHost?.name ?? null
   )
+  const conversationStatus = conversation.status
+  const retryConversation = conversation.retry
+  const replyStatus = reply.status
+
+  useEffect(() => {
+    if (
+      !currentAgent ||
+      (conversationStatus !== 'ready' && conversationStatus !== 'unavailable') ||
+      (conversationStatus === 'ready' && replyStatus !== 'idle' && replyStatus !== 'accepted')
+    ) {
+      return
+    }
+    let refreshing = false
+    const refresh = () => {
+      if (!refreshing && AppState.currentState === 'active') {
+        refreshing = true
+        retryConversation()
+      }
+    }
+    const timer = conversationStatus === 'ready' ? setTimeout(refresh, 30_000) : null
+    const listener = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        refresh()
+      }
+    })
+    return () => {
+      if (timer) {
+        clearTimeout(timer)
+      }
+      listener.remove()
+    }
+  }, [currentAgent, conversationStatus, retryConversation, replyStatus])
 
   useEffect(() => {
     if (!wearDataLayer) {
