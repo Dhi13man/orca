@@ -1517,3 +1517,11 @@ install or agent prompt was attempted. A read-only Orca inventory confirmed
 three existing paired runtimes, but the visible agent terminals were active and
 the idle terminals were shells, so there was no reverified idle agent for a
 safe acknowledgement test.
+
+The phone release bundle containing the conversation timer fix built with
+offline Gradle, SHA-256
+`30A00CC19F4C205FA0FFE7778B3E1601E893186D853EB0E023D881A1E9488FAC`,
+under the same verified emulator certificate. An in-place update on paired
+phone `emulator-5556` returned `Success`; phone and bound watch `MainActivity`
+were both resumed afterward. This remains startup evidence, not a measured
+20-second host response or a physical-device conversation.
