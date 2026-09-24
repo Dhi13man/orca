@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import Database from '../sqlite/sync-database'
 import { WearCommandLedger } from './wear-command-ledger'
 
 const directories: string[] = []
@@ -40,6 +41,78 @@ afterEach(() => {
 })
 
 describe('Wear command ledger', () => {
+  it('atomically keeps a structured journal link across restart and retention', () => {
+    const dbPath = path()
+    const first = open(dbPath)
+    const structured = {
+      sessionId: 'session-a',
+      clientOperationId: 'wear-operation-a',
+      sendFingerprint: 'b'.repeat(64)
+    }
+    expect(first.reserve({ ...command('structured'), structured }).disposition).toBe('started')
+    expect(first.getStructuredLink('binding-a', 'structured')).toEqual(structured)
+    expect(first.getStructuredLink('other-binding', 'structured')).toBeNull()
+    const concurrent = open(dbPath)
+    expect(concurrent.reserve({ ...command('structured'), structured }).disposition).toBe('replay')
+    expect(
+      concurrent.reserve({
+        ...command('structured'),
+        structured: {
+          ...structured,
+          sessionId: 'other-session'
+        }
+      }).disposition
+    ).toBe('conflict')
+    expect(concurrent.reserve(command('structured')).disposition).toBe('conflict')
+    expect(
+      first.reserve({ ...command('structured'), fingerprint: 'c'.repeat(64), structured })
+        .disposition
+    ).toBe('conflict')
+    first.close()
+    stores.splice(stores.indexOf(first), 1)
+    const recovered = open(dbPath)
+    expect(recovered.getStructuredLink('binding-a', 'structured')).toEqual(structured)
+    expect(recovered.reserve(command('later', 1_000 + 24 * 60 * 60 * 1_000 + 1)).disposition).toBe(
+      'started'
+    )
+    expect(recovered.getStructuredLink('binding-a', 'structured')).toBeNull()
+  })
+
+  it('rejects an invalid structured link without reserving a command', () => {
+    const store = open(path())
+    expect(() =>
+      store.reserve({
+        ...command('invalid-link'),
+        structured: {
+          sessionId: 'session-a',
+          clientOperationId: 'wear-operation-a',
+          sendFingerprint: 'not-a-hash'
+        }
+      })
+    ).toThrow('wear_command_receipt_invalid')
+    expect(store.get('binding-a', 'invalid-link')).toBeNull()
+  })
+
+  it('rolls back the command reservation if its structured link cannot be stored', () => {
+    const dbPath = path()
+    const store = open(dbPath)
+    const injection = new Database(dbPath)
+    injection.exec(`CREATE TRIGGER reject_wear_link BEFORE INSERT ON wear_structured_receipt_links
+      BEGIN SELECT RAISE(ABORT, 'injected link failure'); END`)
+    injection.close()
+    expect(() =>
+      store.reserve({
+        ...command('link-failure'),
+        structured: {
+          sessionId: 'session-a',
+          clientOperationId: 'wear-operation-a',
+          sendFingerprint: 'b'.repeat(64)
+        }
+      })
+    ).toThrow('injected link failure')
+    expect(store.get('binding-a', 'link-failure')).toBeNull()
+  })
+
   it('reserves before an effect and replays an unresolved reservation across restart', () => {
     const dbPath = path()
     const first = open(dbPath)

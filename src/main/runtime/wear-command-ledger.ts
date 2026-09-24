@@ -26,6 +26,12 @@ export type WearCommandRecord = {
   retainedUntil: number
 }
 
+export type WearStructuredReceiptLink = {
+  sessionId: string
+  clientOperationId: string
+  sendFingerprint: string
+}
+
 export type WearCommandReservation =
   | { disposition: 'started'; record: WearCommandRecord }
   | { disposition: 'replay'; record: WearCommandRecord }
@@ -65,6 +71,15 @@ export class WearCommandLedger {
       this.db.exec(`CREATE TABLE IF NOT EXISTS wear_command_clock (
       id INTEGER PRIMARY KEY CHECK(id=1), max_seen_now INTEGER NOT NULL
     )`)
+      this.db.exec(`CREATE TABLE IF NOT EXISTS wear_structured_receipt_links (
+      binding_id TEXT NOT NULL,
+      request_id TEXT NOT NULL,
+      action_fingerprint TEXT NOT NULL,
+      session_id TEXT NOT NULL,
+      client_operation_id TEXT NOT NULL,
+      send_fingerprint TEXT NOT NULL,
+      PRIMARY KEY(binding_id,request_id)
+    )`)
       this.db
         .prepare('INSERT OR IGNORE INTO wear_command_clock(id,max_seen_now) VALUES (1,0)')
         .run()
@@ -96,12 +111,28 @@ export class WearCommandLedger {
     )
   }
 
+  getStructuredLink(bindingId: string, requestId: string): WearStructuredReceiptLink | null {
+    return (
+      (this.db
+        .prepare(`SELECT link.session_id AS sessionId,
+      link.client_operation_id AS clientOperationId,
+      link.send_fingerprint AS sendFingerprint
+      FROM wear_structured_receipt_links AS link
+      JOIN wear_command_receipts AS receipt
+      ON receipt.binding_id=link.binding_id AND receipt.request_id=link.request_id
+      AND receipt.fingerprint=link.action_fingerprint
+      WHERE link.binding_id=? AND link.request_id=?`)
+        .get(bindingId, requestId) as WearStructuredReceiptLink | undefined) ?? null
+    )
+  }
+
   reserve(args: {
     bindingId: string
     requestId: string
     fingerprint: string
     actionExpiresAt: number
     now: number
+    structured?: WearStructuredReceiptLink
   }): WearCommandReservation {
     if (
       !validId(args.bindingId) ||
@@ -111,7 +142,13 @@ export class WearCommandLedger {
       !Number.isSafeInteger(args.now) ||
       args.now < 0 ||
       args.actionExpiresAt - args.now > 120_000 ||
-      args.now + TERMINAL_RETENTION_MS > Number.MAX_SAFE_INTEGER
+      args.now + TERMINAL_RETENTION_MS > Number.MAX_SAFE_INTEGER ||
+      (args.structured !== undefined &&
+        (args.structured.sessionId.length === 0 ||
+          Buffer.byteLength(args.structured.sessionId, 'utf8') > 512 ||
+          args.structured.clientOperationId.length === 0 ||
+          Buffer.byteLength(args.structured.clientOperationId, 'utf8') > 512 ||
+          !/^[0-9a-f]{64}$/.test(args.structured.sendFingerprint)))
     ) {
       throw new Error('wear_command_receipt_invalid')
     }
@@ -119,8 +156,16 @@ export class WearCommandLedger {
     try {
       const existing = this.get(args.bindingId, args.requestId)
       if (existing) {
+        const linked = this.getStructuredLink(args.bindingId, args.requestId)
+        const sameLink =
+          linked === null
+            ? args.structured === undefined
+            : args.structured !== undefined &&
+              linked.sessionId === args.structured.sessionId &&
+              linked.clientOperationId === args.structured.clientOperationId &&
+              linked.sendFingerprint === args.structured.sendFingerprint
         this.db.exec('COMMIT')
-        return existing.fingerprint === args.fingerprint
+        return existing.fingerprint === args.fingerprint && sameLink
           ? { disposition: 'replay', record: existing }
           : { disposition: 'conflict' }
       }
@@ -137,6 +182,10 @@ export class WearCommandLedger {
       }
       this.db.prepare('UPDATE wear_command_clock SET max_seen_now=? WHERE id=1').run(args.now)
       this.db.prepare('DELETE FROM wear_command_receipts WHERE retained_until<=?').run(args.now)
+      this.db.exec(`DELETE FROM wear_structured_receipt_links
+        WHERE NOT EXISTS (SELECT 1 FROM wear_command_receipts AS receipt
+        WHERE receipt.binding_id=wear_structured_receipt_links.binding_id
+        AND receipt.request_id=wear_structured_receipt_links.request_id)`)
       const count = this.db
         .prepare('SELECT COUNT(*) AS count FROM wear_command_receipts')
         .get() as { count: number }
@@ -160,6 +209,20 @@ export class WearCommandLedger {
           args.now,
           args.now + UNKNOWN_RETENTION_MS
         )
+      if (args.structured) {
+        this.db
+          .prepare(`INSERT INTO wear_structured_receipt_links
+          (binding_id,request_id,action_fingerprint,session_id,client_operation_id,send_fingerprint)
+          VALUES (?,?,?,?,?,?)`)
+          .run(
+            args.bindingId,
+            args.requestId,
+            args.fingerprint,
+            args.structured.sessionId,
+            args.structured.clientOperationId,
+            args.structured.sendFingerprint
+          )
+      }
       const record = this.get(args.bindingId, args.requestId)!
       this.db.exec('COMMIT')
       return { disposition: 'started', record }
