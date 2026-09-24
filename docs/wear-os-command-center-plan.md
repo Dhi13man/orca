@@ -1976,3 +1976,15 @@ and the existing test signing certificate
 It has not been installed on a physical device. ADB still lists only emulators;
 the advertised physical phone endpoint refuses the connection, and no watch
 endpoint is visible.
+
+The previously installed x86_64 phone emulator package then passed an
+unforced periodic cold-wake check. At 4:44 AM the test app process was killed
+while the launcher remained top-resumed; JobScheduler still held persisted
+Wear job `1464156499`. Android started that job at about 4:52 AM without a
+force-run command, created phone PID 10648, and reported `STOP-P` after the
+app called `jobFinished`. The paired watch emulator's visible Attention
+snapshot advanced from 4:25 to 4:52 AM without a watch tap. This proves an
+autonomous scheduled phone-process wake and dashboard delivery on that emulator
+pair. It does not prove physical-device timing, host-originated notification
+delivery, a real conversation, or a safe reply. The freshly built ARM64 phone
+APK above remains uninstalled; the emulator used its earlier x86_64 package.
