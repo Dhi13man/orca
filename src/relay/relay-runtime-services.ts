@@ -75,7 +75,7 @@ export class RelayRuntimeServices {
       portScanHandler,
       agentExecHandler,
       workspaceSessionHandler,
-      new WearConversationTailHandler(dispatcher),
+      new WearConversationTailHandler(dispatcher, launchVersion),
       new AiVaultHandler(dispatcher, {
         hostPlatform,
         service: this.aiVaultService ?? undefined
