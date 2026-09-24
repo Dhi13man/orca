@@ -11,6 +11,7 @@ import { AgentPagesView } from './src/agent-pages-view'
 import type { WearAgentRow } from './packages/wear-companion-contract/src/agent-page'
 import { useConversationPage } from './src/use-conversation-page'
 import { ConversationView } from './src/conversation-view'
+import { useWearReply } from './src/use-wear-reply'
 
 export default function App() {
   const [state, setState] = useState<WearCompanionState | null>(
@@ -44,6 +45,13 @@ export default function App() {
     dashboard.state === 'ready' ? dashboard.dashboard : null,
     selectedHostId,
     currentAgent
+  )
+  const reply = useWearReply(
+    dashboard.state === 'ready' ? dashboard.dashboard : null,
+    selectedHostId,
+    currentAgent,
+    conversation.status === 'ready' ? conversation.page : null,
+    hostPages.state.hosts.find((host) => host.hostId === selectedHostId)?.displayName ?? null
   )
 
   useEffect(() => {
@@ -209,6 +217,7 @@ export default function App() {
                 {...conversation}
                 onBack={() => setSelectedAgent(null)}
                 onRetry={conversation.retry}
+                reply={reply}
               />
             ) : selectedHostId && dashboard.state === 'ready' ? (
               <AgentPagesView

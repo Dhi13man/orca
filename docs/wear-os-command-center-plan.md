@@ -1151,3 +1151,15 @@ acceptance passes 69 tests. This is a one-shot preview, not a completed
 conversation lease or live follow; rendered bound-device delivery, non-text
 history, older pages, typed/dictated replies, SSH relay reads, background
 refresh, and physical acceptance remain open.
+
+The watch now offers a typed reply only for an exact, current terminal target
+with a verified conversation PAGE. It persists the request ID, action hash,
+target tuple, and recovery identity before transport; receipt state never
+regresses from accepted/rejected, and uncertain delivery blocks another send
+until the user checks the named machine, workspace, and tab on the phone and
+explicitly releases it. The host's durable local PTY ledger remains the final
+deduplication authority. Five focused Wear tests, Wear typecheck/lint/format,
+independent safety review fixes, and a release APK build/install/start on a
+disposable emulator pass. A bound paired-device reply and post-restart UI
+recovery remain unproved; structured/SSH replies, live conversation updates,
+notifications/background refresh, and physical acceptance remain open.
