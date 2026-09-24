@@ -23,11 +23,12 @@ export default function App() {
   const [peers, setPeers] = useState<WearPeer[]>([])
   const [page, setPage] = useState<DashboardPage | 'Inbox'>('Attention')
   const [showAllMachines, setShowAllMachines] = useState(false)
-  const [selectedHostId, setSelectedHostId] = useState<string | null>(null)
+  const [selectedHost, setSelectedHost] = useState<{ id: string; name: string } | null>(null)
   const [selectedAgent, setSelectedAgent] = useState<WearAgentRow | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const bindingId = state?.bindings?.[0]?.bindingId ?? null
+  const selectedHostId = selectedHost?.id ?? null
   const dashboard = usePhoneDashboard(bindingId)
   const dashboardRefresh = useDashboardRefresh(
     dashboard.state === 'ready' ? dashboard.dashboard : null
@@ -36,6 +37,7 @@ export default function App() {
     page === 'Inbox' && dashboard.state === 'ready' ? dashboard.dashboard : null
   )
   const hostPages = useHostPages(dashboard.state === 'ready' ? dashboard.dashboard : null)
+  const { state: hostPageState, load: loadHostPage } = hostPages
   const agentPages = useAgentPages(
     dashboard.state === 'ready' ? dashboard.dashboard : null,
     selectedHostId
@@ -60,7 +62,7 @@ export default function App() {
     selectedHostId,
     currentAgent,
     conversation.status === 'ready' ? conversation.page : null,
-    hostPages.state.hosts.find((host) => host.hostId === selectedHostId)?.displayName ?? null
+    selectedHost?.name ?? null
   )
 
   useEffect(() => {
@@ -81,6 +83,17 @@ export default function App() {
       void notificationPages.load(null)
     }
   }, [page, dashboard, notificationPages])
+
+  useEffect(() => {
+    if (
+      showAllMachines &&
+      !selectedHostId &&
+      dashboard.state === 'ready' &&
+      hostPageState.status === 'idle'
+    ) {
+      void loadHostPage(null)
+    }
+  }, [showAllMachines, selectedHostId, dashboard.state, hostPageState.status, loadHostPage])
 
   const discover = useCallback(async () => {
     if (!wearDataLayer) {
@@ -216,7 +229,7 @@ export default function App() {
                   onPress={() => {
                     setPage(name)
                     setShowAllMachines(false)
-                    setSelectedHostId(null)
+                    setSelectedHost(null)
                     setSelectedAgent(null)
                   }}
                 />
@@ -231,7 +244,7 @@ export default function App() {
                     ? 'All machines'
                     : page}
             </Text>
-            {selectedHostId && currentAgent && dashboard.state === 'ready' ? (
+            {selectedHost && currentAgent && dashboard.state === 'ready' ? (
               <ConversationView
                 title={currentAgent.title}
                 {...conversation}
@@ -239,15 +252,12 @@ export default function App() {
                 onRetry={conversation.retry}
                 reply={reply}
               />
-            ) : selectedHostId && dashboard.state === 'ready' ? (
+            ) : selectedHost && dashboard.state === 'ready' ? (
               <AgentPagesView
                 {...agentPages.state}
-                hostName={
-                  hostPages.state.hosts.find((host) => host.hostId === selectedHostId)
-                    ?.displayName ?? selectedHostId
-                }
+                hostName={selectedHost.name}
                 onBack={() => {
-                  setSelectedHostId(null)
+                  setSelectedHost(null)
                   setSelectedAgent(null)
                 }}
                 onLoad={(cursor) => void agentPages.load(cursor)}
@@ -258,7 +268,14 @@ export default function App() {
                 {...hostPages.state}
                 onBack={() => setShowAllMachines(false)}
                 onLoad={(cursor) => void hostPages.load(cursor)}
-                onSelectHost={setSelectedHostId}
+                onSelectHost={(hostId) => {
+                  const host = hostPages.state.hosts.find(
+                    (candidate) => candidate.hostId === hostId
+                  )
+                  if (host) {
+                    setSelectedHost({ id: hostId, name: host.displayName })
+                  }
+                }}
               />
             ) : page === 'Inbox' && dashboard.state === 'ready' ? (
               dashboard.dashboard.hostPage.total === 0 ? (
@@ -276,9 +293,8 @@ export default function App() {
                 refresh={dashboardRefresh}
                 onAllMachines={() => {
                   setShowAllMachines(true)
-                  setSelectedHostId(null)
+                  setSelectedHost(null)
                   setSelectedAgent(null)
-                  void hostPages.load(null)
                 }}
               />
             )}

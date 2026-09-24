@@ -1246,3 +1246,16 @@ bundle build, and scoped lint pass. The SSH path has no live paired-host proof;
 SSH replies still lack host-side durable issue/deduplication. Host-initiated
 background delivery, authenticated PAGE/reply, and physical-watch acceptance
 remain open.
+
+An isolated source-built headless Orca host passed a real terminal nonce
+roundtrip, then paired with the disposable API-36 phone without changing its
+existing pairing. A throwaway repository appeared under connected Host 2 in
+the phone UI; the paired Wear API-33 emulator showed Host 2 as connected in
+its live Agents dashboard. The watch requested and displayed the complete
+two-machine host PAGE, then opened Host 2's agent PAGE, which correctly showed
+zero of zero agents. A rebuilt watch APK also automatically reloads the host
+PAGE after dashboard revision changes and retains the selected host's display
+name. This is authenticated host and empty-inventory PAGE evidence, not agent
+conversation or reply evidence. The catalog PAGE currently labels connection
+status unverified even when the dashboard has a live connected observation;
+that presentation gap and a disposable live-agent roundtrip remain open.
