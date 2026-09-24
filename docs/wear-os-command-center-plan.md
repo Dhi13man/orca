@@ -1620,3 +1620,17 @@ The watch manifest has `standalone=false`; the phone's Wear Headless JS service
 is non-exported. ADB still lists only emulators. The physical phone's advertised
 `192.168.68.106:45379` endpoint actively refused a connection, and the watch
 did not appear. Neither current APK was installed on Dhiman's devices.
+
+An x86_64 release build of that source was installed in place on test phone
+`emulator-5556` and paired test watch `emulator-5562`, with both `adb install -r`
+commands reporting `Success`; each `MainActivity` started. The watch retained
+its phone binding and visibly rendered Attention (zero agents needing
+attention, one host inventory incomplete), Agents (Host 2 connected with zero
+agents; Host 1 also listed), and Usage (Claude unverified account, usage
+unavailable, a reported timestamp and Host 2 source). The other Wear emulator,
+`emulator-5560`, was unbound; its connect screen is not a pairing regression
+for the paired `5562`. This proves installed emulator navigation and snapshot
+rendering, not authenticated conversation, action delivery, Usage PAGE,
+notifications, timed background wake, or physical-device behavior. No agent
+message or production data change was made. The verified ARM64 checkpoint APKs
+were restored to the canonical release output paths after emulator testing.
