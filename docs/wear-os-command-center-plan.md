@@ -1504,3 +1504,16 @@ paired phone `emulator-5556` and bound watch `emulator-5562` returned `Success`;
 both `MainActivity` instances resumed. This verifies packaging and startup,
 not a structured notification tap or real host conversation. Physical phone
 and watch were absent from `adb devices -l` and ADB mDNS discovery.
+
+The selected-host phone client now gives a request its own bounded 25-second
+deadline after the 15-second connection deadline. Previously the connection
+timer stayed live after request start and could cut off the 20-second structured
+conversation RPC at 15 seconds. The timing regression test, focused conversation
+tests, mobile typecheck, and scoped lint/format pass. This is source evidence;
+no real conversation has yet been read through the paired devices. The physical
+phone later advertised `192.168.68.106:45379` over ADB mDNS, but TCP refused
+the connection and neither physical endpoint entered `adb devices`; no physical
+install or agent prompt was attempted. A read-only Orca inventory confirmed
+three existing paired runtimes, but the visible agent terminals were active and
+the idle terminals were shells, so there was no reverified idle agent for a
+safe acknowledgement test.

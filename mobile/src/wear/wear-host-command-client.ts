@@ -7,6 +7,9 @@ import {
   type WearRuntimeReadCapabilities
 } from '../transport/wear-runtime-read-capability-session'
 
+const HOST_CONNECT_TIMEOUT_MS = 15_000
+const HOST_REQUEST_TIMEOUT_MS = 25_000
+
 export async function requestWearHostCommand(
   hostId: string,
   method: 'wear.terminal.send' | 'wear.agent.send' | 'wear.command.receipt',
@@ -56,7 +59,8 @@ export async function withWearHostClient<T>(
           reject(error)
         }
       }
-      timer = setTimeout(() => finish(null, new Error('wear_host_unavailable')), 15_000)
+      const timeout = () => finish(null, new Error('wear_host_unavailable'))
+      timer = setTimeout(timeout, HOST_CONNECT_TIMEOUT_MS)
       const observe = () => {
         if (settled) {
           return
@@ -83,6 +87,10 @@ export async function withWearHostClient<T>(
               return
             }
             requestStarted = true
+            if (timer) {
+              clearTimeout(timer)
+            }
+            timer = setTimeout(timeout, HOST_REQUEST_TIMEOUT_MS)
             void request(client, capabilities).then(
               (result) => finish(result, null),
               (error) => finish(null, error)

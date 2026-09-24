@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   loadHostCatalog: vi.fn(),
@@ -15,6 +15,8 @@ vi.mock('../transport/wear-runtime-read-capability-session', () => ({
 }))
 
 import { requestWearHostCommand, withWearHostClient } from './wear-host-command-client'
+
+afterEach(() => vi.useRealTimers())
 
 describe('Wear host command client', () => {
   it('passes negotiated read capabilities to one selected-host request', async () => {
@@ -95,5 +97,44 @@ describe('Wear host command client', () => {
     expect(closeHosts).toHaveBeenCalledOnce()
     expect(release).toHaveBeenCalledOnce()
     expect(releaseLifetime).toHaveBeenCalledOnce()
+  })
+
+  it('lets a started conversation read outlive the connection deadline', async () => {
+    vi.useFakeTimers()
+    const client = { sendRequest: vi.fn() }
+    const release = vi.fn()
+    mocks.getHostClientProcessOwner.mockReturnValue({
+      acquire: () => client,
+      getAllClients: () => [{ hostId: 'host-a', client }],
+      subscribeAllHosts: () => () => {},
+      releaseAndCloseIfUnused: release,
+      retainLifetime: () => () => {}
+    })
+    mocks.loadHostCatalog.mockResolvedValue([
+      { id: 'host-a', credentialStatus: 'ready', profile: { id: 'host-a' } }
+    ])
+    mocks.startWearRuntimeReadCapabilitySession.mockImplementation((_client, ready) => {
+      ready({ conversationRead: true })
+      return () => {}
+    })
+    let completeRead!: (value: string) => void
+    const read = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          completeRead = resolve
+        })
+    )
+    const pending = withWearHostClient(
+      'host-a',
+      (capabilities) => capabilities.conversationRead,
+      read
+    )
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(read).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(16_000)
+    completeRead('conversation')
+    await expect(pending).resolves.toBe('conversation')
+    expect(release).toHaveBeenCalledOnce()
   })
 })
