@@ -145,6 +145,21 @@ describe('SshRelaySession', () => {
     vi.mocked(getPtyIdsForConnection).mockReturnValue([])
   })
 
+  it('exposes only the authenticated current relay connection for Wear', async () => {
+    const { mockConn, mockStore, mockPortForward, getMainWindow } = createMockDeps()
+    const session = new SshRelaySession('target-1', getMainWindow, mockStore, mockPortForward)
+    muxRequestMock.mockImplementation(async (method: string) =>
+      method === 'relay.status' ? { clientAuthentication: 'endpoint-credential' } : []
+    )
+    await session.establish(mockConn)
+    expect(session.getAuthenticatedMuxForWear()).toBe(session.getMux())
+
+    const unproved = new SshRelaySession('target-2', getMainWindow, mockStore, mockPortForward)
+    muxRequestMock.mockResolvedValue([])
+    await unproved.establish(mockConn)
+    expect(unproved.getAuthenticatedMuxForWear()).toBeNull()
+  })
+
   it('hands each PTY data event exactly once to the bounded main intake', async () => {
     const { mockConn, mockStore, mockPortForward, getMainWindow, mockWindow } = createMockDeps()
     const runtime = { onPtyData: vi.fn(), onPtyExit: vi.fn() }
@@ -771,31 +786,31 @@ describe('SshRelaySession', () => {
     expect(deployAndLaunchRelay).not.toHaveBeenCalled()
   })
 
-  it('overlapping reconnects cancel the stale one', async () => {
+  it('ignores a superseded primary proof after the current reconnect is ready', async () => {
     const { mockConn, mockStore, mockPortForward, getMainWindow } = createMockDeps()
     const session = new SshRelaySession('target-1', getMainWindow, mockStore, mockPortForward)
-    await session.establish(mockConn)
-
-    // Why: make the first reconnect hang so the second one aborts it
-    let resolveFirst!: () => void
-    vi.mocked(deployAndLaunchRelay).mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveFirst = () =>
-          resolve({
-            transport: { write: vi.fn(), onData: vi.fn(), onClose: vi.fn() },
-            platform: 'linux-x64' as const
-          })
-      })
+    muxRequestMock.mockImplementation(async (method: string) =>
+      method === 'relay.status' ? { clientAuthentication: 'endpoint-credential' } : []
     )
-    mockDeploySuccess()
+    await session.establish(mockConn)
+    vi.clearAllMocks()
+    let releaseFirstStatus!: () => void
+    const firstStatus = new Promise<{ clientAuthentication: string }>((resolve) => {
+      releaseFirstStatus = () => resolve({ clientAuthentication: 'endpoint-credential' })
+    })
+    muxRequestMock.mockImplementationOnce(() => firstStatus)
 
-    const firstReconnect = session.reconnect(mockConn)
-    const secondReconnect = session.reconnect(mockConn)
-
-    resolveFirst()
-    await Promise.all([firstReconnect, secondReconnect])
+    const staleReconnect = session.reconnect(mockConn)
+    await vi.waitFor(() =>
+      expect(muxRequestMock).toHaveBeenCalledWith('relay.status', {}, { timeoutMs: 5_000 })
+    )
+    const currentReconnect = session.reconnect(mockConn)
+    await currentReconnect
+    releaseFirstStatus()
+    await staleReconnect
 
     expect(session.getState()).toBe('ready')
+    expect(session.getAuthenticatedMuxForWear()).toBe(session.getMux())
   })
 
   it('passes grace time to deployAndLaunchRelay', async () => {

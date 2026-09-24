@@ -771,11 +771,26 @@ describe('Subprocess: Relay entry point', () => {
       memory: { rss: number }
       ptys: { active: number }
       socket: { owned: boolean; listening: boolean; clients: number }
+      clientAuthentication: string
+      primaryChannelProof?: { version: number; challenge: string; expiresAt: number }
     }
     expect(status.pid).toBeGreaterThan(0)
     expect(status.memory.rss).toBeGreaterThan(0)
     expect(status.ptys.active).toBe(0)
     expect(status.socket).toMatchObject({ owned: true, listening: true, clients: 0 })
+    expect(status.clientAuthentication).toBe('unproved')
+    expect(status.primaryChannelProof).toMatchObject({ version: 1 })
+    expect(status.primaryChannelProof?.challenge).toMatch(/^[0-9a-f]{64}$/)
+
+    const attest = await relay.waitForResponse(
+      relay.send('relay.attestPrimary', { challenge: status.primaryChannelProof?.challenge })
+    )
+    expect(attest.error).toBeUndefined()
+    expect(attest.result).toEqual({ proved: true })
+
+    const proved = await relay.waitForResponse(relay.send('relay.status'))
+    expect(proved.result).toMatchObject({ clientAuthentication: 'launch-nonce' })
+    expect((proved.result as { primaryChannelProof?: unknown }).primaryChannelProof).toBeUndefined()
   }, 10_000)
 
   it('session.registerRoot request returns ok acknowledgment', async () => {

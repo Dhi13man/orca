@@ -1390,3 +1390,16 @@ from 9:20 to 9:24 PM without watch input, and called `jobFinished` after
 about 33 seconds, below the native 90-second stop bound. Its emulator host
 connections were unavailable or unauthorized, so no host notification was
 delivered and this is not physical-device or screen-off acceptance.
+
+SSH Wear send remains disabled. The first host-side unit now proves the relay's
+primary channel before exposing its multiplexer to Wear: a one-use,
+generation-bound challenge is accepted only from the live SSH primary, while
+an endpoint-credential-authenticated primary is already proved. Its logical
+owner principal survives a channel reconnect so existing PTY leases can be
+recovered; a superseded reconnect cannot replace the current proof. Older
+relays fail closed for Wear send. Focused relay/SSH tests, the Node 18 relay
+subprocess suite, node typecheck, and scoped lint/format pass. The bundled
+conversation reader was also made Node 18 compatible. This is authentication
+substrate, not a remote-write receipt: host-owned durable admission, exact PTY
+incarnation checks, failure recovery, and end-to-end watch delivery remain
+open. No existing agent received a test message.

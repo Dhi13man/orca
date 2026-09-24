@@ -182,6 +182,25 @@ export class RelayDispatcher {
     return client.id
   }
 
+  primaryProofGeneration(clientId: number): number | null {
+    return !this.primaryClient.closed && this.primaryClient.id === clientId
+      ? this.primaryClient.generation
+      : null
+  }
+
+  authenticatePrimaryClient(clientId: number, generation: number, principal: string): boolean {
+    if (this.primaryProofGeneration(clientId) !== generation) {
+      return false
+    }
+    this.primaryClient.sessionIdentity = {
+      principal,
+      authenticated: true,
+      allowSessionOwner: true,
+      authenticationKind: 'launch-nonce'
+    }
+    return true
+  }
+
   detachClient(clientId: number, cause: PtyConsumerCloseCause = 'local'): void {
     const client = this.clients.get(clientId)
     if (!client || client === this.primaryClient) {
@@ -926,6 +945,14 @@ export class RelayDispatcher {
     client.decoder.reset()
     client.generation++
     client.closed = false
+    if (client === this.primaryClient) {
+      client.sessionIdentity = {
+        principal: `unproved:${client.id}`,
+        authenticated: false,
+        allowSessionOwner: false,
+        authenticationKind: 'unproved'
+      }
+    }
   }
 
   private handleFrame(client: RelayClient, frame: DecodedFrame): void {
@@ -1447,6 +1474,14 @@ export class RelayDispatcher {
       return
     }
     client.closed = true
+    if (client === this.primaryClient) {
+      client.sessionIdentity = {
+        principal: `unproved:${client.id}`,
+        authenticated: false,
+        allowSessionOwner: false,
+        authenticationKind: 'unproved'
+      }
+    }
     this.requestAborts.abortClient(client.id)
     client.writer.close(error)
     client.generation++

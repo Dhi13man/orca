@@ -8,6 +8,7 @@ import { execCommand } from './ssh-relay-deploy-helpers'
 import { isRelayVersionMismatchError } from './ssh-relay-version-mismatch-error'
 import { replayPendingSshPtyKills } from './ssh-pending-pty-kill-replay'
 import { SshChannelMultiplexer } from './ssh-channel-multiplexer'
+import { proveSshRelayConnection } from './ssh-relay-primary-proof'
 import { SshPtyProvider } from '../providers/ssh-pty-provider'
 import type { SshPtyAttachResult } from '../providers/ssh-pty-session-reattach'
 import type { SshPtyDataCallback, SshPtyExitCallback } from '../providers/ssh-pty-provider-contract'
@@ -305,6 +306,7 @@ type SshRelaySessionTeardownMode = 'detach' | 'dispose'
 export class SshRelaySession {
   private _state: RelaySessionState = 'idle'
   private mux: SshChannelMultiplexer | null = null
+  private authenticatedMux: SshChannelMultiplexer | null = null
   private abortController: AbortController | null = null
   private muxDisposeCleanup: (() => void) | null = null
   // Why: hold the notification-handler disposer so teardownProviders can release it on reconnect/shutdown (symmetric with muxDisposeCleanup).
@@ -421,6 +423,10 @@ export class SshRelaySession {
 
   getMux(): SshChannelMultiplexer | null {
     return this.mux
+  }
+
+  getAuthenticatedMuxForWear(): SshChannelMultiplexer | null {
+    return this._state === 'ready' && this.mux === this.authenticatedMux ? this.mux : null
   }
 
   getHostPlatform(): RemoteHostPlatform | null {
@@ -553,6 +559,12 @@ export class SshRelaySession {
       this.mux = mux
       const isAttemptCurrent = (): boolean => this.mux === mux && !this.isDisposed()
       const shouldContinue = (): boolean => isAttemptCurrent() && !mux.isDisposed()
+      const primaryChannelProved = await proveSshRelayConnection(mux)
+      if (!verifyRelayAttempt(mux, isAttemptCurrent, 'primary channel proof')) {
+        mux.dispose()
+        throw new Error('Session disposed during primary channel proof')
+      }
+      this.authenticatedMux = primaryChannelProved ? mux : null
 
       const ptyConsumerSessionState = await this.openPtyConsumerSession(
         mux,
@@ -697,13 +709,18 @@ export class SshRelaySession {
 
       const mux = new SshChannelMultiplexer(transport)
       this.mux = mux
-
       const isAttemptCurrent = (): boolean =>
         this.mux === mux &&
         this.abortController === abortController &&
         !abortController.signal.aborted &&
         !this.isDisposed()
       const shouldContinue = (): boolean => isAttemptCurrent() && !mux.isDisposed()
+      const primaryChannelProved = await proveSshRelayConnection(mux)
+      if (!verifyRelayAttempt(mux, isAttemptCurrent, 'primary channel proof')) {
+        mux.dispose()
+        return
+      }
+      this.authenticatedMux = primaryChannelProved ? mux : null
 
       const ptyConsumerSessionState = await this.openPtyConsumerSession(
         mux,
@@ -1608,6 +1625,7 @@ export class SshRelaySession {
       this.mux.dispose(reason)
     }
     this.mux = null
+    this.authenticatedMux = null
     for (const attachmentId of this.activeCompatibilityAttachmentIds) {
       this.runtime?.releaseOrchestrationCompatibilitySshAttachment(attachmentId)
     }

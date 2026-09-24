@@ -10,6 +10,7 @@ import { RelaySocketOwnership } from './relay-socket-ownership'
 import { RelayReconnectListener } from './relay-reconnect-listener'
 import { RelayGraceLifecycle } from './relay-grace-lifecycle'
 import { SKILL_RELAY_CAPABILITIES } from './skill-install-handler'
+import { RelayPrimaryChannelProof } from './relay-primary-channel-proof'
 
 export async function runRelayDaemon(
   options: RelayLaunchOptions,
@@ -30,6 +31,7 @@ export async function runRelayDaemon(
   })
 
   const primaryChannel = new RelayPrimaryChannel()
+  const primaryProof = new RelayPrimaryChannelProof(primaryChannel.dispatcher)
   const launchVersion = readLaunchVersion()
   const runtime = new RelayRuntimeServices(
     primaryChannel.dispatcher,
@@ -85,7 +87,8 @@ export async function runRelayDaemon(
     socketOwnership,
     lifecycle,
     options,
-    startedAt
+    startedAt,
+    primaryProof
   )
 
   try {
@@ -123,32 +126,38 @@ function registerRelayStatus(
   socketOwnership: RelaySocketOwnership,
   lifecycle: RelayGraceLifecycle,
   options: RelayLaunchOptions,
-  startedAt: number
+  startedAt: number,
+  primaryProof: RelayPrimaryChannelProof
 ): void {
-  primaryChannel.dispatcher.onRequest('relay.status', async () => ({
-    capabilities: SKILL_RELAY_CAPABILITIES,
-    pid: process.pid,
-    uptimeMs: Date.now() - startedAt,
-    detached: options.detached,
-    stdoutAlive: primaryChannel.isAlive,
-    memory: process.memoryUsage(),
-    ptys: { active: runtime.ptyHandler.activePtyCount },
-    ptySourceCredit: {
-      enabled: true,
-      session: runtime.ptyConsumerSessionAdapter.getDebugSnapshot(),
-      publication: runtime.ptySourcePublication.getDebugSnapshot()
-    },
-    socket: {
-      path: options.sockPath,
-      owned: socketOwnership.owned,
-      listening: socketOwnership.server?.listening ?? false,
-      clients: reconnectListener.clientCount,
-      acceptedConnections: reconnectListener.acceptedConnections
-    },
-    grace: {
-      active: runtime.ptyHandler.graceTimerActive,
-      deadlineAt: lifecycle.deadlineAt,
-      reason: lifecycle.reason
+  primaryChannel.dispatcher.onRequest('relay.status', async (_params, context) => {
+    const primaryChannelProof = primaryProof.status(context)
+    return {
+      capabilities: SKILL_RELAY_CAPABILITIES,
+      ...(primaryChannelProof ? { primaryChannelProof } : {}),
+      clientAuthentication: context.sessionIdentity?.authenticationKind ?? 'unproved',
+      pid: process.pid,
+      uptimeMs: Date.now() - startedAt,
+      detached: options.detached,
+      stdoutAlive: primaryChannel.isAlive,
+      memory: process.memoryUsage(),
+      ptys: { active: runtime.ptyHandler.activePtyCount },
+      ptySourceCredit: {
+        enabled: true,
+        session: runtime.ptyConsumerSessionAdapter.getDebugSnapshot(),
+        publication: runtime.ptySourcePublication.getDebugSnapshot()
+      },
+      socket: {
+        path: options.sockPath,
+        owned: socketOwnership.owned,
+        listening: socketOwnership.server?.listening ?? false,
+        clients: reconnectListener.clientCount,
+        acceptedConnections: reconnectListener.acceptedConnections
+      },
+      grace: {
+        active: runtime.ptyHandler.graceTimerActive,
+        deadlineAt: lifecycle.deadlineAt,
+        reason: lifecycle.reason
+      }
     }
-  }))
+  })
 }
