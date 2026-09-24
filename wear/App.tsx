@@ -300,7 +300,7 @@ export default function App() {
                 reply={reply}
                 phoneHandoff={phoneHandoff}
               />
-            ) : selectedHost && selectedAgent ? (
+            ) : selectedHost && selectedAgent && dashboard.state === 'ready' ? (
               <View style={styles.pages}>
                 <Text accessibilityRole="alert" style={styles.detail}>
                   {agentPages.state.status === 'ready'

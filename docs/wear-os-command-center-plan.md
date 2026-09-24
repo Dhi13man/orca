@@ -1779,3 +1779,14 @@ from 2:22 to 2:37 AM. This is paired-emulator periodic and on-demand delivery,
 not proof of screen-off/Doze behavior, a real host conversation, or physical
 watch operation. The current phone APK now contains the timeout fix, but no
 authenticated host was available to exercise its 15-second transcript path.
+
+The selected-agent screen now yields to the existing expired-dashboard notice
+when its phone snapshot expires, instead of displaying a perpetual inventory
+check. Wear's 147 tests, typecheck, scoped lint/format, and release APK build
+pass. The rebuilt APK SHA-256 is
+`99A7F6B8FE2A18C07F88436F585775B1B487A07E90FD9B118D83A60EACFD404B`;
+its signing certificate matches the existing emulator test pair. One in-place
+install on the paired watch emulator `5562` returned `Success`. The real paired
+conversation, exactly idle acknowledgement reply, durable SSH send, and
+physical-watch acceptance remain open. Use existing configured profiles and
+agents for those tests; no disposable-profile sign-in is required.
