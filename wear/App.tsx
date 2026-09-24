@@ -3,17 +3,19 @@ import { ActivityIndicator, ScrollView, StatusBar, StyleSheet, Text, View } from
 import { wearDataLayer, type WearCompanionState, type WearPeer } from '@orca/expo-wear-data-layer'
 import { WearButton } from './src/wear-button'
 import { wearColors } from './src/wear-theme'
-
-type Page = 'Attention' | 'Agents' | 'Usage'
+import { DashboardPages, type DashboardPage } from './src/dashboard-pages'
+import { usePhoneDashboard } from './src/use-phone-dashboard'
 
 export default function App() {
   const [state, setState] = useState<WearCompanionState | null>(
     () => wearDataLayer?.getState() ?? null
   )
   const [peers, setPeers] = useState<WearPeer[]>([])
-  const [page, setPage] = useState<Page>('Attention')
+  const [page, setPage] = useState<DashboardPage>('Attention')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const bindingId = state?.bindings?.[0]?.bindingId ?? null
+  const dashboard = usePhoneDashboard(bindingId)
 
   useEffect(() => {
     if (!wearDataLayer) {
@@ -161,7 +163,7 @@ export default function App() {
             <Text accessibilityRole="header" style={styles.heading}>
               {page}
             </Text>
-            <Text style={styles.detail}>Waiting for a fresh update from your phone.</Text>
+            <DashboardPages page={page} view={dashboard} />
           </>
         ) : null}
       </ScrollView>
