@@ -1864,3 +1864,14 @@ incomplete; this does not verify a live structured status or conversation.
 The build output was restored to ARM64-only and its SHA-256 rechecked as
 `A798C6C5099FB1E94F56F505B9D3B727195F3196E1820E97EEDCAB0DCD9A359F`.
 No physical device was changed.
+
+Commit `3a4537f14` isolates individual session-tab listener failures, so a
+disconnected subscriber cannot suppress status delivery to other phones. The
+targeted runtime test, node typecheck, scoped lint/format, independent
+read-only review, all 120 phone Wear tests, and ten mixed-version structured
+wire tests pass. The SSH send audit confirms its current PTY write only queues
+a notification without an incarnation fence; it cannot be treated as an
+authoritative effect receipt. Node 18 lacks the built-in SQLite used by the
+local durable ledger. SSH replies stay disabled pending a host-owned durable
+admission and guarded write; the unresolved Node 18 versus Node 24 storage
+choice must not be inferred from the existing local implementation.
