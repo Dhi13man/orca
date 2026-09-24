@@ -1811,3 +1811,7 @@ unavailable: a bounded conversation tail cannot prove that an older pending
 prompt or running turn ended. Full structured status requires a host-owned
 full-journal projection with freshness and recovery semantics, published as an
 optional capability-gated tab field. This remains open; no status was guessed.
+The watch ARM64 release rebuilt after `68f262713` has SHA-256
+`02DE7068265F02CC1416FEF5B56404EB35F66A039F13B56CFBC1A422545CC423`;
+its package, ARM64 ABI, and test signing certificate were reverified. It has
+not been installed on the physical watch.
