@@ -1667,3 +1667,16 @@ rejected, current attestation admits a host read, and a replaced primary
 generation is rejected. The focused test, node typecheck, lint, and format pass.
 This guard does not enable SSH sends or prove a live SSH transcript on a paired
 device.
+
+On paired watch `emulator-5562`, the installed Inbox requested real phone
+notification pages. Host 1 returned a checked timestamp and explicit
+unavailable state; connected Host 2 returned a checked timestamp and no
+retained events since its first watch check. "Next machine" fetched Host 2
+through the phone rather than treating Host 1's failure as an empty global
+feed. With Orca backgrounded on phone `emulator-5556`, `adb shell am kill
+com.stably.orca.mobile` removed its process; a watch "Refresh events" caused
+a new phone PID and advanced Host 1's checked time from 1:45 to 1:47 AM and
+Host 2's from 1:46 to 1:48 AM after another page request. This supports
+process-cold, watch-initiated Inbox fetch and per-host honest states on the
+paired emulator. It does not prove a retained host notification, autonomous
+host-originated delivery, screen-off/Doze timing, or a physical watch.
