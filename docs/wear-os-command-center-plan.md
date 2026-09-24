@@ -1333,3 +1333,17 @@ function in focused tests. These tests do not prove provider delivery or an
 installed-device structured reply. Native local Codex remains the only
 currently supported structured-send path; SSH/WSL and other provider paths
 need separate owner-side implementation and acceptance.
+
+The paired API-36 phone and API-33 watch emulators passed a process-cold,
+watch-initiated dashboard refresh. With the phone on its launcher, `am kill`
+removed Orca PID 26048; the watch's Refresh action started PID 26568 without
+bringing the phone UI forward, and its displayed phone-snapshot time advanced
+from 8:00 PM to 8:04 PM. This proves the authenticated ACTION → Headless JS →
+phone dashboard publication path for this emulator pair. It does not prove a
+screen-off/Doze case, host-originated wake, notification delivery, or the
+physical watch. Source audit confirms the phone's live host feed is released
+when React Native enters background; once the process dies there is no
+host-to-phone wake source. The existing receipt JobScheduler handles only
+pending receipts, and the phone's local notification bridge requires a live
+host subscription. Autonomous host-originated delivery remains an open
+architecture and installed-device gate.
