@@ -33,6 +33,10 @@ export type WearNativeDashboard = {
   expiresAt: number
   serialized: string
 }
+export type WearNativeHostPage = WearNativeDashboard & {
+  requestId: string
+  actionHash: string
+}
 export type WearClaimedAction = {
   bindingId: string
   requestId: string
@@ -73,6 +77,10 @@ type WearDataLayerModule = {
     eventName: 'onActionChanged',
     listener: (event: { bindingId: string; requestId: string }) => void
   ): { remove(): void }
+  addListener(
+    eventName: 'onPageChanged',
+    listener: (event: { bindingId: string; requestId: string }) => void
+  ): { remove(): void }
   getState(): WearCompanionState
   discoverPeers(): Promise<WearPeer[]>
   beginEnrollment(nodeId: string): Promise<void>
@@ -88,6 +96,8 @@ type WearDataLayerModule = {
     serialized: string
   ): Promise<void>
   readDashboard(bindingId: string): Promise<WearNativeDashboard | null>
+  sendHostPage(bindingId: string, requestId: string, serialized: string): Promise<void>
+  readHostPage(bindingId: string, requestId: string): Promise<WearNativeHostPage | null>
   claimAction(): Promise<WearClaimedAction | null>
   commitActionHandoff(
     bindingId: string,

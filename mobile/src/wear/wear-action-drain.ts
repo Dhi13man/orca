@@ -2,6 +2,9 @@ import { wearDataLayer } from '@orca/expo-wear-data-layer'
 import { decodeWearAction } from '@orca/wear-companion-contract'
 import { wearReceiptReasons, type WearReceiptReason } from '@orca/wear-companion-contract/receipt'
 import { requestWearHostCommand } from './wear-host-command-client'
+import { loadHostCatalog } from '../transport/host-store'
+import { encodeWearHostPage } from '@orca/wear-companion-contract/host-page'
+import { projectWearHostPage } from './wear-host-page-projection'
 
 type HostOutcome =
   | { outcome: 'accepted' | 'unknown'; reason: null }
@@ -117,6 +120,23 @@ async function drain(): Promise<void> {
           outcome: 'unknown',
           reason: null
         }
+      } catch {
+        outcome = { outcome: 'unknown', reason: null }
+      }
+    } else if (decoded.ok && decoded.action.action === 'readHostPage') {
+      try {
+        const page = projectWearHostPage({
+          bindingId: claim.bindingId,
+          requestId: claim.requestId,
+          actionHash: claim.actionHash,
+          publisherEpoch: decoded.action.publisherEpoch,
+          revision: decoded.action.expectedRevision,
+          cursor: decoded.action.payload.cursor,
+          now: Date.now(),
+          catalog: await loadHostCatalog()
+        })
+        await native.sendHostPage(claim.bindingId, claim.requestId, encodeWearHostPage(page))
+        outcome = { outcome: 'accepted', reason: null }
       } catch {
         outcome = { outcome: 'unknown', reason: null }
       }

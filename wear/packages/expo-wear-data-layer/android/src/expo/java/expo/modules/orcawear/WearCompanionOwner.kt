@@ -28,9 +28,11 @@ internal class WearCompanionOwner private constructor(private val context: Conte
     private val dashboards = WearDashboardStore(context)
     private val actions = WearActionInbox(context)
     private val watchActions = WearWatchActionStore(context)
+    private val pages = WearTransientPageStore()
     private val observers = CopyOnWriteArraySet<(Map<String, Any>) -> Unit>()
     private val dashboardObservers = CopyOnWriteArraySet<(String) -> Unit>()
     private val actionObservers = CopyOnWriteArraySet<(String, String) -> Unit>()
+    private val pageObservers = CopyOnWriteArraySet<(String, String) -> Unit>()
     private val publicationCompletions = Executors.newSingleThreadExecutor {
         Thread(it, "orca-wear-publication").apply { isDaemon = true }
     }
@@ -75,6 +77,8 @@ internal class WearCompanionOwner private constructor(private val context: Conte
     fun stopObservingDashboard(observer: (String) -> Unit) { dashboardObservers.remove(observer) }
     fun observeAction(observer: (String, String) -> Unit) { actionObservers.add(observer) }
     fun stopObservingAction(observer: (String, String) -> Unit) { actionObservers.remove(observer) }
+    fun observePage(observer: (String, String) -> Unit) { pageObservers.add(observer) }
+    fun stopObservingPage(observer: (String, String) -> Unit) { pageObservers.remove(observer) }
 
     fun reserveDashboardRevision(bindingId: String, completed: (Long?, Exception?) -> Unit) {
         if (role != CompanionRole.PHONE) {
@@ -355,6 +359,71 @@ internal class WearCompanionOwner private constructor(private val context: Conte
         }
     }
 
+    fun sendHostPage(bindingId: String, requestId: String, serialized: String,
+        completed: (Exception?) -> Unit) {
+        if (role != CompanionRole.PHONE) {
+            completed(IllegalStateException("wear_page_wrong_role"))
+            return
+        }
+        submit(completed) { ticket ->
+            val now = System.currentTimeMillis()
+            val record = actions.journalRecord(bindingId, requestId)
+                ?: error("wear_page_missing_journal")
+            check(record.actionName == "readHostPage" && record.state == "effect_started") {
+                "wear_page_wrong_action"
+            }
+            val page = JSONObject(serialized)
+            val published = dashboards.publishedDashboard(bindingId)
+                ?: error("wear_page_no_dashboard")
+            check(page.length() == 13 && page.getString("bindingId") == bindingId &&
+                page.getString("requestId") == requestId &&
+                page.getString("actionHash") == record.actionHash &&
+                page.getString("publisherEpoch") == published.publisherEpoch &&
+                page.getLong("revision") == published.revision &&
+                page.getLong("expiresAt") > now && page.getLong("expiresAt") - now <= 120_000) {
+                "wear_page_changed"
+            }
+            val metadata = WearEnvelopeMetadata(bindingId, WearEnvelopeKind.PAGE,
+                published.publisherEpoch, published.revision, requestId, page.getLong("expiresAt"))
+            val plaintext = serialized.toByteArray(Charsets.UTF_8)
+            try {
+                require(plaintext.size <= 32_768 - 512)
+                val wire = WearEnvelope(bindings).seal(metadata, plaintext, now)
+                ticket.effect {
+                    val task = bindings.withBinding(bindingId) { binding ->
+                        val current = dashboards.publishedDashboard(bindingId)
+                        val action = actions.journalRecord(bindingId, requestId)
+                        check(binding.state == "active" && action?.actionHash == record.actionHash &&
+                            admitsHostPageSend(metadata, current, action, System.currentTimeMillis())) {
+                            "wear_page_stale"
+                        }
+                        Wearable.getMessageClient(context)
+                            .sendMessage(binding.peerNodeId, metadata.path, wire)
+                    }
+                    try { Tasks.await(task, 12, TimeUnit.SECONDS) }
+                    catch (error: TimeoutException) {
+                        throw IllegalStateException("wear_work_timeout", error)
+                    }
+                }
+            } finally { plaintext.fill(0) }
+        }
+    }
+
+    fun readHostPage(bindingId: String, requestId: String,
+        completed: (WearTransientPage?, Exception?) -> Unit) {
+        if (role != CompanionRole.WATCH) {
+            completed(null, IllegalStateException("wear_page_wrong_role"))
+            return
+        }
+        var result: WearTransientPage? = null
+        submit({ completed(result, it) }, false) {
+            bindings.withBinding(bindingId) { binding ->
+                check(binding.state == "active") { "wear_binding_not_active" }
+                result = pages.read(bindingId, requestId, System.currentTimeMillis())
+            }
+        }
+    }
+
     fun pendingJournalReceipts(completed: (List<Map<String, String>>?, Exception?) -> Unit) {
         if (role != CompanionRole.PHONE) {
             completed(null, IllegalStateException("wear_receipt_wrong_role"))
@@ -606,6 +675,11 @@ internal class WearCompanionOwner private constructor(private val context: Conte
             submit({}, false) { ingestReceipt(nodeId, path, owned, it) }
             return
         }
+        if (role == CompanionRole.WATCH && PAGE_PATH.matches(path)) {
+            val owned = bytes.copyOf()
+            submit({}, false) { ingestPage(nodeId, path, owned, it) }
+            return
+        }
         val enrollmentMessage = path == WearEnrollmentWire.PATH
         if (enrollmentMessage && bytes.size > 329) return
         if (!enrollmentMessage && !ACKNOWLEDGEMENT_PATH.matches(path)) return
@@ -663,6 +737,28 @@ internal class WearCompanionOwner private constructor(private val context: Conte
         } finally { opened.plaintext.fill(0) }
     }
 
+    private fun ingestPage(nodeId: String, path: String, wire: ByteArray,
+        ticket: WearWorkTicket) {
+        val opened = WearEnvelope(bindings).open(path, nodeId, wire, System.currentTimeMillis())
+        try {
+            check(opened.metadata.kind == WearEnvelopeKind.PAGE)
+            val bindingId = opened.metadata.bindingId
+            val requestId = opened.metadata.requestId
+            val serialized = decodeWearPageText(opened.plaintext)
+            var changed = false
+            bindings.withBinding(bindingId) { binding ->
+                check(binding.state == "active" && binding.peerNodeId == nodeId) {
+                    "wear_binding_changed"
+                }
+                val action = watchActions.read(bindingId, requestId)
+                ticket.effect {
+                    changed = pages.put(opened.metadata, serialized, action, System.currentTimeMillis())
+                }
+            }
+            if (changed) pageObservers.forEach { it(bindingId, requestId) }
+        } finally { opened.plaintext.fill(0) }
+    }
+
     private fun submitCurrent(completed: (Exception?) -> Unit, reportFailure: Boolean = true,
         operation: (WearWorkTicket) -> Unit): Boolean {
         val generation = enrollment.generation()
@@ -709,6 +805,7 @@ internal class WearCompanionOwner private constructor(private val context: Conte
         private val DASHBOARD_PATH = Regex("/orca/wear/v1/([0-9a-f-]{36})/dashboard/([1-9][0-9]{0,15})")
         private val ACTION_PATH = Regex("/orca/wear/v1/[0-9a-f-]{36}/action")
         private val RECEIPT_PATH = Regex("/orca/wear/v1/[0-9a-f-]{36}/receipt")
+        private val PAGE_PATH = Regex("/orca/wear/v1/[0-9a-f-]{36}/page")
         private val ACKNOWLEDGEMENT_PATH = Regex("/orca/wear/v1/[0-9a-f-]{36}/acknowledgement")
         @Volatile private var instance: WearCompanionOwner? = null
         fun get(context: Context): WearCompanionOwner = instance ?: synchronized(this) {

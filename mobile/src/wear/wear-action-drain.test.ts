@@ -7,14 +7,17 @@ const native = vi.hoisted(() => ({
   startActionEffect: vi.fn(),
   finishActionEffect: vi.fn(),
   sendJournalReceipt: vi.fn(),
+  sendHostPage: vi.fn(),
   pendingJournalReceipts: vi.fn(),
   pendingJournalReconciliation: vi.fn()
 }))
 
 const requestWearHostCommand = vi.hoisted(() => vi.fn())
+const loadHostCatalog = vi.hoisted(() => vi.fn())
 
 vi.mock('@orca/expo-wear-data-layer', () => ({ wearDataLayer: native }))
 vi.mock('./wear-host-command-client', () => ({ requestWearHostCommand }))
+vi.mock('../transport/host-store', () => ({ loadHostCatalog }))
 
 import { drainWearActions } from './wear-action-drain'
 
@@ -34,6 +37,8 @@ describe('Wear action drain', () => {
     native.startActionEffect.mockResolvedValue(true)
     native.finishActionEffect.mockResolvedValue(true)
     native.sendJournalReceipt.mockResolvedValue(undefined)
+    native.sendHostPage.mockResolvedValue(undefined)
+    loadHostCatalog.mockResolvedValue([])
     native.pendingJournalReceipts.mockResolvedValue([
       { bindingId: 'binding', requestId: 'request' }
     ])
@@ -193,6 +198,64 @@ describe('Wear action drain', () => {
       'accepted',
       null
     )
+  })
+
+  it('answers a catalog read with a correlated encrypted native page before receipt', async () => {
+    const canonical = JSON.stringify({
+      schemaVersion: 1,
+      bindingId: 'binding',
+      requestId: 'page-request',
+      expiresAt: Date.now() + 60_000,
+      action: 'readHostPage',
+      target: {},
+      publisherEpoch: 'epoch',
+      expectedRevision: 4,
+      targetPublicationEpoch: null,
+      targetSnapshotVersion: null,
+      payload: { cursor: null }
+    })
+    const actionHash = createHash('sha256').update(canonical).digest('hex')
+    native.claimAction
+      .mockReset()
+      .mockResolvedValueOnce({
+        bindingId: 'binding',
+        requestId: 'page-request',
+        actionHash,
+        claimToken: 'token',
+        canonical
+      })
+      .mockResolvedValue(null)
+    loadHostCatalog.mockResolvedValue([
+      {
+        id: 'host-a',
+        name: 'Office',
+        credentialStatus: 'ready',
+        lastConnected: 0,
+        endpoint: 'private',
+        publicKeyB64: 'private',
+        profile: null
+      }
+    ])
+    await drainWearActions()
+    const sent = JSON.parse(native.sendHostPage.mock.calls[0][2])
+    expect(sent).toMatchObject({
+      bindingId: 'binding',
+      requestId: 'page-request',
+      actionHash,
+      publisherEpoch: 'epoch',
+      revision: 4,
+      total: 1,
+      offset: 0
+    })
+    expect(sent.hosts.map((host: { hostId: string }) => host.hostId)).toEqual(['host-a'])
+    expect(native.finishActionEffect).toHaveBeenCalledWith(
+      'binding',
+      'page-request',
+      actionHash,
+      'accepted',
+      null
+    )
+    expect(requestWearHostCommand).not.toHaveBeenCalled()
   })
 
   it('queries a prior effect instead of resending after a process restart', async () => {

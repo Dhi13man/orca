@@ -1081,7 +1081,18 @@ PAGE payload correlated to the exact watch action hash and dashboard
 epoch/revision. It validates each host with the dashboard's existing host
 schema, limits pages to 16 distinct entries, checks offset/total and cursor
 progress, and reserves 512 bytes of envelope headroom. Contract and dashboard
-tests (22 total), Wear typecheck, lint, and format pass. This is a schema unit
-only: the phone does not yet answer `readHostPage`, the native receiver does
-not yet accept/store PAGE, and the watch cannot page beyond its dashboard
-snapshot. Those transport/UI gates and paired-device proof remain open.
+tests (22 total), Wear typecheck, lint, and format pass. The next bounded unit
+connects `readHostPage` to the phone's paired-host catalog, sends the exact
+action-bound PAGE through the encrypted native Data Layer, retains up to eight
+transient watch pages, and renders a paged All machines view. Native final-send
+admission checks the current dashboard publication and action state; the watch
+checks the action hash, binding, epoch, revision, cursor, and offset before
+display. Ten phone, four focused Wear, and 67 API-36 native tests pass;
+phone/watch typechecks, native Kotlin compile, Wear release APK build, and
+disposable Wear emulator install/start pass. This does not prove paired PAGE
+delivery: no physical watch endpoint is online. Pagination is a live catalog
+walk, so same-count pairing changes ahead of a cursor can omit a machine;
+Refresh machines restarts it, while snapshot-bound pagination remains open.
+Agent detail, real conversations and structured/SSH replies, notifications,
+background refresh, all-host freshness, and installed physical acceptance
+remain open.

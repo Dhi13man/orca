@@ -5,6 +5,7 @@ import type {
   WearProviderUsage
 } from '../packages/wear-companion-contract/src/dashboard'
 import type { PhoneDashboardView } from './use-phone-dashboard'
+import { WearButton } from './wear-button'
 import { wearColors } from './wear-theme'
 
 export type DashboardPage = 'Attention' | 'Agents' | 'Usage'
@@ -77,20 +78,26 @@ function AttentionPage({ dashboard }: { dashboard: WearDashboard }) {
   )
 }
 
-function AgentsPage({ dashboard }: { dashboard: WearDashboard }) {
-  const connectionLabel = (state: WearDashboard['hosts'][number]['connectionState']) => {
-    switch (state) {
-      case 'connected':
-        return 'Connected'
-      case 'auth-failed':
-        return 'Authentication unavailable'
-      case 'incompatible':
-        return 'Incompatible'
-      case 'disconnected':
-      case 'unverifiable':
-        return 'Connection unverifiable'
-    }
+export function connectionLabel(state: WearDashboard['hosts'][number]['connectionState']) {
+  switch (state) {
+    case 'connected':
+      return 'Connected'
+    case 'auth-failed':
+      return 'Authentication unavailable'
+    case 'incompatible':
+      return 'Incompatible'
+    case 'disconnected':
+    case 'unverifiable':
+      return 'Connection unverifiable'
   }
+}
+function AgentsPage({
+  dashboard,
+  onAllMachines
+}: {
+  dashboard: WearDashboard
+  onAllMachines: () => void
+}) {
   return (
     <View style={styles.section}>
       {dashboard.hosts.length === 0 ? <PageNotice>No paired machines reported.</PageNotice> : null}
@@ -118,6 +125,7 @@ function AgentsPage({ dashboard }: { dashboard: WearDashboard }) {
           Showing {dashboard.hostPage.included} of {dashboard.hostPage.total} paired hosts.
         </PageNotice>
       ) : null}
+      <WearButton label="All machines" quiet onPress={onAllMachines} />
     </View>
   )
 }
@@ -157,7 +165,15 @@ function UsagePage({ dashboard }: { dashboard: WearDashboard }) {
   )
 }
 
-export function DashboardPages({ page, view }: { page: DashboardPage; view: PhoneDashboardView }) {
+export function DashboardPages({
+  page,
+  view,
+  onAllMachines
+}: {
+  page: DashboardPage
+  view: PhoneDashboardView
+  onAllMachines: () => void
+}) {
   if (view.state !== 'ready') {
     return (
       <PageNotice>
@@ -178,7 +194,9 @@ export function DashboardPages({ page, view }: { page: DashboardPage; view: Phon
         Phone snapshot sent {snapshotLabel(dashboard.generatedAt)}
       </Text>
       {page === 'Attention' ? <AttentionPage dashboard={dashboard} /> : null}
-      {page === 'Agents' ? <AgentsPage dashboard={dashboard} /> : null}
+      {page === 'Agents' ? (
+        <AgentsPage dashboard={dashboard} onAllMachines={onAllMachines} />
+      ) : null}
       {page === 'Usage' ? <UsagePage dashboard={dashboard} /> : null}
     </View>
   )

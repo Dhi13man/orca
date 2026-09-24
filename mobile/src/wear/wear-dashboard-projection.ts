@@ -27,7 +27,7 @@ export type WearDashboardProjectionInput = {
 
 const DASHBOARD_LIFETIME_MS = 24 * 60 * 60 * 1000
 
-function displayName(name: string): string {
+export function wearHostDisplayName(name: string): string {
   let value = ''
   let bytes = 0
   for (const character of name.trim()) {
@@ -118,7 +118,7 @@ export function projectWearDashboard(input: WearDashboardProjectionInput): WearD
         const keys = usage.groupKeysByHost.get(host.id)
         return {
           hostId: host.id,
-          displayName: displayName(host.name) || host.id,
+          displayName: wearHostDisplayName(host.name) || host.id,
           connectionState: connectionState(host, observation),
           inventoryAuthority: observation?.inventoryAuthority ?? 'unavailable',
           usageGroupKeys: {

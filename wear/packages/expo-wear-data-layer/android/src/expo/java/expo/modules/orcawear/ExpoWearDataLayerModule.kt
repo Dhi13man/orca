@@ -11,27 +11,33 @@ class ExpoWearDataLayerModule : Module() {
     private val actionObserver: (String, String) -> Unit = { bindingId, requestId ->
         sendEvent("onActionChanged", mapOf("bindingId" to bindingId, "requestId" to requestId))
     }
+    private val pageObserver: (String, String) -> Unit = { bindingId, requestId ->
+        sendEvent("onPageChanged", mapOf("bindingId" to bindingId, "requestId" to requestId))
+    }
     private val owner get() = WearCompanionOwner.get(requireNotNull(appContext.reactContext))
     private var observedOwner: WearCompanionOwner? = null
 
     override fun definition() = ModuleDefinition {
         Name("ExpoWearDataLayer")
-        Events("onState", "onDashboardChanged", "onActionChanged")
+        Events("onState", "onDashboardChanged", "onActionChanged", "onPageChanged")
         OnStartObserving {
             owner.also { observedOwner = it }.observe(observer)
             owner.observeDashboard(dashboardObserver)
             owner.observeAction(actionObserver)
+            owner.observePage(pageObserver)
         }
         OnStopObserving {
             observedOwner?.stopObserving(observer)
             observedOwner?.stopObservingDashboard(dashboardObserver)
             observedOwner?.stopObservingAction(actionObserver)
+            observedOwner?.stopObservingPage(pageObserver)
             observedOwner = null
         }
         OnDestroy {
             observedOwner?.stopObserving(observer)
             observedOwner?.stopObservingDashboard(dashboardObserver)
             observedOwner?.stopObservingAction(actionObserver)
+            observedOwner?.stopObservingPage(pageObserver)
             observedOwner = null
         }
         Function("getState") { owner.snapshot() }
@@ -123,6 +129,22 @@ class ExpoWearDataLayerModule : Module() {
         AsyncFunction("sendJournalReceipt") { bindingId: String, requestId: String,
             promise: Promise ->
             owner.sendJournalReceipt(bindingId, requestId) { complete(promise, it) }
+        }
+        AsyncFunction("sendHostPage") { bindingId: String, requestId: String,
+            serialized: String, promise: Promise ->
+            owner.sendHostPage(bindingId, requestId, serialized) { complete(promise, it) }
+        }
+        AsyncFunction("readHostPage") { bindingId: String, requestId: String,
+            promise: Promise ->
+            owner.readHostPage(bindingId, requestId) { page, error ->
+                if (error != null) complete(promise, error)
+                else promise.resolve(page?.let {
+                    mapOf("bindingId" to it.bindingId, "requestId" to it.requestId,
+                        "actionHash" to it.actionHash, "publisherEpoch" to it.publisherEpoch,
+                        "revision" to it.revision.toDouble(),
+                        "expiresAt" to it.expiresAt.toDouble(), "serialized" to it.serialized)
+                })
+            }
         }
         AsyncFunction("pendingJournalReceipts") { promise: Promise ->
             owner.pendingJournalReceipts { records, error ->

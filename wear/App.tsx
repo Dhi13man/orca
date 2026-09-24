@@ -5,6 +5,8 @@ import { WearButton } from './src/wear-button'
 import { wearColors } from './src/wear-theme'
 import { DashboardPages, type DashboardPage } from './src/dashboard-pages'
 import { usePhoneDashboard } from './src/use-phone-dashboard'
+import { useHostPages } from './src/use-host-pages'
+import { HostPagesView } from './src/host-pages-view'
 
 export default function App() {
   const [state, setState] = useState<WearCompanionState | null>(
@@ -12,10 +14,12 @@ export default function App() {
   )
   const [peers, setPeers] = useState<WearPeer[]>([])
   const [page, setPage] = useState<DashboardPage>('Attention')
+  const [showAllMachines, setShowAllMachines] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const bindingId = state?.bindings?.[0]?.bindingId ?? null
   const dashboard = usePhoneDashboard(bindingId)
+  const hostPages = useHostPages(dashboard.state === 'ready' ? dashboard.dashboard : null)
 
   useEffect(() => {
     if (!wearDataLayer) {
@@ -156,14 +160,32 @@ export default function App() {
                   compact={false}
                   label={name}
                   quiet={page !== name}
-                  onPress={() => setPage(name)}
+                  onPress={() => {
+                    setPage(name)
+                    setShowAllMachines(false)
+                  }}
                 />
               ))}
             </View>
             <Text accessibilityRole="header" style={styles.heading}>
-              {page}
+              {showAllMachines ? 'All machines' : page}
             </Text>
-            <DashboardPages page={page} view={dashboard} />
+            {showAllMachines && dashboard.state === 'ready' ? (
+              <HostPagesView
+                {...hostPages.state}
+                onBack={() => setShowAllMachines(false)}
+                onLoad={(cursor) => void hostPages.load(cursor)}
+              />
+            ) : (
+              <DashboardPages
+                page={page}
+                view={dashboard}
+                onAllMachines={() => {
+                  setShowAllMachines(true)
+                  void hostPages.load(null)
+                }}
+              />
+            )}
           </>
         ) : null}
       </ScrollView>
