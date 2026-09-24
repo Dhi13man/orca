@@ -1646,3 +1646,12 @@ backgrounded, and process-cold **watch-initiated** request/response on the
 paired emulator. They do not prove host-originated autonomous wake,
 screen-off/Doze timing, notification delivery, physical watch behavior, or a
 real host conversation/reply.
+
+The observed Attention label for one incomplete inventory had incorrect plural
+agreement. Commit `f2ea6c197` corrects the watch copy. Wear typecheck, scoped
+lint/format, and an offline ARM64 release build pass. The updated ARM64 watch
+APK SHA-256 is `593AD96D25E44910C543C9CC57D0BA66DDEBC7134335C2D25BF753875731AD56`;
+it contains bundled JavaScript and only `arm64-v8a` native libraries. The
+matching phone APK remains the verified prior checkpoint with SHA-256
+`38D4B9EC5B88E858442215F3D2098258C589B939A5261365035AE8043F61E11E`.
+Neither current ARM64 artifact has been installed on Dhiman's devices.
