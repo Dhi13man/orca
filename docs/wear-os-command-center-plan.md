@@ -1048,3 +1048,15 @@ The phone now registers a bundled Headless JS drain and wakes it after native ac
 The host now advertises an optional `wear.action-target.v1` capability and a mobile-only `wear.target.resolve` read. It resolves a current published workspace kind, epoch, version, and tab to one structured session or terminal/PTY pair under the authenticated phone's navigation projection. Unknown fields and mismatches fail closed; old clients keep their existing RPC contract. Seven focused host tests and seven phone capability-session tests pass, as do node/mobile typechecks, scoped lint/format, and independent read-only review. This is only a snapshot check: live agent sendability, publication freshness at the write boundary, durable host reservation/outcome, SSH ownership, and every actual Wear send remain unproved and unimplemented.
 
 A separate host SQLite ledger now reserves `(bindingId, requestId)` under `BEGIN IMMEDIATE`, retains the supplied fingerprint and a pending outcome before any future write, and replays rather than re-executes the same request after restart. Changed fingerprints conflict; 16 unresolved rows per binding and 2,000 rows globally fail closed; a persisted clock watermark refuses new work after wall-clock rollback. Unknown can later resolve from authoritative evidence, while accepted/rejected outcomes cannot be changed. Five focused real-SQLite tests, node typecheck, lint/format, and read-only review pass. This storage unit is not yet wired to a runtime command or execution host; the caller must bind action expiry to the fingerprint, and abrupt power-loss durability, SSH relay reservation, and actual send acceptance remain unproved.
+
+The host now has a capability-gated `wear.terminal.send` RPC for authenticated
+mobile clients. It reserves the full action fingerprint before local native PTY
+submission, replays recorded outcomes without another write, and refuses
+SSH/WSL targets. A read-only review found an async status-probe race; the writer
+now checks publication, PTY identity, and action expiry synchronously before
+paste bytes and Enter. Focused host/writer and phone negotiation tests plus
+typechecks pass. The phone drain still returns `unsupported` and does not invoke
+this RPC, so no watch action has reached an agent. Structured sends,
+authoritative receipt query/reconciliation, phone integration, actual
+conversations, physical delivery, and remote execution-host durability remain
+open.

@@ -37,6 +37,25 @@ vi.mock('../git/worktree', () => ({
 describe('agent prompt submission runtime', () => {
   afterEach(() => vi.useRealTimers())
 
+  it('runs the synchronous authority gate after an asynchronous probe before writing', async () => {
+    const { runtime, handle, writes } = await createPromptRuntime(() => undefined)
+    let current = true
+    await expect(
+      runtime.sendTerminalAgentPrompt(handle, 'review this', {
+        beforeWrite: async () => {
+          await Promise.resolve()
+          current = false
+        },
+        beforeWriteNow: () => {
+          if (!current) {
+            throw new Error('wear_terminal_target_changed')
+          }
+        }
+      })
+    ).rejects.toThrow('wear_terminal_target_changed')
+    expect(writes).toEqual([])
+  })
+
   it('submits exactly once after an observed lifecycle transition', async () => {
     vi.useFakeTimers()
     const { runtime, handle, writes } = await createAgentPromptSubmissionRuntime(

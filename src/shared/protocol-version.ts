@@ -123,6 +123,7 @@ export const AGENT_SESSION_OMP_RESUME_PATH_RUNTIME_CAPABILITY =
 export const CLIENT_CAPABILITIES_SET_RUNTIME_CAPABILITY = 'client-capabilities.set.v1' as const
 export const STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY = 'agent-session.structured.v1' as const
 export const WEAR_ACTION_TARGET_RUNTIME_CAPABILITY = 'wear.action-target.v1' as const
+export const WEAR_TERMINAL_SEND_RUNTIME_CAPABILITY = 'wear.terminal-send.v1' as const
 // Why: paired structured clients explicitly hold every visible session surface, allowing the host
 // to stop provider children after the last surface closes without tying lifetime to a transport.
 export const STRUCTURED_AGENT_SESSION_HOLD_RUNTIME_CAPABILITY =
@@ -221,6 +222,7 @@ export const RUNTIME_CAPABILITIES = [
   CLIENT_CAPABILITIES_SET_RUNTIME_CAPABILITY,
   STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY,
   WEAR_ACTION_TARGET_RUNTIME_CAPABILITY,
+  WEAR_TERMINAL_SEND_RUNTIME_CAPABILITY,
   STRUCTURED_AGENT_SESSION_HOLD_RUNTIME_CAPABILITY,
   AGENT_SESSION_KIMI_RESUME_RUNTIME_CAPABILITY,
   FILE_MUTATION_OWNERSHIP_RUNTIME_CAPABILITY,

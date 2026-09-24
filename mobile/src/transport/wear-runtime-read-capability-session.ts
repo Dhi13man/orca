@@ -3,7 +3,8 @@ import {
   CLIENT_CAPABILITIES_SET_RUNTIME_CAPABILITY,
   SESSION_TABS_AUTHORITATIVE_INVENTORY_RUNTIME_CAPABILITY,
   STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY,
-  WEAR_ACTION_TARGET_RUNTIME_CAPABILITY
+  WEAR_ACTION_TARGET_RUNTIME_CAPABILITY,
+  WEAR_TERMINAL_SEND_RUNTIME_CAPABILITY
 } from '../../../src/shared/protocol-version'
 import type { RpcClient } from './rpc-client'
 import { startRuntimeCapabilityProbe } from './runtime-capability-probe'
@@ -12,6 +13,7 @@ export type WearRuntimeReadCapabilities = {
   authoritativeInventory: boolean
   structuredAgents: boolean
   exactTargets: boolean
+  terminalSend: boolean
 }
 
 export function startWearRuntimeReadCapabilitySession(
@@ -27,7 +29,12 @@ export function startWearRuntimeReadCapabilitySession(
   let available: boolean | null = null
   const setLegacyReady = (): void => {
     available = true
-    onReady({ authoritativeInventory: false, structuredAgents: false, exactTargets: false })
+    onReady({
+      authoritativeInventory: false,
+      structuredAgents: false,
+      exactTargets: false,
+      terminalSend: false
+    })
   }
   const setUnavailable = (): void => {
     if (available === false) {
@@ -71,6 +78,9 @@ export function startWearRuntimeReadCapabilitySession(
           : []),
         ...(hostCapabilities.includes(WEAR_ACTION_TARGET_RUNTIME_CAPABILITY)
           ? [WEAR_ACTION_TARGET_RUNTIME_CAPABILITY]
+          : []),
+        ...(hostCapabilities.includes(WEAR_TERMINAL_SEND_RUNTIME_CAPABILITY)
+          ? [WEAR_TERMINAL_SEND_RUNTIME_CAPABILITY]
           : [])
       ]
       const retryDeclaration = (): void => {
@@ -118,7 +128,8 @@ export function startWearRuntimeReadCapabilitySession(
                 SESSION_TABS_AUTHORITATIVE_INVENTORY_RUNTIME_CAPABILITY
               ),
               structuredAgents: requested.includes(STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY),
-              exactTargets: requested.includes(WEAR_ACTION_TARGET_RUNTIME_CAPABILITY)
+              exactTargets: requested.includes(WEAR_ACTION_TARGET_RUNTIME_CAPABILITY),
+              terminalSend: requested.includes(WEAR_TERMINAL_SEND_RUNTIME_CAPABILITY)
             })
           }, retryDeclaration)
       }

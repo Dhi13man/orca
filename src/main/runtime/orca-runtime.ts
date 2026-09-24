@@ -12,6 +12,8 @@ import {
   normalizeTerminalTitle
 } from '../../shared/agent-detection'
 import { extractOscTitleScanTail } from '../../shared/osc-title-scan-tail'
+import { WearCommandLedger } from './wear-command-ledger'
+import { resolveWearActionTarget, type WearActionTargetFence } from './wear-action-target'
 import { planWorktreeSortOrderUpdates } from '../../shared/worktree/sort-order-update'
 import { isArtifactSharingEnabled } from '../../shared/artifact-sharing-gate'
 import {
@@ -3404,6 +3406,7 @@ export class OrcaRuntimeService {
   // so a stop that never produced an exit cannot outlive its process.
   private readonly stopRequestedPtyIds = new Set<string>()
   private _orchestrationDb: OrchestrationDb | null = null
+  private _wearCommandLedger: WearCommandLedger | null = null
   private messageWaitersByHandle = new Map<string, Set<MessageWaiter>>()
   private readonly orchestrationMailboxOwner = new OrchestrationMailboxOwner({
     getDb: () => this._orchestrationDb,
@@ -4692,6 +4695,48 @@ export class OrcaRuntimeService {
       this.scheduleRestoredMessageRepoints()
     }
     return this._orchestrationDb
+  }
+
+  getWearCommandLedger(): WearCommandLedger {
+    if (!this._wearCommandLedger) {
+      this._wearCommandLedger = new WearCommandLedger(
+        join(getAppEnvironment().getPath('userData'), 'wear-commands.db')
+      )
+    }
+    return this._wearCommandLedger
+  }
+
+  isLocalWearTerminalTarget(handle: string, ptyId: string): boolean {
+    const pty = this.ptysById.get(ptyId)
+    return Boolean(
+      pty &&
+      !pty.connectionId &&
+      !pty.isWsl &&
+      !pty.wslDistro &&
+      this.resolveLiveLeafForHandle(handle)?.ptyId === ptyId
+    )
+  }
+
+  isCurrentLocalWearTerminalTarget(
+    fence: WearActionTargetFence,
+    pairedDeviceId: string,
+    handle: string,
+    ptyId: string
+  ): boolean {
+    const kind = this.listFolderWorkspaces().some((folder) => folder.id === fence.workspaceId)
+      ? 'folder'
+      : 'worktree'
+    const resolved = resolveWearActionTarget(
+      this.getMobileSessionTabsForWorktree(fence.workspaceId, pairedDeviceId),
+      fence,
+      kind
+    )
+    return (
+      resolved?.kind === 'terminal' &&
+      resolved.terminal === handle &&
+      resolved.ptyId === ptyId &&
+      this.isLocalWearTerminalTarget(handle, ptyId)
+    )
   }
 
   setOrchestrationDb(db: OrchestrationDb): void {
@@ -20735,6 +20780,7 @@ export class OrcaRuntimeService {
     prompt: string,
     options: {
       beforeWrite?: (ptyId: string) => void | Promise<void>
+      beforeWriteNow?: (ptyId: string) => void
       suffixFailureError?: string
       signal?: AbortSignal
     } = {}
@@ -21514,6 +21560,7 @@ export class OrcaRuntimeService {
     pastePayload: string,
     options: {
       beforeWrite?: (ptyId: string) => void | Promise<void>
+      beforeWriteNow?: (ptyId: string) => void
       suffixFailureError?: string
       signal?: AbortSignal
     } = {}
@@ -21556,6 +21603,7 @@ export class OrcaRuntimeService {
         if (nextChunk.done) {
           renderGate?.arm()
         }
+        options.beforeWriteNow?.(ptyId)
         const wrote = this.ptyController?.write(ptyId, chunk.value) ?? false
         if (!wrote) {
           throw new Error('terminal_not_writable')
@@ -21616,6 +21664,7 @@ export class OrcaRuntimeService {
     const baseline = this.getAgentPromptActivity(handle, ptyId, waitTextCache)
     this.assertAgentPromptPermissionSafe(permissionBaseline, baseline)
     agentSessionPtyWriteGate.assertReadmitted(ptyId, admitted)
+    options.beforeWriteNow?.(ptyId)
     const suffixWrote = this.ptyController?.write(ptyId, AGENT_PROMPT_SUBMIT) ?? false
     if (!suffixWrote) {
       throw new Error(options.suffixFailureError ?? 'terminal_not_writable')

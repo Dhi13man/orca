@@ -200,6 +200,7 @@ function webClientPathForEndpoint(pathname: string): string {
 const MOBILE_RPC_METHOD_ALLOWLIST = new Set([
   'client.capabilities.set',
   'wear.target.resolve',
+  'wear.terminal.send',
   'agentSession.history',
   'agentSession.subscribe',
   'agentSession.unsubscribe',

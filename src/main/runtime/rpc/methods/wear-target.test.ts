@@ -2,10 +2,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { WEAR_ACTION_TARGET_RUNTIME_CAPABILITY } from '../../../../shared/protocol-version'
 import type { RuntimeMobileSessionTabsResult } from '../../../../shared/runtime-types'
 import type { OrcaRuntimeService } from '../../orca-runtime'
+import { WearCommandLedger } from '../../wear-command-ledger'
 import type { RpcContext, RpcMethod } from '../core'
 import { WEAR_TARGET_METHODS } from './wear-target'
 
 const method = WEAR_TARGET_METHODS[0] as RpcMethod
+const sendMethod = WEAR_TARGET_METHODS[1] as RpcMethod
 const target = {
   workspaceId: 'workspace-a',
   workspaceKind: 'worktree',
@@ -82,5 +84,166 @@ describe('wear.target.resolve', () => {
 
   it('rejects unknown fields before dispatch', () => {
     expect(method.params?.safeParse({ ...target, rpcMethod: 'terminal.send' }).success).toBe(false)
+  })
+})
+
+describe('wear.terminal.send', () => {
+  const action = {
+    schemaVersion: 1,
+    bindingId: 'binding-a',
+    requestId: 'request-a',
+    expiresAt: Date.now() + 60_000,
+    action: 'sendAgentMessage',
+    target: {
+      hostId: 'host-a',
+      workspaceId: 'workspace-a',
+      workspaceKind: 'worktree',
+      sessionTabId: 'tab-a'
+    },
+    publisherEpoch: 'phone-epoch',
+    expectedRevision: 2,
+    targetPublicationEpoch: 'epoch-a',
+    targetSnapshotVersion: 7,
+    payload: { text: '  exact reply  ' }
+  }
+
+  function setup() {
+    const ledger = new WearCommandLedger(':memory:')
+    const listMobileSessionTabs = vi.fn().mockResolvedValue(snapshot)
+    const sendTerminalAgentPrompt = vi.fn().mockResolvedValue({ accepted: true })
+    const isLocalWearTerminalTarget = vi.fn().mockReturnValue(true)
+    const isCurrentLocalWearTerminalTarget = vi.fn().mockReturnValue(true)
+    const isTerminalRunningSettledPromptAgent = vi.fn().mockResolvedValue(true)
+    const runtime = {
+      getWearCommandLedger: () => ledger,
+      listMobileSessionTabs,
+      listFolderWorkspaces: () => [],
+      sendTerminalAgentPrompt,
+      isLocalWearTerminalTarget,
+      isCurrentLocalWearTerminalTarget,
+      isTerminalRunningSettledPromptAgent
+    } as unknown as OrcaRuntimeService
+    const rpc = {
+      runtime,
+      clientKind: 'mobile',
+      pairedDeviceId: 'phone-a',
+      clientCapabilities: ['wear.terminal-send.v1']
+    } as RpcContext
+    return {
+      ledger,
+      rpc,
+      listMobileSessionTabs,
+      sendTerminalAgentPrompt,
+      isLocalWearTerminalTarget,
+      isCurrentLocalWearTerminalTarget,
+      isTerminalRunningSettledPromptAgent
+    }
+  }
+
+  it('rejects an undeclared phone before opening a ledger or reading a target', async () => {
+    const current = setup()
+    current.rpc.clientCapabilities = []
+    await expect(sendMethod.handler(action, current.rpc)).rejects.toThrow(
+      'wear_terminal_send_unsupported'
+    )
+    expect(current.listMobileSessionTabs).not.toHaveBeenCalled()
+    current.ledger.close()
+  })
+
+  it('writes once and replays the durable accepted outcome without sending again', async () => {
+    const current = setup()
+    expect(await sendMethod.handler(action, current.rpc)).toEqual({
+      outcome: 'accepted',
+      reason: null
+    })
+    expect(current.sendTerminalAgentPrompt).toHaveBeenCalledOnce()
+    const options = current.sendTerminalAgentPrompt.mock.calls[0][2]
+    await options.beforeWrite('pty-a')
+    options.beforeWriteNow('pty-a')
+    expect(current.listMobileSessionTabs).toHaveBeenCalledTimes(2)
+    expect(await sendMethod.handler(action, current.rpc)).toEqual({
+      outcome: 'accepted',
+      reason: null
+    })
+    expect(current.sendTerminalAgentPrompt).toHaveBeenCalledOnce()
+    expect(
+      await sendMethod.handler({ ...action, payload: { text: 'changed' } }, current.rpc)
+    ).toEqual({ outcome: 'rejected', reason: 'conflict' })
+    current.ledger.close()
+  })
+
+  it('refuses stale targets before write and unknown outcomes after a writer failure', async () => {
+    const current = setup()
+    current.listMobileSessionTabs.mockResolvedValueOnce({ ...snapshot, snapshotVersion: 8 })
+    expect(await sendMethod.handler(action, current.rpc)).toEqual({
+      outcome: 'rejected',
+      reason: 'target-changed'
+    })
+    expect(current.sendTerminalAgentPrompt).not.toHaveBeenCalled()
+    const retry = { ...action, requestId: 'request-b' }
+    current.sendTerminalAgentPrompt.mockRejectedValueOnce(new Error('ambiguous terminal write'))
+    expect(await sendMethod.handler(retry, current.rpc)).toEqual({
+      outcome: 'unknown',
+      reason: null
+    })
+    expect(await sendMethod.handler(retry, current.rpc)).toEqual({
+      outcome: 'unknown',
+      reason: null
+    })
+    expect(current.sendTerminalAgentPrompt).toHaveBeenCalledOnce()
+    current.ledger.close()
+  })
+
+  it('returns unknown to a concurrent replay and blocks Enter after target drift', async () => {
+    const current = setup()
+    let release!: () => void
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    current.sendTerminalAgentPrompt.mockImplementationOnce(async (_handle, _text, options) => {
+      await waiting
+      current.listMobileSessionTabs.mockResolvedValue({ ...snapshot, snapshotVersion: 8 })
+      await options.beforeWrite('pty-a')
+    })
+    const first = sendMethod.handler(action, current.rpc)
+    await vi.waitFor(() => expect(current.sendTerminalAgentPrompt).toHaveBeenCalledOnce())
+    expect(await sendMethod.handler(action, current.rpc)).toEqual({
+      outcome: 'unknown',
+      reason: null
+    })
+    release()
+    expect(await first).toEqual({ outcome: 'unknown', reason: null })
+    expect(current.sendTerminalAgentPrompt).toHaveBeenCalledOnce()
+    current.ledger.close()
+  })
+
+  it('refuses the final write when publication changes during the agent probe', async () => {
+    const current = setup()
+    current.isTerminalRunningSettledPromptAgent.mockImplementationOnce(async () => true)
+    current.sendTerminalAgentPrompt.mockImplementationOnce(async (_handle, _text, options) => {
+      current.isCurrentLocalWearTerminalTarget.mockReturnValue(false)
+      await options.beforeWrite('pty-a')
+      options.beforeWriteNow('pty-a')
+    })
+    expect(await sendMethod.handler(action, current.rpc)).toEqual({
+      outcome: 'unknown',
+      reason: null
+    })
+    expect(current.isCurrentLocalWearTerminalTarget).toHaveBeenCalledOnce()
+    current.ledger.close()
+  })
+
+  it('blocks remote execution hosts and rejects unknown command fields', async () => {
+    const current = setup()
+    current.isLocalWearTerminalTarget.mockReturnValue(false)
+    expect(await sendMethod.handler(action, current.rpc)).toEqual({
+      outcome: 'rejected',
+      reason: 'unsupported'
+    })
+    expect(current.sendTerminalAgentPrompt).not.toHaveBeenCalled()
+    expect(sendMethod.params?.safeParse({ ...action, rpcMethod: 'terminal.send' }).success).toBe(
+      false
+    )
+    current.ledger.close()
   })
 })

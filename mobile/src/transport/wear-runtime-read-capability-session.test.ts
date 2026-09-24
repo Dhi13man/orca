@@ -4,7 +4,8 @@ import {
   CLIENT_CAPABILITIES_SET_RUNTIME_CAPABILITY,
   SESSION_TABS_AUTHORITATIVE_INVENTORY_RUNTIME_CAPABILITY,
   STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY,
-  WEAR_ACTION_TARGET_RUNTIME_CAPABILITY
+  WEAR_ACTION_TARGET_RUNTIME_CAPABILITY,
+  WEAR_TERMINAL_SEND_RUNTIME_CAPABILITY
 } from '../../../src/shared/protocol-version'
 import type { RpcClient } from './rpc-client'
 import type { ConnectionState, RpcResponse } from './types'
@@ -15,7 +16,8 @@ const capabilities = [
   SESSION_TABS_AUTHORITATIVE_INVENTORY_RUNTIME_CAPABILITY,
   STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY,
   AGENT_SESSION_BOUNDARY_RUNTIME_CAPABILITY,
-  WEAR_ACTION_TARGET_RUNTIME_CAPABILITY
+  WEAR_ACTION_TARGET_RUNTIME_CAPABILITY,
+  WEAR_TERMINAL_SEND_RUNTIME_CAPABILITY
 ]
 
 const ok = (result: unknown): RpcResponse => ({
@@ -77,7 +79,8 @@ describe('Wear runtime read capability session', () => {
     expect(ready).toHaveBeenCalledWith({
       authoritativeInventory: true,
       structuredAgents: true,
-      exactTargets: true
+      exactTargets: true,
+      terminalSend: true
     })
     expect(unavailable).toHaveBeenCalledTimes(1)
     close()
@@ -170,7 +173,8 @@ describe('Wear runtime read capability session', () => {
     expect(ready).toHaveBeenCalledWith({
       authoritativeInventory: false,
       structuredAgents: false,
-      exactTargets: false
+      exactTargets: false,
+      terminalSend: false
     })
     expect(unavailable).toHaveBeenCalledTimes(1)
     close()
@@ -187,7 +191,8 @@ describe('Wear runtime read capability session', () => {
     expect(ready).toHaveBeenCalledWith({
       authoritativeInventory: false,
       structuredAgents: false,
-      exactTargets: false
+      exactTargets: false,
+      terminalSend: false
     })
     close()
   })
@@ -223,7 +228,8 @@ describe('Wear runtime read capability session', () => {
       expect(ready).toHaveBeenCalledWith({
         authoritativeInventory: true,
         structuredAgents: true,
-        exactTargets: true
+        exactTargets: true,
+        terminalSend: true
       })
       close()
 
