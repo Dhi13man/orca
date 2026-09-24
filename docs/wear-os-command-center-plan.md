@@ -1907,3 +1907,14 @@ wrapper currently fails before Vitest while rebuilding the unrelated
 `@vscode/windows-process-tree` addon because this machine lacks VS Spectre
 libraries; direct Vitest passed. This is source evidence, not installed-device
 status acceptance.
+
+After `8e3652f10`, an emulator-only app-specific background job check advanced
+the paired watch dashboard without a watch tap. Phone `emulator-5556` was sent
+to the launcher and its app process killed. Its existing persisted periodic
+job `1464156499` reported `waiting`; `cmd jobscheduler run -f` started a new
+phone process (PID 9666) for `WearDashboardRefreshJobService`. The job returned
+to `waiting`, the launcher remained top-resumed, and watch `emulator-5562`
+changed its visible phone-snapshot timestamp from 4:12 to 4:13 AM. This proves
+an app-specific forced background-job wake and publication on the paired
+emulators, not natural periodic timing, screen-off/Doze, host-originated push,
+or physical-device acceptance. No physical device or real agent was touched.
