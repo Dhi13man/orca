@@ -9554,10 +9554,14 @@ export class OrcaRuntimeService {
     const result = this.toMobileSessionTabsResult(snapshot)
     const changeSequence = ++this.mobileSessionTabsChangeSequence
     for (const subscription of this.mobileSessionTabListeners) {
-      subscription.listener(
-        this.projectMobileSessionTabsForClient(result, subscription.clientNavigationId),
-        changeSequence
-      )
+      try {
+        subscription.listener(
+          this.projectMobileSessionTabsForClient(result, subscription.clientNavigationId),
+          changeSequence
+        )
+      } catch (error) {
+        console.warn('[runtime] session tabs listener failed', error)
+      }
     }
   }
 

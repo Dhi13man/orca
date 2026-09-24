@@ -18,6 +18,9 @@ describe('structured session cold restoration', () => {
       agent: 'codex',
       activate: true
     })
+    const broken = runtime.onMobileSessionTabsChanged(() => {
+      throw new Error('disconnected subscriber')
+    })
     const published: { version: number; state: string | undefined }[] = []
     const close = runtime.onMobileSessionTabsChanged((snapshot) => {
       const tab = snapshot.tabs.find((candidate) => candidate.type === 'agent-session')
@@ -33,6 +36,7 @@ describe('structured session cold restoration', () => {
     internal.publishStructuredWearStatus('session-1')
     status = null
     internal.publishStructuredWearStatus('session-1')
+    broken()
     close()
     expect(published.map((entry) => entry.state)).toEqual(['working', 'blocked', undefined])
     expect(published.map((entry) => entry.version)).toEqual([2, 3, 4])
