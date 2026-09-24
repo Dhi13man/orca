@@ -4,11 +4,14 @@ import {
   WEAR_ACTION_TARGET_RUNTIME_CAPABILITY,
   WEAR_TERMINAL_SEND_RUNTIME_CAPABILITY
 } from '../../../../shared/protocol-version'
-import { computeAgentSessionPayloadFingerprint } from '../../../../shared/agent-session-mutation-envelope'
 import { resolveWearActionTarget } from '../../wear-action-target'
 import { defineMethod, type RpcAnyMethod, type RpcContext } from '../core'
 import { projectSessionTabsForClient } from './session-tabs-inventory'
 import { encodeWearAction } from '../../../../../wear/packages/wear-companion-contract/src/action'
+import { wearSendAction } from './wear-send-action'
+import { wearLedgerBindingId } from './wear-command-identity'
+import { WEAR_STRUCTURED_SEND_RUNTIME_CAPABILITY } from '../../../../shared/protocol-version'
+import { getStructuredAgentSessionHost } from '../../../native-chat/agent-session-wire/structured-agent-session-registry'
 
 const id = z.string().min(1).max(256)
 const target = z
@@ -18,24 +21,6 @@ const target = z
     sessionTabId: id,
     targetPublicationEpoch: id,
     targetSnapshotVersion: z.number().int().nonnegative().safe()
-  })
-  .strict()
-
-const terminalAction = z
-  .object({
-    schemaVersion: z.literal(1),
-    bindingId: id,
-    requestId: id,
-    expiresAt: z.number().int().nonnegative().safe(),
-    action: z.literal('sendAgentMessage'),
-    target: target.pick({ workspaceId: true, workspaceKind: true, sessionTabId: true }).extend({
-      hostId: id
-    }),
-    publisherEpoch: id,
-    expectedRevision: z.number().int().nonnegative().safe(),
-    targetPublicationEpoch: id,
-    targetSnapshotVersion: z.number().int().nonnegative().safe(),
-    payload: z.object({ text: z.string().min(1) }).strict()
   })
   .strict()
 
@@ -80,7 +65,7 @@ export const WEAR_TARGET_METHODS: RpcAnyMethod[] = [
   }),
   defineMethod({
     name: 'wear.terminal.send',
-    params: terminalAction,
+    params: wearSendAction,
     handler: async (params, context) => {
       const pairedDeviceId = terminalCapability(context)
       if (
@@ -99,11 +84,7 @@ export const WEAR_TARGET_METHODS: RpcAnyMethod[] = [
         return { outcome: 'rejected', reason: 'invalid-action' }
       }
       const ledger = context.runtime.getWearCommandLedger()
-      const ledgerBindingId = computeAgentSessionPayloadFingerprint({
-        method: 'wear.terminal.binding',
-        sessionId: pairedDeviceId,
-        fields: { bindingId: params.bindingId }
-      })
+      const ledgerBindingId = wearLedgerBindingId(pairedDeviceId, params.bindingId)
       const fingerprint = createHash('sha256').update(encodeWearAction(params)).digest('hex')
       const reservation = ledger.reserve({
         bindingId: ledgerBindingId,
@@ -223,14 +204,53 @@ export const WEAR_TARGET_METHODS: RpcAnyMethod[] = [
   defineMethod({
     name: 'wear.command.receipt',
     params: z.object({ bindingId: id, requestId: id }).strict(),
-    handler: (params, context) => {
-      const pairedDeviceId = terminalCapability(context)
-      const bindingId = computeAgentSessionPayloadFingerprint({
-        method: 'wear.terminal.binding',
-        sessionId: pairedDeviceId,
-        fields: { bindingId: params.bindingId }
-      })
-      const record = context.runtime.getWearCommandLedger().get(bindingId, params.requestId)
+    handler: async (params, context) => {
+      const pairedDeviceId = context.pairedDeviceId
+      if (
+        context.clientKind !== 'mobile' ||
+        !pairedDeviceId ||
+        !context.clientCapabilities?.some(
+          (capability) =>
+            capability === WEAR_TERMINAL_SEND_RUNTIME_CAPABILITY ||
+            capability === WEAR_STRUCTURED_SEND_RUNTIME_CAPABILITY
+        )
+      ) {
+        throw new Error('wear_terminal_send_unsupported')
+      }
+      const bindingId = wearLedgerBindingId(pairedDeviceId, params.bindingId)
+      const ledger = context.runtime.getWearCommandLedger()
+      let record = ledger.get(bindingId, params.requestId)
+      const link =
+        record && (record.state === 'pending' || record.state === 'unknown')
+          ? ledger.getStructuredLink(bindingId, params.requestId)
+          : null
+      if (link) {
+        try {
+          await context.runtime.restoreStructuredAgentSessionTabs()
+          const verdict = getStructuredAgentSessionHost()?.wearSubmissionOutcome(
+            link.sessionId,
+            link.clientOperationId,
+            link.sendFingerprint
+          )
+          if (verdict?.state === 'accepted' || verdict?.state === 'rejected') {
+            record = ledger.complete({
+              bindingId,
+              requestId: params.requestId,
+              fingerprint: record!.fingerprint,
+              outcome: verdict.state,
+              reason:
+                verdict.state === 'rejected'
+                  ? verdict.reason === 'wear_target_changed'
+                    ? 'target-changed'
+                    : 'unavailable'
+                  : null,
+              now: Date.now()
+            })
+          }
+        } catch {
+          // Missing host evidence leaves the durable outcome unknown.
+        }
+      }
       return record
         ? {
             outcome: record.state === 'pending' ? 'unknown' : record.state,

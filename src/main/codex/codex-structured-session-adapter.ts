@@ -1,11 +1,9 @@
-import type {
-  AgentJournalMessageItem,
-  AgentSessionJournalIdentity
-} from '../../shared/agent-session-journal-types'
+import type { AgentSessionJournalIdentity } from '../../shared/agent-session-journal-types'
 import {
   AgentSessionPreSpawnError,
   type AgentSessionAcquisition,
   type AgentSessionDispatchOutcome,
+  type StructuredAgentSessionDispatchInput,
   type StructuredAgentSessionAcquireInput,
   type StructuredAgentSessionAdapter,
   type StructuredAgentSessionSetOptionInput
@@ -253,12 +251,7 @@ export class CodexStructuredSessionAdapter implements StructuredAgentSessionAdap
       .get(sessionId)
       ?.prompts.bindJournalItemId(journalItemId, this.session(sessionId).threadId, promptKey)
 
-  async dispatch(input: {
-    sessionId: string
-    clientMessageId: string
-    body: AgentJournalMessageItem
-    fence: number
-  }): Promise<AgentSessionDispatchOutcome> {
+  async dispatch(input: StructuredAgentSessionDispatchInput): Promise<AgentSessionDispatchOutcome> {
     const session = this.session(input.sessionId)
     await this.turnCancellation.captureBaseline(session)
     return dispatchCodexTurn(session, input, this.deps.requestTimeoutMs)

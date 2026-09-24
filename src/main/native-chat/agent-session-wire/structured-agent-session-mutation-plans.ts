@@ -38,6 +38,7 @@ export function sendPlan(params: {
   body: AgentJournalMessageItem
   retryUnknown?: true
   beforeRun?: () => void
+  beforeIssue?: () => boolean
 }): MutationPlan<AgentSessionSendResult> {
   // The operation id IS the client message id: one send, one durable row, one
   // key the client reconciles its optimistic bubble against.
@@ -59,7 +60,8 @@ export function sendPlan(params: {
         clientMessageId,
         payloadFingerprint: params.envelope.payloadFingerprint,
         body: params.body,
-        retryUnknown: params.retryUnknown
+        retryUnknown: params.retryUnknown,
+        beforeIssue: params.beforeIssue
       }),
     replay: (ctx) => {
       const submission = ctx.journal

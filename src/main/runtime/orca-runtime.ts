@@ -4739,6 +4739,22 @@ export class OrcaRuntimeService {
     )
   }
 
+  isCurrentWearStructuredTarget(
+    fence: WearActionTargetFence,
+    pairedDeviceId: string,
+    sessionId: string
+  ): boolean {
+    const kind = this.listFolderWorkspaces().some((folder) => folder.id === fence.workspaceId)
+      ? 'folder'
+      : 'worktree'
+    const resolved = resolveWearActionTarget(
+      this.getMobileSessionTabsForWorktree(fence.workspaceId, pairedDeviceId),
+      fence,
+      kind
+    )
+    return resolved?.kind === 'structured' && resolved.sessionId === sessionId
+  }
+
   setOrchestrationDb(db: OrchestrationDb): void {
     this.stopOrchestrationFederationRelay()
     this.mailPointerRepointScheduler.clear()

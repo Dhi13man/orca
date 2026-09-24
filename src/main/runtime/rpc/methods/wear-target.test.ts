@@ -150,9 +150,9 @@ describe('wear.terminal.send', () => {
     await expect(sendMethod.handler(action, current.rpc)).rejects.toThrow(
       'wear_terminal_send_unsupported'
     )
-    expect(() =>
+    await expect(
       receiptMethod.handler({ bindingId: 'binding-a', requestId: 'request-a' }, current.rpc)
-    ).toThrow('wear_terminal_send_unsupported')
+    ).rejects.toThrow('wear_terminal_send_unsupported')
     expect(current.listMobileSessionTabs).not.toHaveBeenCalled()
     current.ledger.close()
   })

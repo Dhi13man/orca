@@ -1209,3 +1209,15 @@ unavailable, so this does not prove host PAGE or reply delivery. Receiver PAGE
 and receipt decoders now share the envelope's bounded 30-second clock-skew
 allowance while sender lifetime and absolute expiry remain strict; focused
 contract tests and 73 API-36 native instrumentation tests pass.
+
+Structured Codex replies now use a separate negotiated Wear send capability.
+The phone resolves the exact published tab before routing, and the host checks
+the publication, session lease, and action expiry immediately before provider
+issue. A durable Wear receipt links to the structured operation and journal so
+ambiguous outcomes can be reconciled without resending; terminal and structured
+methods reject cross-method request-ID collisions. The watch composer accepts a
+matching structured conversation PAGE through the same persistent reply guard.
+Focused host, phone, and Wear tests and typechecks pass. A live paired structured
+send, journal recovery after process restart, and physical-watch acceptance are
+still unproved. SSH-host replies, autonomous refresh/notifications, live
+conversation follow, and full-product acceptance remain open.

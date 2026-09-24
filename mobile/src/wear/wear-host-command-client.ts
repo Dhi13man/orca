@@ -9,12 +9,17 @@ import {
 
 export async function requestWearHostCommand(
   hostId: string,
-  method: 'wear.terminal.send' | 'wear.command.receipt',
+  method: 'wear.terminal.send' | 'wear.agent.send' | 'wear.command.receipt',
   params: unknown
 ): Promise<RpcResponse> {
   return withWearHostClient(
     hostId,
-    (capabilities) => capabilities.terminalSend,
+    (capabilities) =>
+      method === 'wear.terminal.send'
+        ? capabilities.terminalSend
+        : method === 'wear.agent.send'
+          ? capabilities.structuredSend
+          : capabilities.terminalSend || capabilities.structuredSend,
     (client) => client.sendRequest(method, params, { timeoutMs: 8_000, failWhenDisconnected: true })
   )
 }

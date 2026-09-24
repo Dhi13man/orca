@@ -102,9 +102,12 @@ export async function startCodexTurn(
  */
 export async function dispatchCodexTurn(
   session: CodexTurnHost,
-  input: { clientMessageId: string; body: AgentJournalMessageItem },
+  input: { clientMessageId: string; body: AgentJournalMessageItem; beforeIssue?: () => boolean },
   timeoutMs: number | undefined
 ): Promise<AgentSessionDispatchOutcome> {
+  if (input.beforeIssue?.() === false) {
+    return { state: 'rejected', reason: 'wear_target_changed' }
+  }
   let turnId: string | null
   try {
     turnId = await startCodexTurn(session, { ...input, timeoutMs })

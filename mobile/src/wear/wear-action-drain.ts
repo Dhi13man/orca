@@ -126,12 +126,54 @@ async function drain(): Promise<void> {
       }
     } else if (decoded.ok && decoded.action.action === 'sendAgentMessage') {
       try {
-        const response = await requestWearHostCommand(
+        const action = decoded.action
+        const result = await withWearHostClient(
           decoded.action.target.hostId,
-          'wear.terminal.send',
-          decoded.action
+          (capabilities) => capabilities.terminalSend || capabilities.structuredSend,
+          async (client, capabilities): Promise<HostOutcome | null> => {
+            let method: 'wear.terminal.send' | 'wear.agent.send' = 'wear.terminal.send'
+            if (capabilities.exactTargets) {
+              const resolved = await client.sendRequest(
+                'wear.target.resolve',
+                {
+                  workspaceId: action.target.workspaceId,
+                  workspaceKind: action.target.workspaceKind,
+                  sessionTabId: action.target.sessionTabId,
+                  targetPublicationEpoch: action.targetPublicationEpoch,
+                  targetSnapshotVersion: action.targetSnapshotVersion
+                },
+                { timeoutMs: 8_000, failWhenDisconnected: true }
+              )
+              if (!resolved.ok) {
+                return null
+              }
+              const kind =
+                resolved.result && typeof resolved.result === 'object' && 'kind' in resolved.result
+                  ? resolved.result.kind
+                  : null
+              if (kind === null) {
+                return { outcome: 'rejected', reason: 'target-changed' }
+              }
+              if (kind === 'structured') {
+                if (!capabilities.structuredSend) {
+                  return { outcome: 'rejected', reason: 'unsupported' }
+                }
+                method = 'wear.agent.send'
+              } else if (kind !== 'terminal') {
+                return null
+              }
+            }
+            if (method === 'wear.terminal.send' && !capabilities.terminalSend) {
+              return null
+            }
+            const response = await client.sendRequest(method, action, {
+              timeoutMs: 8_000,
+              failWhenDisconnected: true
+            })
+            return response.ok ? hostOutcome(response.result, claim.actionHash) : null
+          }
         )
-        outcome = (response.ok && hostOutcome(response.result, claim.actionHash)) || {
+        outcome = result || {
           outcome: 'unknown',
           reason: null
         }

@@ -115,6 +115,30 @@ export class StructuredAgentSessionHost {
 
   hasSession = (sessionId: string): boolean => this.sessions.has(sessionId)
 
+  wearSubmissionOutcome(
+    sessionId: string,
+    clientOperationId: string,
+    sendFingerprint: string
+  ): { state: 'accepted' | 'rejected' | 'unknown'; reason: string | null } | null {
+    const journal = this.sessions.get(sessionId)?.journal
+    if (!journal) {
+      return null
+    }
+    const submission = journal
+      .submissions()
+      .find((row) => row.clientMessageId === clientOperationId)
+    if (submission && submission.payloadFingerprint !== sendFingerprint) {
+      return null
+    }
+    if (journal.receiptFor(clientOperationId)) {
+      return { state: 'accepted', reason: null }
+    }
+    if (submission?.dispatchState === 'rejected') {
+      return { state: 'rejected', reason: submission.reason }
+    }
+    return submission ? { state: 'unknown', reason: null } : null
+  }
+
   /** A surface bound to this session and wants it live. The FIRST hold on a session with no
    *  provider child is what resumes one; a retained hold (a subscription) only keeps it. */
   hold = (

@@ -6,7 +6,8 @@ import {
   STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY,
   WEAR_ACTION_TARGET_RUNTIME_CAPABILITY,
   WEAR_CONVERSATION_READ_RUNTIME_CAPABILITY,
-  WEAR_TERMINAL_SEND_RUNTIME_CAPABILITY
+  WEAR_TERMINAL_SEND_RUNTIME_CAPABILITY,
+  WEAR_STRUCTURED_SEND_RUNTIME_CAPABILITY
 } from '../../../src/shared/protocol-version'
 import type { RpcClient } from './rpc-client'
 import type { ConnectionState, RpcResponse } from './types'
@@ -19,6 +20,7 @@ const capabilities = [
   AGENT_SESSION_BOUNDARY_RUNTIME_CAPABILITY,
   WEAR_ACTION_TARGET_RUNTIME_CAPABILITY,
   WEAR_TERMINAL_SEND_RUNTIME_CAPABILITY,
+  WEAR_STRUCTURED_SEND_RUNTIME_CAPABILITY,
   WEAR_CONVERSATION_READ_RUNTIME_CAPABILITY
 ]
 
@@ -83,6 +85,7 @@ describe('Wear runtime read capability session', () => {
       structuredAgents: true,
       exactTargets: true,
       terminalSend: true,
+      structuredSend: true,
       conversationRead: true
     })
     expect(unavailable).toHaveBeenCalledTimes(1)
@@ -178,6 +181,7 @@ describe('Wear runtime read capability session', () => {
       structuredAgents: false,
       exactTargets: false,
       terminalSend: false,
+      structuredSend: false,
       conversationRead: false
     })
     expect(unavailable).toHaveBeenCalledTimes(1)
@@ -197,6 +201,7 @@ describe('Wear runtime read capability session', () => {
       structuredAgents: false,
       exactTargets: false,
       terminalSend: false,
+      structuredSend: false,
       conversationRead: false
     })
     close()
@@ -235,6 +240,7 @@ describe('Wear runtime read capability session', () => {
         structuredAgents: true,
         exactTargets: true,
         terminalSend: true,
+        structuredSend: true,
         conversationRead: true
       })
       close()

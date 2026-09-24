@@ -53,14 +53,16 @@ function invalid(message: string): { ok: false; refusal: AgentSessionWireRefusal
 async function dispatchSafely(
   ctx: AgentSessionTurnContext,
   clientMessageId: string,
-  body: AgentJournalMessageItem
+  body: AgentJournalMessageItem,
+  beforeIssue?: () => boolean
 ): Promise<AgentSessionDispatchOutcome> {
   try {
     return await ctx.adapter.dispatch({
       sessionId: ctx.sessionId,
       clientMessageId,
       body,
-      fence: ctx.fence
+      fence: ctx.fence,
+      ...(beforeIssue ? { beforeIssue } : {})
     })
   } catch (error) {
     return { state: 'unknown', reason: error instanceof Error ? error.message : String(error) }
@@ -87,6 +89,7 @@ export async function performSend(
     payloadFingerprint: string
     body: AgentJournalMessageItem
     retryUnknown?: true
+    beforeIssue?: () => boolean
   }
 ): Promise<TurnOutcome<AgentSessionSendResult>> {
   const existing = ctx.journal
@@ -106,7 +109,7 @@ export async function performSend(
     ctx.publish()
   }
 
-  const outcome = await dispatchSafely(ctx, input.clientMessageId, input.body)
+  const outcome = await dispatchSafely(ctx, input.clientMessageId, input.body, input.beforeIssue)
   await ctx.journal.resolveDispatch(
     outcome.state === 'accepted'
       ? {

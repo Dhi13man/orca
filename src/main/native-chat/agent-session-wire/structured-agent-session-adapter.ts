@@ -81,6 +81,14 @@ export type StructuredAgentSessionSetOptionInput = {
   fence: number
 }
 
+export type StructuredAgentSessionDispatchInput = {
+  sessionId: string
+  clientMessageId: string
+  body: AgentJournalMessageItem
+  fence: number
+  beforeIssue?: () => boolean
+}
+
 export type StructuredAgentSessionAdapter = {
   /** Provider-aware capability check for hosts that route more than one adapter. */
   supportsCreate?(location: AgentSessionExecutionLocation, agent: string): boolean
@@ -93,12 +101,7 @@ export type StructuredAgentSessionAdapter = {
   /** Reaps an acquired provider when the host cannot commit or prove its lease.
    *  Returns true only after provider child exit is proven. */
   releaseAcquisition?(input: { sessionId: string }): Promise<boolean>
-  dispatch(input: {
-    sessionId: string
-    clientMessageId: string
-    body: AgentJournalMessageItem
-    fence: number
-  }): Promise<AgentSessionDispatchOutcome>
+  dispatch(input: StructuredAgentSessionDispatchInput): Promise<AgentSessionDispatchOutcome>
   /** Cancels one turn, not the session: a session-wide interrupt would also kill
    *  a turn the client never asked to stop. */
   cancelTurn(input: {

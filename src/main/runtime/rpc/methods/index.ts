@@ -45,6 +45,7 @@ import { UPDATER_METHODS } from './updater'
 import { AGENT_SESSION_METHODS } from './agent-session'
 import { STRUCTURED_AGENT_SESSION_METHODS } from './structured-agent-session'
 import { WEAR_TARGET_METHODS } from './wear-target'
+import { WEAR_AGENT_SEND_METHODS } from './wear-agent-send'
 import { WEAR_CONVERSATION_READ_METHODS } from './wear-conversation-read'
 import { ARTIFACT_METHODS } from './artifacts'
 import { AGENT_HOOK_METHODS } from './agent-hooks'
@@ -64,6 +65,7 @@ export const ALL_RPC_METHODS: readonly RpcAnyMethod[] = [
   ...AGENT_SESSION_METHODS,
   ...STRUCTURED_AGENT_SESSION_METHODS,
   ...WEAR_TARGET_METHODS,
+  ...WEAR_AGENT_SEND_METHODS,
   ...WEAR_CONVERSATION_READ_METHODS,
   ...TERMINAL_METHODS,
   ...TERMINAL_ORPHAN_METHODS,

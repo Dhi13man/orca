@@ -391,6 +391,25 @@ describe('CodexStructuredSessionAdapter.acquire', () => {
 })
 
 describe('CodexStructuredSessionAdapter.dispatch', () => {
+  it('checks a Wear target after async baseline capture and before turn issue', async () => {
+    const codex = fakeCodex({ 'turn/start': () => ({ turn: { id: 'turn-1' } }) })
+    const adapter = adapterFor(codex, {}, [], {
+      captureTurnProcesses: async () => ({ platform: 'win32', identities: new Map() })
+    })
+    await adapter.acquire({ identity: identityFor('session-1'), fence: 7, spawnToken: 'spawn-9' })
+    let current = true
+    const dispatching = adapter.dispatch({
+      sessionId: 'session-1',
+      clientMessageId: 'client-1',
+      body: USER_MESSAGE,
+      fence: 7,
+      beforeIssue: () => current
+    })
+    current = false
+    expect(await dispatching).toEqual({ state: 'rejected', reason: 'wear_target_changed' })
+    expect(codex.connections[0].calls.some((call) => call.method === 'turn/start')).toBe(false)
+  })
+
   it('accepts a turn Codex names in its response', async () => {
     const codex = fakeCodex({ 'turn/start': () => ({ turn: { id: 'turn-1' } }) })
     const adapter = await acquired(codex)

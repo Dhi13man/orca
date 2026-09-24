@@ -435,7 +435,10 @@ describe('Wear action drain', () => {
     }
   })
 
-  it('sends one journaled exact action to its paired host and completes from the host outcome', async () => {
+  it.each([
+    ['terminal', 'wear.terminal.send'],
+    ['structured', 'wear.agent.send']
+  ])('routes a journaled %s reply to its exact host method', async (kind, method) => {
     const canonical = JSON.stringify({
       schemaVersion: 1,
       bindingId: 'binding',
@@ -465,16 +468,35 @@ describe('Wear action drain', () => {
         canonical
       })
       .mockResolvedValue(null)
-    requestWearHostCommand.mockResolvedValue({
+    const sendRequest = vi.fn(async (name: string) => ({
       ok: true,
-      result: { outcome: 'accepted', reason: null, actionHash }
+      result:
+        name === 'wear.target.resolve'
+          ? { kind }
+          : { outcome: 'accepted', reason: null, actionHash }
+    }))
+    withWearHostClient.mockImplementation(async (_hostId, admits, request) => {
+      const capabilities = { terminalSend: true, structuredSend: true, exactTargets: true }
+      expect(admits(capabilities)).toBe(true)
+      return request({ sendRequest }, capabilities)
     })
     await drainWearActions()
-    expect(requestWearHostCommand).toHaveBeenCalledWith(
-      'host-a',
-      'wear.terminal.send',
-      JSON.parse(canonical)
+    expect(sendRequest).toHaveBeenNthCalledWith(
+      1,
+      'wear.target.resolve',
+      {
+        workspaceId: 'workspace-a',
+        workspaceKind: 'worktree',
+        sessionTabId: 'tab-a',
+        targetPublicationEpoch: 'runtime-epoch',
+        targetSnapshotVersion: 7
+      },
+      { timeoutMs: 8_000, failWhenDisconnected: true }
     )
+    expect(sendRequest).toHaveBeenNthCalledWith(2, method, JSON.parse(canonical), {
+      timeoutMs: 8_000,
+      failWhenDisconnected: true
+    })
     expect(native.finishActionEffect).toHaveBeenCalledWith(
       'binding',
       'request',

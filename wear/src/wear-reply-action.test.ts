@@ -78,6 +78,22 @@ describe('watch reply target fence', () => {
     })
   })
 
+  it('encodes the same exact-target action for a matching structured conversation', () => {
+    const result = decodeWearAction(
+      encodeWearReplyAction({
+        ...input,
+        agent: { ...agent, kind: 'structured' },
+        page: { ...page, kind: 'structured' }
+      }),
+      now
+    )
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.action.target.sessionTabId).toBe('tab')
+      expect(result.action.payload.text).toBe('hello')
+    }
+  })
+
   it('rejects stale or changed read authority', () => {
     expect(() =>
       encodeWearReplyAction({ ...input, page: { ...page, targetSnapshotVersion: 8 } })
@@ -89,7 +105,7 @@ describe('watch reply target fence', () => {
     expect(() => encodeWearReplyAction({ ...input, hostId: 'other' })).toThrow()
   })
 
-  it('does not offer a terminal reply for structured or over-limit text', () => {
+  it('rejects a conversation kind mismatch or over-limit text', () => {
     expect(() =>
       encodeWearReplyAction({ ...input, agent: { ...agent, kind: 'structured' } })
     ).toThrow()

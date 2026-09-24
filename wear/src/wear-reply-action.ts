@@ -14,7 +14,7 @@ export function encodeWearReplyAction(input: {
 }): string {
   const { dashboard, hostId, agent, page, now } = input
   if (
-    agent.kind !== 'terminal' ||
+    agent.kind !== page.kind ||
     !agent.workspaceKind ||
     dashboard.expiresAt <= now ||
     page.expiresAt <= now ||

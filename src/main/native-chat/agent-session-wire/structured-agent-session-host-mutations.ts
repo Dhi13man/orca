@@ -66,6 +66,7 @@ export function sendStructuredAgentSessionTurn(
     body: AgentJournalMessageItem
     retryUnknown?: true
     beforeRun?: () => void
+    beforeIssue?: () => boolean
   }
 ): Promise<AgentSessionMutationResult<AgentSessionSendResult>> {
   return mutate(context, caller, params.envelope, sendPlan(params))
