@@ -9,7 +9,7 @@ import android.provider.Settings
 import java.io.File
 import java.util.UUID
 
-internal enum class WearActionInsertResult { INSERTED, DUPLICATE, CONFLICT, BUSY, RATE_LIMITED }
+internal enum class WearActionInsertResult { INSERTED, DUPLICATE, CONFLICT, BUSY, RATE_LIMITED, STALE, REJECTED }
 internal data class WearAdmissionTime(val elapsedMillis: Long, val bootCount: Int)
 
 internal data class ClaimedWearAction(
@@ -62,16 +62,20 @@ internal class WearActionInbox(context: Context, private val admissionTime: (Lon
     }
 
     fun insert(bindingId: String, requestId: String, actionName: String, actionHash: String,
-        expiresAt: Long, wire: ByteArray, now: Long): WearActionInsertResult = transaction { db ->
+        expiresAt: Long, wire: ByteArray, now: Long,
+        metadata: WearEnvelopeMetadata? = null, stale: Boolean = false): WearActionInsertResult = transaction { db ->
         require(UUID.fromString(bindingId).toString() == bindingId)
         require(requestId.isNotBlank() && requestId.toByteArray(Charsets.UTF_8).size <= 256)
         require(actionHash.matches(Regex("[0-9a-f]{64}")))
         require(expiresAt > now && expiresAt - now <= 120_000)
         require(wire.size in 16..8192)
+        require(!stale || metadata != null)
+        if (metadata != null) require(metadata.bindingId == bindingId &&
+            metadata.requestId == requestId && metadata.expiresAt == expiresAt &&
+            metadata.kind == WearEnvelopeKind.ACTION)
         gc(db, now)
         val sampledTime = admissionTime(now)
         WearCommandJournal.prune(db, now, sampledTime)
-        if (!pruneAdmissionEvents(db, sampledTime)) return@transaction WearActionInsertResult.RATE_LIMITED
         val existing = db.rawQuery(
             "SELECT action_hash FROM actions WHERE binding_id=? AND request_id=?",
             arrayOf(bindingId, requestId)
@@ -93,12 +97,20 @@ internal class WearActionInbox(context: Context, private val admissionTime: (Lon
             return@transaction if (admittedHash == actionHash) WearActionInsertResult.DUPLICATE
                 else WearActionInsertResult.CONFLICT
         }
+        fun rejected(reason: String, fallback: WearActionInsertResult): WearActionInsertResult =
+            if (metadata != null && WearCommandJournal.rejectAdmission(db, metadata,
+                actionName, actionHash, reason, now, sampledTime)) WearActionInsertResult.REJECTED
+            else fallback
+        if (stale) return@transaction rejected("stale", WearActionInsertResult.STALE)
+        if (!pruneAdmissionEvents(db, sampledTime))
+            return@transaction rejected("rate-limited", WearActionInsertResult.RATE_LIMITED)
         val total = count(db, null)
         val perBinding = count(db, bindingId)
-        if (total >= 64 || perBinding >= 8) return@transaction WearActionInsertResult.BUSY
+        if (total >= 64 || perBinding >= 8)
+            return@transaction rejected("busy", WearActionInsertResult.BUSY)
         val actionClass = actionClass(actionName)
         if (!rateAdmitted(db, bindingId, actionClass, sampledTime.elapsedMillis))
-            return@transaction WearActionInsertResult.RATE_LIMITED
+            return@transaction rejected("rate-limited", WearActionInsertResult.RATE_LIMITED)
         db.insertOrThrow("actions", null, ContentValues().apply {
             put("binding_id", bindingId)
             put("request_id", requestId)

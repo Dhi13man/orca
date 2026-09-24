@@ -217,6 +217,10 @@ class WearActionInboxTest {
         }
         WearActionInbox(context) { time }.use { reopened ->
             time = WearAdmissionTime(30_000, 2)
+            assertEquals(WearActionInsertResult.DUPLICATE,
+                reopened.insert(binding, "old", "requestPhoneHandoff", hash, 120_000, wire, 1))
+            assertEquals(WearActionInsertResult.CONFLICT,
+                reopened.insert(binding, "old", "requestPhoneHandoff", "b".repeat(64), 120_000, wire, 1))
             assertEquals(WearActionInsertResult.RATE_LIMITED,
                 reopened.insert(binding, "new", "requestPhoneHandoff", hash, 120_000, wire, 1))
             time = WearAdmissionTime(60_000, 2)
@@ -227,4 +231,97 @@ class WearActionInboxTest {
                 reopened.insert(binding, "unknown-boot", "refresh", hash, 120_000, wire, 1))
         }
     }
+
+    @Test fun durableAdmissionRejectionPreservesExistingRequestsAcrossRestart() =
+        withWearTestDatabase { context ->
+            val binding = UUID.randomUUID().toString()
+            val epoch = UUID.randomUUID().toString()
+            fun metadata(request: String) = WearEnvelopeMetadata(binding, WearEnvelopeKind.ACTION,
+                epoch, 1, request, 120_000)
+            WearActionInbox(context) { WearAdmissionTime(it, 1) }.use { inbox ->
+                assertEquals(WearActionInsertResult.INSERTED,
+                    inbox.insert(binding, "accepted", "refresh", hash, 120_000, wire, 0,
+                        metadata("accepted")))
+                assertEquals(WearActionInsertResult.DUPLICATE,
+                    inbox.insert(binding, "accepted", "refresh", hash, 120_000, wire, 1,
+                        metadata("accepted"), stale = true))
+                assertEquals(WearActionInsertResult.REJECTED,
+                    inbox.insert(binding, "stale", "refresh", hash, 120_000, wire, 1,
+                        metadata("stale"), stale = true))
+                assertEquals(WearActionInsertResult.REJECTED,
+                    inbox.insert(binding, "rate", "refresh", hash, 120_000, wire, 1,
+                        metadata("rate")))
+                assertEquals(WearActionInsertResult.CONFLICT,
+                    inbox.insert(binding, "rate", "refresh", "b".repeat(64), 120_000, wire, 1,
+                        metadata("rate")))
+                assertEquals("stale", inbox.journalRecord(binding, "stale")!!.reason)
+                assertEquals("rate-limited", inbox.journalRecord(binding, "rate")!!.reason)
+                assertEquals("rejected", inbox.journalRecord(binding, "rate")!!.state)
+                assertEquals(setOf(binding to "stale", binding to "rate"), inbox.pendingReceipts().toSet())
+                assertEquals("accepted", inbox.claim(1)!!.requestId)
+            }
+            WearActionInbox(context) { WearAdmissionTime(it, 1) }.use { reopened ->
+                assertEquals(WearActionInsertResult.DUPLICATE,
+                    reopened.insert(binding, "rate", "refresh", hash, 120_000, wire, 2,
+                        metadata("rate")))
+                assertEquals("rejected", reopened.journalRecord(binding, "stale")!!.state)
+                assertFalse(reopened.hasPendingReconciliation())
+                assertEquals(setOf(binding to "stale", binding to "rate"), reopened.pendingReceipts().toSet())
+            }
+        }
+
+    @Test fun fullInboxRecordsBusyWithoutReplacingAcceptedRequests() =
+        withWearTestDatabase { context ->
+            val binding = UUID.randomUUID().toString()
+            val epoch = UUID.randomUUID().toString()
+            fun metadata(request: String) = WearEnvelopeMetadata(binding, WearEnvelopeKind.ACTION,
+                epoch, 1, request, 120_000)
+            WearActionInbox(context) { WearAdmissionTime(it, 1) }.use { inbox ->
+                repeat(8) { index ->
+                    val request = "accepted-$index"
+                    assertEquals(WearActionInsertResult.INSERTED,
+                        inbox.insert(binding, request, "sendAgentMessage", hash, 120_000, wire,
+                            index * 2_000L, metadata(request)))
+                }
+                assertEquals(WearActionInsertResult.REJECTED,
+                    inbox.insert(binding, "busy", "sendAgentMessage", hash, 120_000, wire,
+                        16_000, metadata("busy")))
+                assertEquals("busy", inbox.journalRecord(binding, "busy")!!.reason)
+                assertEquals(WearActionInsertResult.DUPLICATE,
+                    inbox.insert(binding, "accepted-0", "sendAgentMessage", hash, 120_000,
+                        wire, 16_000, metadata("accepted-0"), stale = true))
+                assertEquals("accepted-0", inbox.claim(16_000)!!.requestId)
+            }
+        }
+
+    @Test fun admissionRejectionCapReservesJournalSpaceForCommands() =
+        withWearTestDatabase { context ->
+            val binding = UUID.randomUUID().toString()
+            val epoch = UUID.randomUUID().toString()
+            WearActionInbox(context) { WearAdmissionTime(it, 1) }.use { inbox ->
+                repeat(32) { index ->
+                    val request = "stale-$index"
+                    val metadata = WearEnvelopeMetadata(binding, WearEnvelopeKind.ACTION,
+                        epoch, 1, request, 120_000)
+                    assertEquals(WearActionInsertResult.REJECTED,
+                        inbox.insert(binding, request, "readHostPage", hash, 120_000,
+                            wire, 0, metadata, stale = true))
+                }
+                val overflow = WearEnvelopeMetadata(binding, WearEnvelopeKind.ACTION,
+                    epoch, 1, "overflow", 120_000)
+                assertEquals(WearActionInsertResult.STALE,
+                    inbox.insert(binding, "overflow", "readHostPage", hash, 120_000,
+                        wire, 0, overflow, stale = true))
+                assertNull(inbox.journalRecord(binding, "overflow"))
+                val canonical = actionBytes(binding, "command", "readHostPage", 120_000)
+                val actionHash = hashOf(canonical)
+                assertEquals(WearActionInsertResult.INSERTED,
+                    inbox.insert(binding, "command", "readHostPage", actionHash,
+                        120_000, wire, 0))
+                val claim = inbox.claim(0)!!
+                assertEquals(WearJournalHandoff.RECORDED,
+                    inbox.commitHandoff(binding, "command", actionHash,
+                        claim.claimToken, canonical, 0))
+            }
+        }
 }

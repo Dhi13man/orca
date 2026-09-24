@@ -103,6 +103,42 @@ internal object WearCommandJournal {
         return WearJournalHandoff.RECORDED
     }
 
+    fun rejectAdmission(db: SQLiteDatabase, metadata: WearEnvelopeMetadata, actionName: String,
+        actionHash: String, reason: String, now: Long, time: WearAdmissionTime): Boolean {
+        require(WearReceiptCodec.validOutcome("rejected", reason))
+        if (time.bootCount < 0 || time.elapsedMillis < 0) return false
+        val total = db.rawQuery("SELECT COUNT(*) FROM command_journal", null).use {
+            it.moveToFirst(); it.getLong(0)
+        }
+        if (total >= 2000) return false
+        val rejected = db.rawQuery("""SELECT COUNT(*),
+            SUM(CASE WHEN binding_id=? THEN 1 ELSE 0 END) FROM command_journal
+            WHERE state='rejected' AND effect_boot_count IS NULL""",
+            arrayOf(metadata.bindingId)).use {
+            it.moveToFirst(); it.getLong(0) to it.getLong(1)
+        }
+        if (rejected.first >= 128 || rejected.second >= 32) return false
+        db.insertOrThrow("command_journal", null, ContentValues().apply {
+            put("binding_id", metadata.bindingId)
+            put("request_id", metadata.requestId)
+            put("action_hash", actionHash)
+            put("action_name", actionName)
+            put("publisher_epoch", metadata.publisherEpoch)
+            put("expected_revision", metadata.revision)
+            put("target_json", "{}")
+            put("expires_at", metadata.expiresAt)
+            put("state", "rejected")
+            put("result_reason", reason)
+            put("created_at", now)
+            put("updated_at", now)
+            put("recorded_boot_count", time.bootCount)
+            put("recorded_elapsed_at", time.elapsedMillis)
+            put("terminal_boot_count", time.bootCount)
+            put("terminal_elapsed_at", time.elapsedMillis)
+        })
+        return true
+    }
+
     fun read(db: SQLiteDatabase, bindingId: String, requestId: String): WearJournalRecord? = db.rawQuery(
         """SELECT action_hash,action_name,state,expires_at,result_reason FROM command_journal
             WHERE binding_id=? AND request_id=?""", arrayOf(bindingId, requestId)

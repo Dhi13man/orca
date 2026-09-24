@@ -715,8 +715,10 @@ internal class WearCompanionOwner private constructor(private val context: Conte
             val owned = bytes.copyOf()
             var admitted: WearActionInsertResult? = null
             submit({ error ->
-                if (error == null && admitted in setOf(WearActionInsertResult.INSERTED,
-                    WearActionInsertResult.DUPLICATE)) wakeActionDrain()
+                if (error == null) {
+                    if (admitted in setOf(WearActionInsertResult.INSERTED,
+                        WearActionInsertResult.DUPLICATE)) wakeActionDrain()
+                }
             }, false) { admitted = ingestAction(nodeId, path, owned, it) }
             return
         }
@@ -746,13 +748,18 @@ internal class WearCompanionOwner private constructor(private val context: Conte
         return try {
             bindings.withBinding(opened.metadata.bindingId) { binding ->
                 check(binding.state == "active" && binding.peerNodeId == nodeId) { "wear_binding_changed" }
-                val admitted = admitWearAction(opened.metadata, opened.plaintext,
-                    dashboards.publishedDashboard(opened.metadata.bindingId), System.currentTimeMillis())
+                val now = System.currentTimeMillis()
+                val admitted = decodeAuthenticatedWearAction(opened.metadata, opened.plaintext, now)
                     ?: return@withBinding null
+                val published = dashboards.publishedDashboard(opened.metadata.bindingId)
+                val stale = published == null || published.revision != opened.metadata.revision ||
+                    published.publisherEpoch != opened.metadata.publisherEpoch || published.expiresAt <= now
                 var result: WearActionInsertResult? = null
                 ticket.effect {
                     result = actions.insert(opened.metadata.bindingId, opened.metadata.requestId, admitted.name, admitted.hash,
-                        admitted.expiresAt, wire, System.currentTimeMillis())
+                        admitted.expiresAt, wire, System.currentTimeMillis(), opened.metadata, stale)
+                    if (result in setOf(WearActionInsertResult.REJECTED,
+                        WearActionInsertResult.DUPLICATE)) scheduleReceiptRetry()
                 }
                 result
             }

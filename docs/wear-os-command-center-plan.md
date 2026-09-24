@@ -1423,3 +1423,21 @@ page taps, with the Attention count visible on the first screen. All 140 Wear
 tests, typecheck, scoped lint/format, and release build pass. This is emulator
 layout evidence, not physical rotary, TalkBack, real usage, or host-message
 delivery acceptance.
+
+Phone-native Wear admission now records authenticated, canonical stale,
+rate-limited, and busy actions as durable rejected command-journal rows. The
+same SQLite transaction checks pending and journaled requests first, so an
+exact replay keeps its prior outcome and a changed hash is a conflict. The
+existing receipt job is scheduled from the native database effect even when
+its work callback times out, and retries after phone process restart. Admission
+rejections are capped at 32 per binding and 128 globally to reserve journal
+space for actionable commands; beyond the cap the watch has no rejection
+receipt and must show the request as unresolved. Malformed or unauthenticated
+packets receive no receipt. The API-36 phone
+emulator passed 76 native instrumentation tests, including reboot budget,
+duplicate precedence, rejection persistence, and full-inbox behavior; the
+integrated Expo module compiled. These are database and compile gates, not
+proof of a phone-to-watch rejection receipt on a device. Existing authenticated
+agents remain the inventory and conversation targets. An exact idle-session
+reply, host-backed watch conversation, SSH durable send, notification timing,
+real usage, and physical-watch installation and operation remain open.
