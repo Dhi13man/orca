@@ -50,6 +50,7 @@ function connect(hostId: string): void {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  mocks.acquire.mockReset()
   mocks.stored.clear()
   mocks.listeners.clear()
   mocks.clients.clear()
@@ -87,6 +88,32 @@ describe('background Wear notification replay', () => {
     mocks.ready.get('host-d')?.(true)
     await task
     expect(mocks.release).toHaveBeenCalledTimes(4)
+    expect(mocks.releaseLifetime).toHaveBeenCalledOnce()
+  })
+
+  it('continues replaying healthy hosts when one host fails to open', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mocks.acquire.mockImplementation((hostId: string) => {
+      if (hostId === 'host-a') {
+        throw new Error('host unavailable')
+      }
+    })
+    const task = replayWearNotifications(new AbortController().signal)
+    await vi.waitFor(() => expect(mocks.acquire).toHaveBeenCalledTimes(4))
+    expect(mocks.acquire.mock.calls.map(([id]) => id)).toEqual([
+      'host-a',
+      'host-b',
+      'host-c',
+      'host-d'
+    ])
+    for (const id of ['host-b', 'host-c', 'host-d']) {
+      connect(id)
+      expect(mocks.ready.has(id)).toBe(true)
+      mocks.ready.get(id)?.(true)
+    }
+    await task
+    expect(mocks.release).toHaveBeenCalledTimes(3)
+    expect(warning).toHaveBeenCalledOnce()
     expect(mocks.releaseLifetime).toHaveBeenCalledOnce()
   })
 

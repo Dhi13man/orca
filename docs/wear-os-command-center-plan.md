@@ -1953,3 +1953,15 @@ Host 1 to Host 2 and reported no retained events since this watch first
 checked that machine. These are actual rendered states on the paired emulator,
 not evidence of a real agent conversation, verified quota, notification
 arrival, or physical watch operation.
+
+The user reconfirmed that existing configured agents and paired machines are
+the validation targets; no disposable profile, login, or account is required.
+The Crowley agent's visible terminal still had pending work and the Choisoonsil
+agent was busy, so neither received a test prompt. The paired emulators expose
+no verified idle session yet. An all-host notification replay failure was found:
+one host acquisition exception aborted the batch before healthy hosts could
+finish. Replay now logs that host failure and continues bounded work on the
+remaining hosts; 14 focused notification/background tests, mobile typecheck,
+lint, and formatting pass. Physical phone and watch remain absent from ADB.
+Natural periodic refresh, real host conversation and safe idle reply, SSH
+durable send, and physical installed-device acceptance remain open.

@@ -126,7 +126,11 @@ export async function replayWearNotifications(signal: AbortSignal): Promise<void
     const workers = Array.from({ length: Math.min(CONCURRENT_HOSTS, ordered.length) }, async () => {
       while (!cancellation.signal.aborted && next < ordered.length) {
         const host = ordered[next++]
-        await replayHost(host, owner, coordinator, cancellation.signal)
+        try {
+          await replayHost(host, owner, coordinator, cancellation.signal)
+        } catch (error) {
+          console.warn('Wear notification replay failed for host', host.id, error)
+        }
       }
     })
     await Promise.all(workers)
