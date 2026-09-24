@@ -38,7 +38,7 @@ export class RelayRuntimeServices {
   ) {
     const context = new RelayContext()
     this.registerSessionHandlers(context)
-    this.ptyHandler = new PtyHandler(dispatcher, graceTimeMs)
+    this.ptyHandler = new PtyHandler(dispatcher, graceTimeMs, launchVersion)
     this.ptyConsumerSessionAdapter = new SshPtyConsumerSessionAdapter(
       dispatcher,
       launchVersion,

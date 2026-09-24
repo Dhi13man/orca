@@ -1918,3 +1918,17 @@ changed its visible phone-snapshot timestamp from 4:12 to 4:13 AM. This proves
 an app-specific forced background-job wake and publication on the paired
 emulators, not natural periodic timing, screen-off/Doze, host-originated push,
 or physical-device acceptance. No physical device or real agent was touched.
+
+SSH relay now has a narrow exact-incarnation PTY write prerequisite. Its
+optional `wearPromptWriteVersion` capability announces `pty.writeIfIncarnation`;
+the method checks the proved primary relay owner, rejects stale channels,
+validates bounded input, and rechecks the live PTY incarnation immediately
+before using the existing ingress/echo path. Sixty-eight targeted relay tests
+passed (twelve existing skips), as did node typecheck, scoped lint/format, and
+independent read-only review. This method is deliberately not wired into Wear
+send yet: `written: true` means only that `node-pty.write` was invoked, and a
+replayed request would write again. SSH Wear replies remain disabled until a
+host-owned durable reservation suppresses replay and the runtime probes this
+capability before use; the Node 18 storage decision remains open. The current
+paired watch emulator lists Host 2 connected with zero agents and Host 1
+inventory incomplete, so it has no verified idle target for a reply test.

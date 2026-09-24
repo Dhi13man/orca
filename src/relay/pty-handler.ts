@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto'
 import { resolveWindowsGitBashShellPath } from '../main/git-bash'
 import { WINDOWS_GIT_BASH_SHELL } from '../shared/windows-terminal-shell'
 import type { RelayDispatcher, RequestContext } from './dispatcher'
+import { relayPrimaryOwnerPrincipal } from './relay-primary-channel-proof'
 import {
   resolveDefaultShell,
   resolveDefaultCwd,
@@ -470,7 +471,11 @@ export class PtyHandler {
     Promise<RelayAgentSessionCreateResult>
   >()
 
-  constructor(dispatcher: RelayDispatcher, graceTimeMs = DEFAULT_GRACE_TIME_MS) {
+  constructor(
+    dispatcher: RelayDispatcher,
+    graceTimeMs = DEFAULT_GRACE_TIME_MS,
+    private readonly launchVersion: string | null = null
+  ) {
     this.dispatcher = dispatcher
     this.graceTimeMs = graceTimeMs
     this.registerHandlers()
@@ -956,8 +961,12 @@ export class PtyHandler {
     this.dispatcher.onRequest('pty.getCapabilities', async () => ({
       startupIngressVersion: PTY_STARTUP_INGRESS_VERSION,
       agentSessionClaimVersion: AGENT_SESSION_EXECUTION_OWNER_PROTOCOL_VERSION,
-      agentSessionCreateOperationVersion: AGENT_SESSION_CREATE_OPERATION_PROTOCOL_VERSION
+      agentSessionCreateOperationVersion: AGENT_SESSION_CREATE_OPERATION_PROTOCOL_VERSION,
+      wearPromptWriteVersion: 1
     }))
+    this.dispatcher.onRequest('pty.writeIfIncarnation', (p, context) =>
+      this.writeIfIncarnation(p, context)
+    )
     this.dispatcher.onRequest('pty.listProcesses', () => this.listProcesses())
     this.dispatcher.onRequest('pty.getDefaultShell', async () => resolveDefaultShell())
     this.dispatcher.onRequest('pty.serialize', (p) => this.serialize(p))
@@ -1916,15 +1925,57 @@ export class PtyHandler {
     }
     const managed = this.ptys.get(id)
     if (managed && !managed.disposed) {
-      this.lastInputAtByPty.set(id, performance.now())
-      this.interactiveOutputCharsByPty.set(id, 0)
-      // Relay PTYs need the local provider's cooked-echo containment (#13137).
-      // DA1/CPR stay immediate unless an echo-risk reply is already held (#13892, #15559).
-      if (managed.startupIngress?.answerLiveQueryReply(data)) {
-        return
-      }
-      managed.pty.write(data)
+      this.writeToManagedPty(managed, data)
     }
+  }
+
+  private writeToManagedPty(managed: ManagedPty, data: string): boolean {
+    this.lastInputAtByPty.set(managed.id, performance.now())
+    this.interactiveOutputCharsByPty.set(managed.id, 0)
+    // Relay PTYs need the local provider's cooked-echo containment (#13137).
+    if (managed.startupIngress?.answerLiveQueryReply(data)) {
+      return false
+    }
+    managed.pty.write(data)
+    return true
+  }
+
+  private async writeIfIncarnation(
+    params: Record<string, unknown>,
+    context: RequestContext
+  ): Promise<{ written: boolean }> {
+    const identity = context.sessionIdentity
+    if (
+      context.isStale() ||
+      !this.launchVersion ||
+      !identity?.authenticated ||
+      !identity.allowSessionOwner ||
+      identity.principal !== relayPrimaryOwnerPrincipal(this.launchVersion)
+    ) {
+      throw new Error('wear_relay_primary_unproved')
+    }
+    const { id, incarnationId, data } = params
+    if (
+      typeof id !== 'string' ||
+      id.length === 0 ||
+      id.length > 256 ||
+      typeof incarnationId !== 'string' ||
+      incarnationId.length === 0 ||
+      incarnationId.length > 256 ||
+      typeof data !== 'string' ||
+      data.length === 0 ||
+      Buffer.byteLength(data, 'utf8') > 4_096
+    ) {
+      throw new Error('pty_guarded_write_invalid')
+    }
+    const managed = this.ptys.get(id)
+    if (!managed || managed.disposed || managed.incarnationId !== incarnationId) {
+      return { written: false }
+    }
+    if (context.isStale()) {
+      throw new Error('wear_relay_primary_unproved')
+    }
+    return { written: this.writeToManagedPty(managed, data) }
   }
 
   private resize(params: Record<string, unknown>): void {

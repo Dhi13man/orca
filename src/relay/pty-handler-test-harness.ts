@@ -3,11 +3,9 @@ import type { Mock } from 'vitest'
 import * as ptyShellUtils from './pty-shell-utils'
 import { PtyHandler } from './pty-handler'
 import type { RelayDispatcher } from './dispatcher'
+import type { RequestContext } from './dispatcher'
 
-export type TestRequestContext = {
-  isStale: () => boolean
-  signal?: AbortSignal
-}
+export type TestRequestContext = Pick<RequestContext, 'isStale'> & Partial<RequestContext>
 
 export function createMockDispatcher() {
   const requestHandlers = new Map<
@@ -108,7 +106,11 @@ export function beginPtyHandlerTest(mocks: PtyHandlerTestMocks): {
   mockPtySpawn.mockReturnValue({ ...mockPtyInstance })
 
   const dispatcher = createMockDispatcher()
-  const handler = new PtyHandler(dispatcher as unknown as RelayDispatcher)
+  const handler = new PtyHandler(
+    dispatcher as unknown as RelayDispatcher,
+    undefined,
+    'test-version'
+  )
   return { dispatcher, handler, originalPlatform }
 }
 
