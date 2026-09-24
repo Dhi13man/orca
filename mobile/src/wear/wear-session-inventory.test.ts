@@ -13,6 +13,81 @@ function worktree(
 }
 
 describe('Wear session inventory', () => {
+  it('projects exact terminal and structured agent identities without guessing stale state', () => {
+    const inventory = new WearSessionInventory(true)
+    inventory.accept({
+      type: 'snapshots',
+      authoritative: true,
+      snapshots: [
+        worktree(
+          'epoch-a',
+          4,
+          [
+            {
+              type: 'terminal',
+              id: 'term-a',
+              title: 'Build agent',
+              launchAgent: 'codex',
+              agentStatus: { state: 'working', updatedAt: now }
+            },
+            { type: 'agent-session', id: 'structured-a', title: 'Review agent' },
+            { type: 'terminal', id: 'plain', title: 'Codex' }
+          ],
+          'folder-a'
+        ),
+        worktree(
+          'epoch-b',
+          2,
+          [
+            {
+              type: 'terminal',
+              id: 'term-b',
+              title: 'Old task',
+              launchAgent: 'claude',
+              agentStatus: { state: 'waiting', updatedAt: now - 86_400_000 }
+            }
+          ],
+          'worktree-b'
+        )
+      ]
+    })
+    expect(inventory.rows(now)).toEqual([
+      {
+        workspaceId: 'folder-a',
+        sessionTabId: 'structured-a',
+        kind: 'structured',
+        title: 'Review agent',
+        state: null,
+        freshness: 'unavailable',
+        updatedAt: null,
+        targetPublicationEpoch: 'epoch-a',
+        targetSnapshotVersion: 4
+      },
+      {
+        workspaceId: 'folder-a',
+        sessionTabId: 'term-a',
+        kind: 'terminal',
+        title: 'Build agent',
+        state: 'working',
+        freshness: 'fresh',
+        updatedAt: now,
+        targetPublicationEpoch: 'epoch-a',
+        targetSnapshotVersion: 4
+      },
+      {
+        workspaceId: 'worktree-b',
+        sessionTabId: 'term-b',
+        kind: 'terminal',
+        title: 'Old task',
+        state: null,
+        freshness: 'stale',
+        updatedAt: now - 86_400_000,
+        targetPublicationEpoch: 'epoch-b',
+        targetSnapshotVersion: 2
+      }
+    ])
+  })
+
   it('counts explicit fresh terminal states and structured sessions without inferring agents from titles', () => {
     const inventory = new WearSessionInventory(true)
     expect(

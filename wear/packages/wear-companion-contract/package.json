@@ -7,6 +7,7 @@
     ".": "./src/action.ts",
     "./dashboard": "./src/dashboard.ts",
     "./host-page": "./src/host-page.ts",
+    "./agent-page": "./src/agent-page.ts",
     "./receipt": "./src/receipt.ts",
     "./package.json": "./package.json"
   },

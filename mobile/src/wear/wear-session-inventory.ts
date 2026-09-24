@@ -3,8 +3,20 @@ import { UNPUBLISHED_WORKTREE_PUBLICATION_EPOCH } from '../../../src/shared/runt
 import type { WearDashboardHost } from '@orca/wear-companion-contract/dashboard'
 
 type AgentTab =
-  | { type: 'agent-session'; id: string }
-  | { type: 'terminal'; id: string; launchAgent?: unknown; agentStatus?: unknown }
+  | { type: 'agent-session'; id: string; title: string }
+  | { type: 'terminal'; id: string; title: string; launchAgent?: unknown; agentStatus?: unknown }
+
+export type WearSessionAgentRow = {
+  workspaceId: string
+  sessionTabId: string
+  kind: 'terminal' | 'structured'
+  title: string
+  state: 'working' | 'blocked' | 'waiting' | 'done' | null
+  freshness: 'fresh' | 'stale' | 'unavailable'
+  updatedAt: number | null
+  targetPublicationEpoch: string
+  targetSnapshotVersion: number
+}
 
 type InventorySnapshot = {
   worktree: string
@@ -21,6 +33,24 @@ export type WearSessionInventorySummary = {
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function agentTitle(value: unknown, fallback: string): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    return fallback
+  }
+  let title = ''
+  let bytes = 0
+  for (const character of value.trim()) {
+    const codepoint = character.codePointAt(0)!
+    const size = codepoint <= 0x7f ? 1 : codepoint <= 0x7ff ? 2 : codepoint <= 0xffff ? 3 : 4
+    if (bytes + size > 256) {
+      break
+    }
+    title += character
+    bytes += size
+  }
+  return title
 }
 
 function snapshot(value: unknown): InventorySnapshot | null {
@@ -44,11 +74,12 @@ function snapshot(value: unknown): InventorySnapshot | null {
     }
     seen.add(item.id)
     if (item.type === 'agent-session') {
-      tabs.push({ type: 'agent-session', id: item.id })
+      tabs.push({ type: 'agent-session', id: item.id, title: agentTitle(item.title, 'Agent') })
     } else if (item.type === 'terminal') {
       tabs.push({
         type: 'terminal',
         id: item.id,
+        title: agentTitle(item.title, 'Agent'),
         launchAgent: item.launchAgent,
         agentStatus: item.agentStatus
       })
@@ -227,6 +258,37 @@ export class WearSessionInventory {
       agentCounts: { total, working, needsAttention },
       lastActivityAt
     }
+  }
+
+  rows(now: number): WearSessionAgentRow[] {
+    const rows: WearSessionAgentRow[] = []
+    for (const item of this.snapshots.values()) {
+      for (const tab of item.tabs) {
+        if (
+          tab.type === 'terminal' &&
+          (typeof tab.launchAgent !== 'string' || !tab.launchAgent) &&
+          !explicitAgentStatus(tab.agentStatus, now)
+        ) {
+          continue
+        }
+        const status = tab.type === 'terminal' ? explicitAgentStatus(tab.agentStatus, now) : null
+        rows.push({
+          workspaceId: item.worktree,
+          sessionTabId: tab.id,
+          kind: tab.type === 'agent-session' ? 'structured' : 'terminal',
+          title: tab.title,
+          state: status?.fresh ? status.state : null,
+          freshness: status ? (status.fresh ? 'fresh' : 'stale') : 'unavailable',
+          updatedAt: status?.updatedAt ?? null,
+          targetPublicationEpoch: item.publicationEpoch,
+          targetSnapshotVersion: item.snapshotVersion
+        })
+      }
+    }
+    return rows.sort(
+      (a, b) =>
+        a.workspaceId.localeCompare(b.workspaceId) || a.sessionTabId.localeCompare(b.sessionTabId)
+    )
   }
 
   nextFreshnessExpiry(now: number): number | null {

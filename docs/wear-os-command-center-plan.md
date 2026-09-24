@@ -94,7 +94,7 @@ The watch answers three questions without pulling out the phone: **who needs me,
 "ALL paired machines and ALL agent types" is a scope commitment, not an aspiration: every host the user has paired with Orca belongs in the watch's catalog with no subset, and both terminal-backed and structured agent sessions belong in the watch's agent inventory. Two clarifications keep this bounded rather than unbounded, matching "complete discovery is not unbounded subscriptions or scrolling transcripts" — neither is a coverage exclusion:
 
 - **Host catalog completeness vs. live-connection concurrency are different things.** Every paired host is always visible with its cached/stale state. Only a bounded number hold a concurrently *live* socket at once — a background-concurrency policy sized from Phase 0's radio/battery evidence and the on-screen host's own slot, never a fixed number chosen in advance and never a reason a host is missing from the catalog (see Phase 1 below).
-- **Structured agent-session parity is bounded and in-scope, not a deferral — but inventory visibility and messaging are two separate problems.** `session-tab-agent-status-projection.ts` hard-filters structured `agent-session` tabs out of every `session.tabs.subscribeAll`/`listAll` payload whenever `clientKind === 'mobile'`, and separately filters out every Codex structured tab even for clients that do see structured tabs — before any Wear-specific code runs, and Orca mobile's own phone screens cannot see them today either. Lifting the first filter (Phase 1, decision 11) makes structured agents *visible* in the catalog; it does not by itself give the watch a way to read or send messages for them, because structured sessions use a different outbox/state model (`StructuredAgentSessionOutbox`) than the terminal-backed native-chat path this plan's messaging design is built around. Reaching complete "all agent types" — inventory and messaging together, for every agent kind including Codex — requires the Phase 0 code-audit and Phase 2 per-agent-kind/per-host-path acceptance named in decision 11; until that audit closes, treat structured-session messaging coverage as a named open gap, not an assumed extension of the terminal-backed design below.
+- **Structured agent-session parity is bounded and in-scope, but inventory visibility and messaging are separate problems.** The current `session-tab-agent-status-projection.ts` publishes Codex structured tabs to mobile clients that negotiate `agent-session.structured.v1`; old clients remain filtered. The phone's Wear inventory observer negotiates that capability and counts these rows, but does not yet publish their identities to the watch. Structured sessions use a different outbox/state model (`StructuredAgentSessionOutbox`) from terminal-backed native chat. Reaching complete inventory and messaging across every agent kind and host path still requires the Phase 2 acceptance gates; the current capability and count do not prove structured replies.
 - **Usage is deduplicated by provider account, not by host count.** The same Claude or Codex account can be paired on multiple hosts; the dashboard and per-host usage screens present one true figure per *verified* provider account (see `wear.dashboard.v1`'s `usageGroups[]` design in "Phone/watch contract"), never N potentially-conflicting copies that could each claim a different remaining-quota number for the same account. An account whose identity the phone cannot verify across hosts stays explicitly separate rather than being guessed-merged.
 
 - Pair the watch with Orca's Android companion and discover every one of the phone's paired Orca hosts without rescanning every desktop code.
@@ -1096,3 +1096,15 @@ Refresh machines restarts it, while snapshot-bound pagination remains open.
 Agent detail, real conversations and structured/SSH replies, notifications,
 background refresh, all-host freshness, and installed physical acceptance
 remain open.
+
+The next agent-detail foundation retains bounded terminal and structured tab
+identities, titles, explicit status freshness, and publication fences in the
+existing phone Wear inventory. A portable `wear.agent-page.v1` contract and
+projection define 12-row pages, a content-derived inventory cursor, exact
+binding/action/dashboard/host fields, and nullable workspace kind when the
+host's folder catalog is unavailable. Two contract and seven phone inventory/
+projection tests pass. This foundation does not answer `readHostAgents` yet:
+selected-host RPC acquisition, native PAGE delivery, watch rendering, and
+all-host folder/SSH/structured acceptance remain open. The earlier plan text
+that said negotiated mobile clients could not see Codex structured tabs was
+corrected against the current capability-gated runtime projection.
