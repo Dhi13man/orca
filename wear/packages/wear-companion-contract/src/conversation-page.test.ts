@@ -32,6 +32,13 @@ function page(): WearConversationPage {
 }
 
 describe('Wear conversation page', () => {
+  it('accepts bounded peer clock skew without extending absolute expiry', () => {
+    const encoded = encodeWearConversationPage(page())
+    expect(decodeWearConversationPage(encoded, now - 30_000).ok).toBe(true)
+    expect(decodeWearConversationPage(encoded, now - 30_001).ok).toBe(false)
+    expect(decodeWearConversationPage(encoded, now + 120_000).ok).toBe(false)
+  })
+
   it('round trips an exact target-bound text tail and expires it', () => {
     const encoded = encodeWearConversationPage(page())
     expect(decodeWearConversationPage(encoded, now)).toEqual({ ok: true, page: page() })

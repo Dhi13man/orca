@@ -24,6 +24,7 @@ export type HostPageDecodeResult =
 const MAX_BYTES = 32_768 - 512
 const MAX_PAGE_HOSTS = 16
 const MAX_AGE_MS = 120_000
+const WEAR_RECEIVER_CLOCK_SKEW_MS = 30_000
 const keys = [
   'schemaVersion',
   'bindingId',
@@ -106,7 +107,7 @@ export function decodeWearHostPage(serialized: string, now: number): HostPageDec
   if (!valid(value)) {
     return { ok: false, reason: 'invalid-page' }
   }
-  if (value.expiresAt - now > MAX_AGE_MS) {
+  if (value.expiresAt - now > MAX_AGE_MS + WEAR_RECEIVER_CLOCK_SKEW_MS) {
     return { ok: false, reason: 'invalid-page' }
   }
   if (value.expiresAt <= now) {

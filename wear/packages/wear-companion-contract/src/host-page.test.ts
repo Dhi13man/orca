@@ -31,6 +31,13 @@ function page(): WearHostPage {
 }
 
 describe('Wear host page', () => {
+  it('accepts bounded peer clock skew without extending absolute expiry', () => {
+    const encoded = encodeWearHostPage(page())
+    expect(decodeWearHostPage(encoded, now - 30_000).ok).toBe(true)
+    expect(decodeWearHostPage(encoded, now - 30_001).ok).toBe(false)
+    expect(decodeWearHostPage(encoded, now + 120_000).ok).toBe(false)
+  })
+
   it('round trips a request-correlated page and expires it', () => {
     const encoded = encodeWearHostPage(page())
     expect(decodeWearHostPage(encoded, now)).toEqual({ ok: true, page: page() })
@@ -54,7 +61,7 @@ describe('Wear host page', () => {
     expect(decodeWearHostPage(JSON.stringify({ ...valid, offset: 19 }), now).ok).toBe(false)
     expect(
       decodeWearHostPage(
-        JSON.stringify({ ...valid, generatedAt: now + 1, expiresAt: now + 120_001 }),
+        JSON.stringify({ ...valid, generatedAt: now + 30_001, expiresAt: now + 150_001 }),
         now
       ).ok
     ).toBe(false)

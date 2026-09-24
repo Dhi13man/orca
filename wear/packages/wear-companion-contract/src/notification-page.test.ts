@@ -27,6 +27,14 @@ const page: WearNotificationPage = {
 }
 
 describe('Wear notification PAGE contract', () => {
+  it('accepts bounded peer clock skew without extending absolute expiry', () => {
+    const fullLifetime = { ...page, expiresAt: now + 120_000 }
+    const encoded = encodeWearNotificationPage(fullLifetime)
+    expect(decodeWearNotificationPage(encoded, now - 30_000).ok).toBe(true)
+    expect(decodeWearNotificationPage(encoded, now - 30_001).ok).toBe(false)
+    expect(decodeWearNotificationPage(encoded, fullLifetime.expiresAt).ok).toBe(false)
+  })
+
   it('accepts a bounded transient page and rejects undisclosed fields', () => {
     expect(decodeWearNotificationPage(encodeWearNotificationPage(page), now)).toEqual({
       ok: true,

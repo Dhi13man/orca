@@ -55,14 +55,14 @@ internal object WearReceiptCodec {
         return WearReceipt(json.getString("bindingId"), json.getString("requestId"),
             json.getString("actionHash"), json.getString("status"),
             if (reason == JSONObject.NULL) null else reason as String, expiration.toLong())
-            .also { validate(it, now) }
+            .also { validate(it, now, WEAR_RECEIVER_CLOCK_SKEW_MS) }
     }
 
-    private fun validate(receipt: WearReceipt, now: Long) {
+    private fun validate(receipt: WearReceipt, now: Long, clockSkew: Long = 0) {
         require(receipt.bindingId.isNotEmpty() && receipt.bindingId.toByteArray(Charsets.UTF_8).size <= 256)
         require(receipt.requestId.isNotEmpty() && receipt.requestId.toByteArray(Charsets.UTF_8).size <= 256)
         require(hashPattern.matches(receipt.actionHash))
         require(validOutcome(receipt.status, receipt.reason))
-        require(receipt.expiresAt > now && receipt.expiresAt - now <= 120_000)
+        require(receipt.expiresAt > now && receipt.expiresAt - now <= 120_000 + clockSkew)
     }
 }

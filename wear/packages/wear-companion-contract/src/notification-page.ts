@@ -1,4 +1,5 @@
 import { utf8Length } from './utf8'
+const WEAR_RECEIVER_CLOCK_SKEW_MS = 30_000
 
 export type WearNotificationRow = {
   eventKey: string
@@ -137,7 +138,7 @@ export function decodeWearNotificationPage(
   } catch {
     return { ok: false, reason: 'invalid-page' }
   }
-  if (!valid(value) || value.expiresAt - now > 120_000) {
+  if (!valid(value) || value.expiresAt - now > 120_000 + WEAR_RECEIVER_CLOCK_SKEW_MS) {
     return { ok: false, reason: 'invalid-page' }
   }
   if (value.expiresAt <= now) {

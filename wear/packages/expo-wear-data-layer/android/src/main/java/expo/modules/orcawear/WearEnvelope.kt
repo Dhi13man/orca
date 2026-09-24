@@ -11,6 +11,8 @@ import javax.crypto.Cipher
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
+internal const val WEAR_RECEIVER_CLOCK_SKEW_MS = 30_000L
+
 internal enum class WearEnvelopeKind(val segment: String, val sender: CompanionRole?) {
     ACTION("action", CompanionRole.WATCH),
     DASHBOARD("dashboard", CompanionRole.PHONE),
@@ -64,7 +66,7 @@ internal class WearEnvelope(
         val metadata = WearEnvelopeMetadata(readText(input), kind, readText(input),
             input.readLong(), readText(input), input.readLong())
         if (kind == WearEnvelopeKind.ACTION) require(wire.size <= 8192)
-        validate(metadata, now, 30_000)
+        validate(metadata, now, WEAR_RECEIVER_CLOCK_SKEW_MS)
         require(metadata.path == path) { "wear_envelope_wrong_path" }
         val nonce = ByteArray(12).also { input.readFully(it) }
         val headerSize = wire.size - stream.available()
@@ -81,7 +83,7 @@ internal class WearEnvelope(
                 plaintext.fill(0)
                 error("wear_action_too_large")
             }
-            try { validate(metadata, Math.addExact(now, elapsedRealtime() - started), 30_000) }
+            try { validate(metadata, Math.addExact(now, elapsedRealtime() - started), WEAR_RECEIVER_CLOCK_SKEW_MS) }
             catch (error: Exception) {
                 plaintext.fill(0)
                 throw error

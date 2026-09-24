@@ -1201,3 +1201,11 @@ phone snapshot timestamp and attention counts. This proves native binding
 and paired DASHBOARD delivery on disposable emulators. Command PAGE delivery,
 real host data and replies, autonomous background behavior, and physical
 watch acceptance remain unproved.
+
+Both release APKs were rebuilt from clean product source and updated on that
+disposable pair without losing the binding; the watch received a newer phone
+snapshot. The only catalog host on that emulator reports authentication
+unavailable, so this does not prove host PAGE or reply delivery. Receiver PAGE
+and receipt decoders now share the envelope's bounded 30-second clock-skew
+allowance while sender lifetime and absolute expiry remain strict; focused
+contract tests and 73 API-36 native instrumentation tests pass.

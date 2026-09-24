@@ -12,6 +12,14 @@ const receipt: WearReceipt = {
 }
 
 describe('Wear receipt contract', () => {
+  it('accepts bounded receiver skew while keeping sender and expiry strict', () => {
+    const wire = encodeWearReceipt(receipt, 0)
+    expect(decodeWearReceipt(wire, -30_000).ok).toBe(true)
+    expect(decodeWearReceipt(wire, -30_001).ok).toBe(false)
+    expect(decodeWearReceipt(wire, receipt.expiresAt).ok).toBe(false)
+    expect(() => encodeWearReceipt(receipt, -1)).toThrow()
+  })
+
   it('round-trips bounded accepted, rejected, and unknown outcomes', () => {
     for (const value of [
       receipt,

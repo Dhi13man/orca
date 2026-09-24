@@ -39,6 +39,7 @@ export type AgentPageDecodeResult =
 
 const MAX_BYTES = 32_768 - 512
 const MAX_AGE_MS = 120_000
+const WEAR_RECEIVER_CLOCK_SKEW_MS = 30_000
 const MAX_PAGE_AGENTS = 12
 const HASH = /^[0-9a-f]{64}$/
 const pageKeys = [
@@ -181,7 +182,7 @@ export function decodeWearAgentPage(serialized: string, now: number): AgentPageD
   } catch {
     return { ok: false, reason: 'invalid-page' }
   }
-  if (!valid(value) || value.expiresAt - now > MAX_AGE_MS) {
+  if (!valid(value) || value.expiresAt - now > MAX_AGE_MS + WEAR_RECEIVER_CLOCK_SKEW_MS) {
     return { ok: false, reason: 'invalid-page' }
   }
   return value.expiresAt <= now ? { ok: false, reason: 'expired' } : { ok: true, page: value }

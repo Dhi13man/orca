@@ -36,6 +36,13 @@ const page: WearAgentPage = {
 }
 
 describe('Wear agent PAGE', () => {
+  it('accepts bounded peer clock skew without extending absolute expiry', () => {
+    const encoded = encodeWearAgentPage(page)
+    expect(decodeWearAgentPage(encoded, now - 30_000).ok).toBe(true)
+    expect(decodeWearAgentPage(encoded, now - 30_001).ok).toBe(false)
+    expect(decodeWearAgentPage(encoded, page.expiresAt).ok).toBe(false)
+  })
+
   it('round trips an exact request-bound page and expires it', () => {
     expect(decodeWearAgentPage(encodeWearAgentPage(page), now)).toEqual({ ok: true, page })
     expect(decodeWearAgentPage(JSON.stringify(page), now + 120_000)).toEqual({

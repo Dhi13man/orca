@@ -1,4 +1,5 @@
 import { utf8Length } from './utf8'
+const WEAR_RECEIVER_CLOCK_SKEW_MS = 30_000
 
 export const wearReceiptReasons = [
   'invalid-action',
@@ -72,13 +73,19 @@ export function decodeWearReceipt(serialized: string, now: number): ReceiptDecod
   ) {
     return { ok: false, reason: 'invalid-receipt' }
   }
-  if ((row.expiresAt as number) <= now || (row.expiresAt as number) - now > 120_000) {
+  if (
+    (row.expiresAt as number) <= now ||
+    (row.expiresAt as number) - now > 120_000 + WEAR_RECEIVER_CLOCK_SKEW_MS
+  ) {
     return { ok: false, reason: 'expired' }
   }
   return { ok: true, receipt: row as WearReceipt }
 }
 
 export function encodeWearReceipt(receipt: WearReceipt, now: number): string {
+  if (receipt.expiresAt - now > 120_000) {
+    throw new Error('Invalid Wear receipt: expired')
+  }
   const serialized = JSON.stringify(
     Object.fromEntries(receiptKeys.map((key) => [key, receipt[key]]))
   )
