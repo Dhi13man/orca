@@ -1,8 +1,9 @@
+import * as ExpoCrypto from 'expo-crypto'
 import { encodeWearHostPage, type WearHostPage } from '@orca/wear-companion-contract/host-page'
 import type { HostCatalogEntry } from '../transport/types'
 import { wearHostDisplayName } from './wear-dashboard-projection'
 
-export function projectWearHostPage(input: {
+export async function projectWearHostPage(input: {
   bindingId: string
   requestId: string
   actionHash: string
@@ -11,13 +12,24 @@ export function projectWearHostPage(input: {
   cursor: string | null
   now: number
   catalog: readonly HostCatalogEntry[]
-}): WearHostPage {
+}): Promise<WearHostPage> {
   const hosts = [...input.catalog].sort((a, b) => a.id.localeCompare(b.id))
   if (new Set(hosts.map((host) => host.id)).size !== hosts.length) {
     throw new Error('Duplicate paired host')
   }
-  const offset = input.cursor === null ? 0 : hosts.findIndex((host) => host.id === input.cursor) + 1
-  if (input.cursor !== null && offset === 0) {
+  const catalogKey = await ExpoCrypto.digestStringAsync(
+    ExpoCrypto.CryptoDigestAlgorithm.SHA256,
+    JSON.stringify(hosts.map((host) => [host.id, host.name, host.credentialStatus]))
+  )
+  const offset = input.cursor === null ? 0 : Number(input.cursor.slice(catalogKey.length + 1))
+  if (
+    input.cursor !== null &&
+    (!input.cursor.startsWith(`${catalogKey}:`) ||
+      !Number.isSafeInteger(offset) ||
+      offset < 1 ||
+      `${catalogKey}:${offset}` !== input.cursor ||
+      offset >= hosts.length)
+  ) {
     throw new Error('Wear host cursor is stale')
   }
   const pageHosts = hosts.slice(offset, offset + 16).map((host) => ({
@@ -43,7 +55,8 @@ export function projectWearHostPage(input: {
     total: hosts.length,
     offset,
     hosts: pageHosts,
-    nextCursor: offset + pageHosts.length < hosts.length ? pageHosts.at(-1)!.hostId : null
+    nextCursor:
+      offset + pageHosts.length < hosts.length ? `${catalogKey}:${offset + pageHosts.length}` : null
   }
   encodeWearHostPage(page)
   return page

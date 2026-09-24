@@ -97,7 +97,9 @@ type WearDataLayerModule = {
   ): Promise<void>
   readDashboard(bindingId: string): Promise<WearNativeDashboard | null>
   sendHostPage(bindingId: string, requestId: string, serialized: string): Promise<void>
+  sendAgentPage(bindingId: string, requestId: string, serialized: string): Promise<void>
   readHostPage(bindingId: string, requestId: string): Promise<WearNativeHostPage | null>
+  readAgentPage(bindingId: string, requestId: string): Promise<WearNativeHostPage | null>
   claimAction(): Promise<WearClaimedAction | null>
   commitActionHandoff(
     bindingId: string,

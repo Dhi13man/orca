@@ -14,6 +14,7 @@ export type WearSessionAgentRow = {
   state: 'working' | 'blocked' | 'waiting' | 'done' | null
   freshness: 'fresh' | 'stale' | 'unavailable'
   updatedAt: number | null
+  freshUntil: number | null
   targetPublicationEpoch: string
   targetSnapshotVersion: number
 }
@@ -280,6 +281,7 @@ export class WearSessionInventory {
           state: status?.fresh ? status.state : null,
           freshness: status ? (status.fresh ? 'fresh' : 'stale') : 'unavailable',
           updatedAt: status?.updatedAt ?? null,
+          freshUntil: status?.fresh ? status.updatedAt + AGENT_STATUS_STALE_AFTER_MS : null,
           targetPublicationEpoch: item.publicationEpoch,
           targetSnapshotVersion: item.snapshotVersion
         })

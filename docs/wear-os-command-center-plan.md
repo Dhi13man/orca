@@ -1090,9 +1090,9 @@ checks the action hash, binding, epoch, revision, cursor, and offset before
 display. Ten phone, four focused Wear, and 67 API-36 native tests pass;
 phone/watch typechecks, native Kotlin compile, Wear release APK build, and
 disposable Wear emulator install/start pass. This does not prove paired PAGE
-delivery: no physical watch endpoint is online. Pagination is a live catalog
-walk, so same-count pairing changes ahead of a cursor can omit a machine;
-Refresh machines restarts it, while snapshot-bound pagination remains open.
+delivery: no physical watch endpoint is online. A content-derived cursor now
+rejects a changed paired-host catalog between pages; Refresh machines restarts
+the walk.
 Agent detail, real conversations and structured/SSH replies, notifications,
 background refresh, all-host freshness, and installed physical acceptance
 remain open.
@@ -1108,3 +1108,20 @@ selected-host RPC acquisition, native PAGE delivery, watch rendering, and
 all-host folder/SSH/structured acceptance remain open. The earlier plan text
 that said negotiated mobile clients could not see Codex structured tabs was
 corrected against the current capability-gated runtime projection.
+
+The selected-host agent path now reads terminal and structured tab inventory
+through one negotiated paired-host client, projects bounded 12-row pages with
+current publication fences and status deadlines, and sends only a journal-
+correlated encrypted PAGE. Native final-send admission rechecks the action,
+current publication, and expiry; the watch checks the exact request, action
+hash, binding, dashboard, host, cursor, and offset before rendering. Changed
+host catalogs and agent inventories invalidate their content-derived cursors.
+The watch hides unavailable machine pages, downgrades unavailable/expired
+agent status, and refreshes expiry on foreground resume. Twenty-three focused
+phone and eight Wear tests, 68 API-36 native tests, both TypeScript checks,
+native phone Kotlin compile, scoped lint/format, and a Wear release build and
+disposable emulator install/start pass. Emulator start proves only launch of
+the unbound app; actual paired PAGE delivery and visible bound-agent state are
+unproved. Conversation reads, exact-target reply UI and structured/SSH sends,
+usage/notification background refresh, physical installation, and end-to-end
+acceptance remain open.

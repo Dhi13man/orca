@@ -20,13 +20,13 @@ function page(): WearHostPage {
     actionHash: 'a'.repeat(64),
     publisherEpoch: 'epoch-a',
     revision: 4,
-    cursor: 'host-before',
+    cursor: `${'b'.repeat(64)}:3`,
     generatedAt: now,
     expiresAt: now + 120_000,
     total: 20,
     offset: 3,
     hosts: [host],
-    nextCursor: 'host-a'
+    nextCursor: `${'b'.repeat(64)}:4`
   }
 }
 

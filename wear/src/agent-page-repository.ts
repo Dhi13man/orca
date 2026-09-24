@@ -1,31 +1,35 @@
 import {
-  decodeWearHostPage,
-  type WearHostPage
-} from '../packages/wear-companion-contract/src/host-page'
+  decodeWearAgentPage,
+  type WearAgentPage
+} from '../packages/wear-companion-contract/src/agent-page'
 import type { WearDashboard } from '../packages/wear-companion-contract/src/dashboard'
 import type { WearNativeHostPage } from '@orca/expo-wear-data-layer'
 import { matchesWearPageEnvelope } from './wear-page-correlation'
 
-export type HostPageRequest = {
+export type AgentPageRequest = {
   bindingId: string
   requestId: string
   actionHash: string
+  hostId: string
   cursor: string | null
   offset: number
 }
 
-export function acceptHostPage(
+export function acceptAgentPage(
   native: WearNativeHostPage,
-  request: HostPageRequest,
+  request: AgentPageRequest,
   dashboard: WearDashboard,
   now: number
-): WearHostPage | null {
-  const decoded = decodeWearHostPage(native.serialized, now)
+): WearAgentPage | null {
+  const decoded = decodeWearAgentPage(native.serialized, now)
   if (!decoded.ok) {
     return null
   }
   const page = decoded.page
-  if (!matchesWearPageEnvelope(native, page, request, dashboard, now)) {
+  if (
+    !matchesWearPageEnvelope(native, page, request, dashboard, now) ||
+    page.hostId !== request.hostId
+  ) {
     return null
   }
   return page

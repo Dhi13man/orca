@@ -10,7 +10,8 @@ export function HostPagesView({
   total,
   nextCursor,
   onBack,
-  onLoad
+  onLoad,
+  onSelectHost
 }: {
   status: 'idle' | 'loading' | 'ready' | 'unavailable'
   hosts: WearDashboardHost[]
@@ -18,6 +19,7 @@ export function HostPagesView({
   nextCursor: string | null
   onBack: () => void
   onLoad: (cursor: string | null) => void
+  onSelectHost: (hostId: string) => void
 }) {
   return (
     <View style={styles.section}>
@@ -25,11 +27,12 @@ export function HostPagesView({
       <Text accessibilityRole="header" style={styles.heading}>
         All machines
       </Text>
-      {hosts.map((host) => (
-        <View key={host.hostId} style={styles.card} accessible accessibilityRole="summary">
+      {(status === 'unavailable' ? [] : hosts).map((host) => (
+        <View key={host.hostId} style={styles.card}>
           <Text style={styles.title}>{host.displayName}</Text>
           <Text style={styles.detail}>{connectionLabel(host.connectionState)}</Text>
           <Text style={styles.detail}>Live agent inventory unavailable</Text>
+          <WearButton label="Open agents" quiet onPress={() => onSelectHost(host.hostId)} />
         </View>
       ))}
       {status === 'ready' ? (
@@ -43,19 +46,20 @@ export function HostPagesView({
           Phone response unavailable. The paired-machine list may have changed.
         </Text>
       ) : null}
-      {status !== 'loading' && (status === 'idle' || status === 'unavailable' || nextCursor) ? (
+      {status !== 'loading' &&
+      (status === 'idle' || status === 'unavailable' || (status === 'ready' && nextCursor)) ? (
         <WearButton
           label={
             status === 'idle'
               ? 'Load machines'
               : status === 'unavailable'
-                ? 'Retry'
+                ? 'Refresh machines'
                 : 'More machines'
           }
-          onPress={() => onLoad(hosts.length === 0 ? null : nextCursor)}
+          onPress={() => onLoad(status === 'ready' ? nextCursor : null)}
         />
       ) : null}
-      {hosts.length > 0 && status !== 'loading' ? (
+      {hosts.length > 0 && status === 'ready' ? (
         <WearButton label="Refresh machines" quiet onPress={() => onLoad(null)} />
       ) : null}
     </View>

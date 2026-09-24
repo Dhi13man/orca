@@ -21,6 +21,7 @@ const rows: WearSessionAgentRow[] = Array.from({ length: 14 }, (_, index) => ({
   state: index === 1 ? 'working' : null,
   freshness: index === 1 ? 'fresh' : 'unavailable',
   updatedAt: index === 1 ? now : null,
+  freshUntil: index === 1 ? now + 30 * 60_000 : null,
   targetPublicationEpoch: 'snapshot-a',
   targetSnapshotVersion: 4
 }))

@@ -48,4 +48,14 @@ class WearTransientPageStoreTest {
             decodeWearPageText(malformed)
         }
     }
+
+    @Test fun acceptsAgentPageShapeOnlyForTheExactOutstandingActionHash() {
+        val serialized = """{"schemaVersion":1,"bindingId":"$binding","requestId":"request","actionHash":"$hash","publisherEpoch":"$epoch","revision":4,"hostId":"host-a","inventoryKey":"${"b".repeat(64)}","inventoryAuthority":"authoritative","cursor":null,"generatedAt":0,"expiresAt":120000,"total":0,"offset":0,"agents":[],"nextCursor":null}"""
+        val store = WearTransientPageStore()
+        assertTrue(store.put(metadata, serialized, action, 1))
+        assertEquals(serialized, store.read(binding, "request", 1)?.serialized)
+        assertThrows(IllegalArgumentException::class.java) {
+            store.put(metadata, serialized.replace(hash, "c".repeat(64)), action, 1)
+        }
+    }
 }

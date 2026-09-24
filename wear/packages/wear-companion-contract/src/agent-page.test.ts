@@ -12,6 +12,7 @@ const agent = {
   state: null,
   freshness: 'unavailable' as const,
   updatedAt: null,
+  freshUntil: null,
   targetPublicationEpoch: 'snapshot-a',
   targetSnapshotVersion: 3
 }
@@ -66,7 +67,15 @@ describe('Wear agent PAGE', () => {
       decodeWearAgentPage(
         JSON.stringify({
           ...page,
-          agents: [{ ...agent, freshness: 'fresh', state: 'working', updatedAt: now + 400_000 }]
+          agents: [
+            {
+              ...agent,
+              freshness: 'fresh',
+              state: 'working',
+              updatedAt: now + 400_000,
+              freshUntil: now + 500_000
+            }
+          ]
         }),
         now
       ).ok

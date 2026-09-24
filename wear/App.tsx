@@ -5,8 +5,9 @@ import { WearButton } from './src/wear-button'
 import { wearColors } from './src/wear-theme'
 import { DashboardPages, type DashboardPage } from './src/dashboard-pages'
 import { usePhoneDashboard } from './src/use-phone-dashboard'
-import { useHostPages } from './src/use-host-pages'
+import { useHostPages, useAgentPages } from './src/use-wear-pages'
 import { HostPagesView } from './src/host-pages-view'
+import { AgentPagesView } from './src/agent-pages-view'
 
 export default function App() {
   const [state, setState] = useState<WearCompanionState | null>(
@@ -15,11 +16,16 @@ export default function App() {
   const [peers, setPeers] = useState<WearPeer[]>([])
   const [page, setPage] = useState<DashboardPage>('Attention')
   const [showAllMachines, setShowAllMachines] = useState(false)
+  const [selectedHostId, setSelectedHostId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const bindingId = state?.bindings?.[0]?.bindingId ?? null
   const dashboard = usePhoneDashboard(bindingId)
   const hostPages = useHostPages(dashboard.state === 'ready' ? dashboard.dashboard : null)
+  const agentPages = useAgentPages(
+    dashboard.state === 'ready' ? dashboard.dashboard : null,
+    selectedHostId
+  )
 
   useEffect(() => {
     if (!wearDataLayer) {
@@ -163,18 +169,30 @@ export default function App() {
                   onPress={() => {
                     setPage(name)
                     setShowAllMachines(false)
+                    setSelectedHostId(null)
                   }}
                 />
               ))}
             </View>
             <Text accessibilityRole="header" style={styles.heading}>
-              {showAllMachines ? 'All machines' : page}
+              {selectedHostId ? 'Agents' : showAllMachines ? 'All machines' : page}
             </Text>
-            {showAllMachines && dashboard.state === 'ready' ? (
+            {selectedHostId && dashboard.state === 'ready' ? (
+              <AgentPagesView
+                {...agentPages.state}
+                hostName={
+                  hostPages.state.hosts.find((host) => host.hostId === selectedHostId)
+                    ?.displayName ?? selectedHostId
+                }
+                onBack={() => setSelectedHostId(null)}
+                onLoad={(cursor) => void agentPages.load(cursor)}
+              />
+            ) : showAllMachines && dashboard.state === 'ready' ? (
               <HostPagesView
                 {...hostPages.state}
                 onBack={() => setShowAllMachines(false)}
                 onLoad={(cursor) => void hostPages.load(cursor)}
+                onSelectHost={setSelectedHostId}
               />
             ) : (
               <DashboardPages
@@ -182,6 +200,7 @@ export default function App() {
                 view={dashboard}
                 onAllMachines={() => {
                   setShowAllMachines(true)
+                  setSelectedHostId(null)
                   void hostPages.load(null)
                 }}
               />

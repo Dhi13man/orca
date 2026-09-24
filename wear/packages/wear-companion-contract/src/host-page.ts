@@ -77,7 +77,15 @@ function valid(value: unknown): value is WearHostPage {
     new Set(page.hosts.map((host: WearDashboardHost) => host.hostId)).size !== page.hosts.length ||
     (page.nextCursor !== null && !id(page.nextCursor)) ||
     (page.nextCursor !== null && page.nextCursor === page.cursor) ||
-    (page.nextCursor !== null && page.nextCursor !== page.hosts.at(-1)?.hostId) ||
+    (page.nextCursor !== null && !/^[0-9a-f]{64}:[1-9][0-9]*$/.test(page.nextCursor)) ||
+    (page.cursor !== null && !/^[0-9a-f]{64}:[1-9][0-9]*$/.test(page.cursor)) ||
+    (page.cursor === null && page.offset !== 0) ||
+    (page.cursor !== null && Number(page.cursor.slice(65)) !== page.offset) ||
+    (page.nextCursor !== null &&
+      Number(page.nextCursor.slice(65)) !== page.offset + page.hosts.length) ||
+    (page.cursor !== null &&
+      page.nextCursor !== null &&
+      page.cursor.slice(0, 64) !== page.nextCursor.slice(0, 64)) ||
     (page.nextCursor !== null) !== page.offset + page.hosts.length < page.total
   ) {
     return false

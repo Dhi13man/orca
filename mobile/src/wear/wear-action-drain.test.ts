@@ -8,16 +8,29 @@ const native = vi.hoisted(() => ({
   finishActionEffect: vi.fn(),
   sendJournalReceipt: vi.fn(),
   sendHostPage: vi.fn(),
+  sendAgentPage: vi.fn(),
   pendingJournalReceipts: vi.fn(),
   pendingJournalReconciliation: vi.fn()
 }))
 
 const requestWearHostCommand = vi.hoisted(() => vi.fn())
 const loadHostCatalog = vi.hoisted(() => vi.fn())
+const readWearHostAgentInventory = vi.hoisted(() => vi.fn())
+const projectWearAgentPage = vi.hoisted(() => vi.fn())
 
 vi.mock('@orca/expo-wear-data-layer', () => ({ wearDataLayer: native }))
 vi.mock('./wear-host-command-client', () => ({ requestWearHostCommand }))
 vi.mock('../transport/host-store', () => ({ loadHostCatalog }))
+vi.mock('./wear-host-agent-inventory', () => ({ readWearHostAgentInventory }))
+vi.mock('./wear-agent-page-projection', () => ({ projectWearAgentPage }))
+vi.mock('expo-crypto', async () => {
+  const { createHash } = await import('node:crypto')
+  return {
+    CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
+    digestStringAsync: async (_algorithm: string, value: string) =>
+      createHash('sha256').update(value).digest('hex')
+  }
+})
 
 import { drainWearActions } from './wear-action-drain'
 
@@ -38,6 +51,7 @@ describe('Wear action drain', () => {
     native.finishActionEffect.mockResolvedValue(true)
     native.sendJournalReceipt.mockResolvedValue(undefined)
     native.sendHostPage.mockResolvedValue(undefined)
+    native.sendAgentPage.mockResolvedValue(undefined)
     loadHostCatalog.mockResolvedValue([])
     native.pendingJournalReceipts.mockResolvedValue([
       { bindingId: 'binding', requestId: 'request' }
@@ -256,6 +270,76 @@ describe('Wear action drain', () => {
       null
     )
     expect(requestWearHostCommand).not.toHaveBeenCalled()
+  })
+
+  it('answers selected-host agent inventory only through its exact journal-backed PAGE', async () => {
+    const canonical = JSON.stringify({
+      schemaVersion: 1,
+      bindingId: 'binding',
+      requestId: 'agents-request',
+      expiresAt: Date.now() + 60_000,
+      action: 'readHostAgents',
+      target: { hostId: 'host-a' },
+      publisherEpoch: 'epoch',
+      expectedRevision: 4,
+      targetPublicationEpoch: null,
+      targetSnapshotVersion: null,
+      payload: { cursor: null }
+    })
+    const actionHash = createHash('sha256').update(canonical).digest('hex')
+    native.claimAction
+      .mockReset()
+      .mockResolvedValueOnce({
+        bindingId: 'binding',
+        requestId: 'agents-request',
+        actionHash,
+        claimToken: 'token',
+        canonical
+      })
+      .mockResolvedValue(null)
+    readWearHostAgentInventory.mockResolvedValue({
+      rows: [],
+      summary: { inventoryAuthority: 'authoritative' },
+      folderIds: new Set()
+    })
+    projectWearAgentPage.mockResolvedValue({
+      schemaVersion: 1,
+      bindingId: 'binding',
+      requestId: 'agents-request',
+      actionHash,
+      publisherEpoch: 'epoch',
+      revision: 4,
+      hostId: 'host-a',
+      inventoryKey: 'a'.repeat(64),
+      inventoryAuthority: 'authoritative',
+      cursor: null,
+      generatedAt: Date.now(),
+      expiresAt: Date.now() + 120_000,
+      total: 0,
+      offset: 0,
+      agents: [],
+      nextCursor: null
+    })
+    await drainWearActions()
+    expect(readWearHostAgentInventory).toHaveBeenCalledWith('host-a', expect.any(Number))
+    expect(native.sendAgentPage).toHaveBeenCalledWith(
+      'binding',
+      'agents-request',
+      expect.any(String)
+    )
+    expect(JSON.parse(native.sendAgentPage.mock.calls[0][2])).toMatchObject({
+      actionHash,
+      hostId: 'host-a',
+      publisherEpoch: 'epoch',
+      revision: 4
+    })
+    expect(native.finishActionEffect).toHaveBeenCalledWith(
+      'binding',
+      'agents-request',
+      actionHash,
+      'accepted',
+      null
+    )
   })
 
   it('queries a prior effect instead of resending after a process restart', async () => {

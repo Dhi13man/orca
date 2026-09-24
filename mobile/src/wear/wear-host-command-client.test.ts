@@ -14,9 +14,38 @@ vi.mock('../transport/wear-runtime-read-capability-session', () => ({
   startWearRuntimeReadCapabilitySession: mocks.startWearRuntimeReadCapabilitySession
 }))
 
-import { requestWearHostCommand } from './wear-host-command-client'
+import { requestWearHostCommand, withWearHostClient } from './wear-host-command-client'
 
 describe('Wear host command client', () => {
+  it('passes negotiated read capabilities to one selected-host request', async () => {
+    const client = { sendRequest: vi.fn() }
+    const owner = {
+      acquire: vi.fn(() => client),
+      getAllClients: () => [{ hostId: 'host-a', client }],
+      subscribeAllHosts: () => () => {},
+      releaseAndCloseIfUnused: vi.fn(),
+      retainLifetime: () => () => {}
+    }
+    mocks.getHostClientProcessOwner.mockReturnValue(owner)
+    mocks.loadHostCatalog.mockResolvedValue([
+      { id: 'host-a', credentialStatus: 'ready', profile: { id: 'host-a' } }
+    ])
+    const capabilities = {
+      authoritativeInventory: true,
+      structuredAgents: true,
+      exactTargets: false,
+      terminalSend: false
+    }
+    mocks.startWearRuntimeReadCapabilitySession.mockImplementation((_client, ready) => {
+      ready(capabilities)
+      return () => {}
+    })
+    const read = vi.fn(async (_client, negotiated) => negotiated.authoritativeInventory)
+    await expect(withWearHostClient('host-a', () => true, read)).resolves.toBe(true)
+    expect(read).toHaveBeenCalledWith(client, capabilities)
+    expect(owner.releaseAndCloseIfUnused).toHaveBeenCalledOnce()
+  })
+
   it('uses one acquired paired host and never sends twice on repeated capability callbacks', async () => {
     const response = {
       id: 'request',

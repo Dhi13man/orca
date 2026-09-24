@@ -9,6 +9,7 @@ export type WearAgentRow = {
   state: 'working' | 'blocked' | 'waiting' | 'done' | null
   freshness: 'fresh' | 'stale' | 'unavailable'
   updatedAt: number | null
+  freshUntil: number | null
   targetPublicationEpoch: string
   targetSnapshotVersion: number
 }
@@ -67,6 +68,7 @@ const rowKeys = [
   'state',
   'freshness',
   'updatedAt',
+  'freshUntil',
   'targetPublicationEpoch',
   'targetSnapshotVersion'
 ]
@@ -107,11 +109,18 @@ function row(value: unknown): value is WearAgentRow {
       ['working', 'blocked', 'waiting', 'done'].includes(value.state as string)) &&
     ['fresh', 'stale', 'unavailable'].includes(value.freshness as string) &&
     (value.updatedAt === null || integer(value.updatedAt)) &&
+    (value.freshUntil === null || integer(value.freshUntil)) &&
     id(value.targetPublicationEpoch) &&
     integer(value.targetSnapshotVersion) &&
-    (value.freshness !== 'fresh' || (value.state !== null && value.updatedAt !== null)) &&
-    (value.freshness !== 'unavailable' || (value.state === null && value.updatedAt === null)) &&
-    (value.freshness !== 'stale' || (value.state === null && value.updatedAt !== null))
+    (value.freshness !== 'fresh' ||
+      (value.state !== null &&
+        value.updatedAt !== null &&
+        typeof value.freshUntil === 'number' &&
+        value.freshUntil > (value.updatedAt as number))) &&
+    (value.freshness !== 'unavailable' ||
+      (value.state === null && value.updatedAt === null && value.freshUntil === null)) &&
+    (value.freshness !== 'stale' ||
+      (value.state === null && value.updatedAt !== null && value.freshUntil === null))
   )
 }
 
@@ -145,6 +154,10 @@ function valid(value: unknown): value is WearAgentPage {
     value.agents.every(
       (agent: WearAgentRow) =>
         agent.updatedAt === null || agent.updatedAt <= (value.generatedAt as number) + 300_000
+    ) &&
+    value.agents.every(
+      (agent: WearAgentRow) =>
+        agent.freshUntil === null || agent.freshUntil <= (value.generatedAt as number) + 3_600_000
     ) &&
     value.offset + value.agents.length <= value.total &&
     new Set(

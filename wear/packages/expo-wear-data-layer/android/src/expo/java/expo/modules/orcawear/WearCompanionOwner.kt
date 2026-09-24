@@ -360,7 +360,15 @@ internal class WearCompanionOwner private constructor(private val context: Conte
     }
 
     fun sendHostPage(bindingId: String, requestId: String, serialized: String,
-        completed: (Exception?) -> Unit) {
+        completed: (Exception?) -> Unit) =
+        sendPage(bindingId, requestId, serialized, "readHostPage", 13, completed)
+
+    fun sendAgentPage(bindingId: String, requestId: String, serialized: String,
+        completed: (Exception?) -> Unit) =
+        sendPage(bindingId, requestId, serialized, "readHostAgents", 16, completed)
+
+    private fun sendPage(bindingId: String, requestId: String, serialized: String,
+        expectedAction: String, expectedFields: Int, completed: (Exception?) -> Unit) {
         if (role != CompanionRole.PHONE) {
             completed(IllegalStateException("wear_page_wrong_role"))
             return
@@ -369,13 +377,13 @@ internal class WearCompanionOwner private constructor(private val context: Conte
             val now = System.currentTimeMillis()
             val record = actions.journalRecord(bindingId, requestId)
                 ?: error("wear_page_missing_journal")
-            check(record.actionName == "readHostPage" && record.state == "effect_started") {
+            check(record.actionName == expectedAction && record.state == "effect_started") {
                 "wear_page_wrong_action"
             }
             val page = JSONObject(serialized)
             val published = dashboards.publishedDashboard(bindingId)
                 ?: error("wear_page_no_dashboard")
-            check(page.length() == 13 && page.getString("bindingId") == bindingId &&
+            check(page.length() == expectedFields && page.getString("bindingId") == bindingId &&
                 page.getString("requestId") == requestId &&
                 page.getString("actionHash") == record.actionHash &&
                 page.getString("publisherEpoch") == published.publisherEpoch &&
@@ -394,7 +402,8 @@ internal class WearCompanionOwner private constructor(private val context: Conte
                         val current = dashboards.publishedDashboard(bindingId)
                         val action = actions.journalRecord(bindingId, requestId)
                         check(binding.state == "active" && action?.actionHash == record.actionHash &&
-                            admitsHostPageSend(metadata, current, action, System.currentTimeMillis())) {
+                            admitsPageSend(metadata, current, action, expectedAction,
+                                System.currentTimeMillis())) {
                             "wear_page_stale"
                         }
                         Wearable.getMessageClient(context)
@@ -410,6 +419,14 @@ internal class WearCompanionOwner private constructor(private val context: Conte
     }
 
     fun readHostPage(bindingId: String, requestId: String,
+        completed: (WearTransientPage?, Exception?) -> Unit) =
+        readPage(bindingId, requestId, completed)
+
+    fun readAgentPage(bindingId: String, requestId: String,
+        completed: (WearTransientPage?, Exception?) -> Unit) =
+        readPage(bindingId, requestId, completed)
+
+    private fun readPage(bindingId: String, requestId: String,
         completed: (WearTransientPage?, Exception?) -> Unit) {
         if (role != CompanionRole.WATCH) {
             completed(null, IllegalStateException("wear_page_wrong_role"))

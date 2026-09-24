@@ -1,7 +1,16 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { decodeWearHostPage } from '@orca/wear-companion-contract/host-page'
 import type { HostCatalogEntry } from '../transport/types'
 import { projectWearHostPage } from './wear-host-page-projection'
+
+vi.mock('expo-crypto', async () => {
+  const { createHash } = await import('node:crypto')
+  return {
+    CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
+    digestStringAsync: async (_algorithm: string, value: string) =>
+      createHash('sha256').update(value).digest('hex')
+  }
+})
 
 const now = 1_800_000_000_000
 const catalog: HostCatalogEntry[] = Array.from({ length: 20 }, (_, index) => ({
@@ -14,7 +23,7 @@ const catalog: HostCatalogEntry[] = Array.from({ length: 20 }, (_, index) => ({
   profile: null
 }))
 
-function page(cursor: string | null) {
+function page(cursor: string | null, entries: HostCatalogEntry[] = catalog) {
   return projectWearHostPage({
     bindingId: 'binding',
     requestId: 'request',
@@ -23,14 +32,14 @@ function page(cursor: string | null) {
     revision: 4,
     cursor,
     now,
-    catalog
+    catalog: entries
   })
 }
 
 describe('Wear host catalog page', () => {
-  it('reaches every paired machine without claiming unseen hosts are live', () => {
-    const first = page(null)
-    const second = page(first.nextCursor)
+  it('reaches every paired machine without claiming unseen hosts are live', async () => {
+    const first = await page(null)
+    const second = await page(first.nextCursor)
     expect(first.hosts).toHaveLength(16)
     expect(second.offset).toBe(16)
     expect(second.hosts).toHaveLength(4)
@@ -43,7 +52,9 @@ describe('Wear host catalog page', () => {
     expect(decodeWearHostPage(JSON.stringify(second), now).ok).toBe(true)
   })
 
-  it('refuses a cursor absent from the paired catalog', () => {
-    expect(() => page('host-removed')).toThrow('stale')
+  it('refuses a cursor after same-size catalog churn', async () => {
+    const first = await page(null)
+    const changed = [...catalog.slice(1), { ...catalog[0], id: 'host-new' }]
+    await expect(page(first.nextCursor, changed)).rejects.toThrow('stale')
   })
 })

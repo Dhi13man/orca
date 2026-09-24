@@ -2,13 +2,28 @@ import { getHostClientProcessOwner } from '../transport/host-client-process-owne
 import { loadHostCatalog } from '../transport/host-store'
 import type { RpcClient } from '../transport/rpc-client'
 import type { RpcResponse } from '../transport/types'
-import { startWearRuntimeReadCapabilitySession } from '../transport/wear-runtime-read-capability-session'
+import {
+  startWearRuntimeReadCapabilitySession,
+  type WearRuntimeReadCapabilities
+} from '../transport/wear-runtime-read-capability-session'
 
 export async function requestWearHostCommand(
   hostId: string,
   method: 'wear.terminal.send' | 'wear.command.receipt',
   params: unknown
 ): Promise<RpcResponse> {
+  return withWearHostClient(
+    hostId,
+    (capabilities) => capabilities.terminalSend,
+    (client) => client.sendRequest(method, params, { timeoutMs: 8_000, failWhenDisconnected: true })
+  )
+}
+
+export async function withWearHostClient<T>(
+  hostId: string,
+  admits: (capabilities: WearRuntimeReadCapabilities) => boolean,
+  request: (client: RpcClient, capabilities: WearRuntimeReadCapabilities) => Promise<T>
+): Promise<T> {
   const host = (await loadHostCatalog()).find((candidate) => candidate.id === hostId)
   if (host?.credentialStatus !== 'ready' || !host.profile) {
     throw new Error('wear_host_unavailable')
@@ -22,16 +37,16 @@ export async function requestWearHostCommand(
   let timer: ReturnType<typeof setTimeout> | null = null
   try {
     owner.acquire(hostId, acquisition, host.profile)
-    return await new Promise<RpcResponse>((resolve, reject) => {
+    return await new Promise<T>((resolve, reject) => {
       let settled = false
       let requestStarted = false
-      const finish = (result: RpcResponse | null, error: unknown) => {
+      const finish = (result: T | null, error: unknown) => {
         if (settled) {
           return
         }
         settled = true
-        if (result) {
-          resolve(result)
+        if (error === null) {
+          resolve(result as T)
         } else {
           reject(error)
         }
@@ -58,20 +73,15 @@ export async function requestWearHostCommand(
             if (settled || requestStarted) {
               return
             }
-            if (!capabilities.terminalSend) {
+            if (!admits(capabilities)) {
               finish(null, new Error('wear_host_unsupported'))
               return
             }
             requestStarted = true
-            void client
-              .sendRequest(method, params, {
-                timeoutMs: 8_000,
-                failWhenDisconnected: true
-              })
-              .then(
-                (result) => finish(result, null),
-                (error) => finish(null, error)
-              )
+            void request(client, capabilities).then(
+              (result) => finish(result, null),
+              (error) => finish(null, error)
+            )
           },
           () => undefined
         )

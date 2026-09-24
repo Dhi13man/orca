@@ -60,6 +60,7 @@ describe('Wear session inventory', () => {
         state: null,
         freshness: 'unavailable',
         updatedAt: null,
+        freshUntil: null,
         targetPublicationEpoch: 'epoch-a',
         targetSnapshotVersion: 4
       },
@@ -71,6 +72,7 @@ describe('Wear session inventory', () => {
         state: 'working',
         freshness: 'fresh',
         updatedAt: now,
+        freshUntil: now + 30 * 60_000,
         targetPublicationEpoch: 'epoch-a',
         targetSnapshotVersion: 4
       },
@@ -82,6 +84,7 @@ describe('Wear session inventory', () => {
         state: null,
         freshness: 'stale',
         updatedAt: now - 86_400_000,
+        freshUntil: null,
         targetPublicationEpoch: 'epoch-b',
         targetSnapshotVersion: 2
       }
