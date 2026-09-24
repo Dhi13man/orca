@@ -1322,3 +1322,14 @@ shell received only an old-host input-accepted receipt, its terminal stream
 did not prove bell execution, and no watch event appeared. Treat terminal-bell
 delivery as unproved, not a passing acceptance test. The physical watch is
 still absent from ADB; no existing busy agent was sent a prompt.
+
+Read-only structured-send review exposed two host-side defects. The Wear
+operation ID did not match the structured journal's timestamped admission
+format, so a real native session would refuse the send despite mocked RPC
+tests; folder targets also used the raw folder ID where the published key is
+`folder:<id>`. Both are corrected. The operation ID is stable across retries,
+bound to the canonical action hash, and checked by the real operation-admission
+function in focused tests. These tests do not prove provider delivery or an
+installed-device structured reply. Native local Codex remains the only
+currently supported structured-send path; SSH/WSL and other provider paths
+need separate owner-side implementation and acceptance.

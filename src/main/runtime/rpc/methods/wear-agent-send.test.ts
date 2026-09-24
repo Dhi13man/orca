@@ -7,11 +7,13 @@ import {
   WEAR_STRUCTURED_SEND_RUNTIME_CAPABILITY
 } from '../../../../shared/protocol-version'
 import type { RuntimeMobileSessionTabsResult } from '../../../../shared/runtime-types'
+import { folderWorkspaceKey } from '../../../../shared/workspace-scope'
+import { evaluateAgentSessionOperation } from '../../../../shared/agent-session-operation-ledger'
 import type { OrcaRuntimeService } from '../../orca-runtime'
 import { WearCommandLedger } from '../../wear-command-ledger'
 import type { RpcContext, RpcMethod } from '../core'
 import { WEAR_AGENT_SEND_METHODS } from './wear-agent-send'
-import { wearLedgerBindingId } from './wear-command-identity'
+import { wearLedgerBindingId, wearStructuredOperationId } from './wear-command-identity'
 import { WEAR_TARGET_METHODS } from './wear-target'
 
 const send = WEAR_AGENT_SEND_METHODS[0] as RpcMethod
@@ -58,18 +60,30 @@ const snapshot: RuntimeMobileSessionTabsResult = {
 function setup() {
   const ledger = new WearCommandLedger(':memory:')
   const listMobileSessionTabs = vi.fn().mockResolvedValue(snapshot)
+  const listFolderWorkspaces = vi.fn().mockReturnValue([])
   const isCurrentWearStructuredTarget = vi.fn().mockReturnValue(true)
   const restoreStructuredAgentSessionTabs = vi.fn().mockResolvedValue(undefined)
   const record = { provider: 'codex', lease: { runtimeKind: 'native', runtimeFence: 4 } }
-  const sendTurn = vi.fn(async (_caller, params) => ({
-    ok: true,
-    value: {
-      submission: {
-        dispatchState: params.beforeIssue?.() ? 'accepted' : 'rejected',
-        reason: params.beforeIssue?.() ? null : 'wear_target_changed'
+  const sendTurn = vi.fn(async (_caller, params) => {
+    expect(
+      evaluateAgentSessionOperation({
+        rows: new Map(),
+        callerKey: 'phone-client',
+        operationId: params.envelope.clientOperationId,
+        fingerprint: params.envelope.payloadFingerprint,
+        now: Date.now()
+      }).decision
+    ).toBe('admit')
+    return {
+      ok: true,
+      value: {
+        submission: {
+          dispatchState: params.beforeIssue?.() ? 'accepted' : 'rejected',
+          reason: params.beforeIssue?.() ? null : 'wear_target_changed'
+        }
       }
     }
-  }))
+  })
   const wearSubmissionOutcome = vi.fn().mockReturnValue(null)
   setStructuredAgentSessionHost({
     deps: { store: { getRecord: () => record } },
@@ -80,7 +94,7 @@ function setup() {
   const runtime = {
     getWearCommandLedger: () => ledger,
     listMobileSessionTabs,
-    listFolderWorkspaces: () => [],
+    listFolderWorkspaces,
     isCurrentWearStructuredTarget,
     restoreStructuredAgentSessionTabs
   } as unknown as OrcaRuntimeService
@@ -99,6 +113,7 @@ function setup() {
     rpc,
     sendTurn,
     listMobileSessionTabs,
+    listFolderWorkspaces,
     isCurrentWearStructuredTarget,
     restoreStructuredAgentSessionTabs,
     wearSubmissionOutcome
@@ -108,11 +123,38 @@ function setup() {
 afterEach(() => setStructuredAgentSessionHost(null))
 
 describe('wear.agent.send', () => {
+  it('binds the structured operation identity to the canonical action', () => {
+    const first = wearStructuredOperationId(
+      'phone-a',
+      'binding-a',
+      'request-a',
+      action.expiresAt,
+      hash
+    )
+    expect(first).toMatch(/^\d{13}-[0-9a-f]{32}$/)
+    expect(
+      wearStructuredOperationId('phone-a', 'binding-a', 'request-a', action.expiresAt, hash)
+    ).toBe(first)
+    expect(
+      wearStructuredOperationId('phone-a', 'binding-a', 'request-a', action.expiresAt, 'changed')
+    ).not.toBe(first)
+  })
+
   it('requires both negotiated capabilities before reading the ledger or target', async () => {
     const current = setup()
     current.rpc.clientCapabilities = [STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY]
     await expect(send.handler(action, current.rpc)).rejects.toThrow('wear_agent_send_unsupported')
     expect(current.listMobileSessionTabs).not.toHaveBeenCalled()
+    current.ledger.close()
+  })
+
+  it('rejects an action beyond the native two-minute admission window', async () => {
+    const current = setup()
+    expect(
+      await send.handler({ ...action, expiresAt: Date.now() + 121_000 }, current.rpc)
+    ).toMatchObject({ outcome: 'rejected', reason: 'invalid-action' })
+    expect(current.listMobileSessionTabs).not.toHaveBeenCalled()
+    expect(current.sendTurn).not.toHaveBeenCalled()
     current.ledger.close()
   })
 
@@ -147,6 +189,22 @@ describe('wear.agent.send', () => {
     expect(
       await receipt.handler({ bindingId: 'binding-a', requestId: 'request-a' }, current.rpc)
     ).toEqual({ outcome: 'accepted', reason: null, actionHash: hash })
+    current.ledger.close()
+  })
+
+  it('resolves a structured folder target through its published workspace key', async () => {
+    const current = setup()
+    const folderId = 'folder-a'
+    const workspaceId = folderWorkspaceKey(folderId)
+    current.listFolderWorkspaces.mockReturnValue([{ id: folderId }])
+    current.listMobileSessionTabs.mockResolvedValue({ ...snapshot, worktree: workspaceId })
+    const folderAction = {
+      ...action,
+      requestId: 'folder-request',
+      target: { ...action.target, workspaceId, workspaceKind: 'folder' }
+    }
+    expect(await send.handler(folderAction, current.rpc)).toMatchObject({ outcome: 'accepted' })
+    expect(current.sendTurn).toHaveBeenCalledOnce()
     current.ledger.close()
   })
 

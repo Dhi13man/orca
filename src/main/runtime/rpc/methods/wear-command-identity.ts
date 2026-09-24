@@ -12,7 +12,14 @@ export function wearLedgerBindingId(pairedDeviceId: string, bindingId: string): 
 export function wearStructuredOperationId(
   pairedDeviceId: string,
   bindingId: string,
-  requestId: string
+  requestId: string,
+  expiresAt: number,
+  actionHash: string
 ): string {
-  return `wear:${createHash('sha256').update(`${pairedDeviceId}\0${bindingId}\0${requestId}`).digest('hex')}`
+  const timestamp = expiresAt - 60_000
+  const digest = createHash('sha256')
+    .update(JSON.stringify([pairedDeviceId, bindingId, requestId, actionHash]))
+    .digest('hex')
+    .slice(0, 32)
+  return `${timestamp}-${digest}`
 }

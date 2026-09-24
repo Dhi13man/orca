@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { computeAgentSessionPayloadFingerprint } from '../../../../shared/agent-session-mutation-envelope'
+import { folderWorkspaceKey } from '../../../../shared/workspace-scope'
 import type { AgentJournalMessageItem } from '../../../../shared/agent-session-journal-types'
 import {
   STRUCTURED_AGENT_SESSION_RUNTIME_CAPABILITY,
@@ -30,7 +31,10 @@ export const WEAR_AGENT_SEND_METHODS: RpcAnyMethod[] = [
 
       const actionHash = createHash('sha256').update(encodeWearAction(action)).digest('hex')
       const text = action.payload.text
+      const now = Date.now()
       if (
+        action.expiresAt <= now ||
+        action.expiresAt - now > 120_000 ||
         Buffer.byteLength(text, 'utf8') > 2_048 ||
         !text.trim() ||
         [
@@ -71,7 +75,7 @@ export const WEAR_AGENT_SEND_METHODS: RpcAnyMethod[] = [
       )
       const kind = context.runtime
         .listFolderWorkspaces()
-        .some((row) => row.id === fence.workspaceId)
+        .some((row) => folderWorkspaceKey(row.id) === fence.workspaceId)
         ? 'folder'
         : 'worktree'
       const target = resolveWearActionTarget(snapshot, fence, kind)
@@ -99,7 +103,9 @@ export const WEAR_AGENT_SEND_METHODS: RpcAnyMethod[] = [
       const clientOperationId = wearStructuredOperationId(
         pairedDeviceId,
         action.bindingId,
-        action.requestId
+        action.requestId,
+        action.expiresAt,
+        actionHash
       )
       const sendFingerprint = computeAgentSessionPayloadFingerprint({
         method: 'agentSession.send',
