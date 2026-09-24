@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { decodeAccountsSnapshot } from '../components/AccountUsage'
-import { subscribeToDesktopNotifications } from '../notifications/mobile-notifications'
 import { usePrimeHosts } from '../transport/client-context'
 import { createHostConnectRefetchGate } from '../transport/host-connect-refetch-gate'
 import { selectHomeAutoConnectHostIds } from '../transport/home-host-auto-connect'
+import { getHostObservationCoordinator } from '../transport/host-observation-coordinator'
 import type { RpcClient } from '../transport/rpc-client'
 import type { ConnectionState, HostCatalogEntry, HostProfile } from '../transport/types'
 import { useAllHostClients } from '../transport/use-all-host-clients'
@@ -35,28 +34,19 @@ function wireMobileHomeHostSubscriptions(
   entry: { hostId: string; client: RpcClient; state: ConnectionState },
   setters: Setters
 ): () => void {
-  let unsubscribeNotifications: (() => void) | null = null
-  let unsubscribeAccounts: (() => void) | null = null
+  const unsubscribeObservation = getHostObservationCoordinator().observeHost(
+    entry.hostId,
+    entry.client,
+    {
+      onAccounts(snapshot) {
+        setters.setAccounts((previous) => ({ ...previous, [entry.hostId]: snapshot }))
+      }
+    }
+  )
   const refetchGate = createHostConnectRefetchGate()
   const wireState = (state: ConnectionState): void => {
     const reconnected = refetchGate.observe(state)
     if (state === 'connected') {
-      unsubscribeNotifications ??= subscribeToDesktopNotifications(entry.client, entry.hostId)
-      unsubscribeAccounts ??= entry.client.subscribe('accounts.subscribe', null, (payload) => {
-        if (!payload || typeof payload !== 'object') {
-          return
-        }
-        const event = payload as { type?: string; snapshot?: unknown }
-        if (event.type !== 'ready' && event.type !== 'snapshot') {
-          return
-        }
-        try {
-          const snapshot = decodeAccountsSnapshot(event.snapshot)
-          setters.setAccounts((previous) => ({ ...previous, [entry.hostId]: snapshot }))
-        } catch {
-          // Keep the last proven snapshot when a mixed-version host publishes malformed data.
-        }
-      })
       if (reconnected) {
         fetchMobileHomeStats(entry.client, entry.hostId, setters.setStats, () => false)
         void fetchHomeHostWorktreeInfo(
@@ -74,17 +64,12 @@ function wireMobileHomeHostSubscriptions(
       }
       return
     }
-    unsubscribeNotifications?.()
-    unsubscribeNotifications = null
-    unsubscribeAccounts?.()
-    unsubscribeAccounts = null
   }
   wireState(entry.state)
   const unsubscribeState = entry.client.onStateChange(wireState)
   return () => {
     unsubscribeState()
-    unsubscribeNotifications?.()
-    unsubscribeAccounts?.()
+    unsubscribeObservation()
   }
 }
 
