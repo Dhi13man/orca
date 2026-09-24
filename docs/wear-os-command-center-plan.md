@@ -1790,3 +1790,15 @@ install on the paired watch emulator `5562` returned `Success`. The real paired
 conversation, exactly idle acknowledgement reply, durable SSH send, and
 physical-watch acceptance remain open. Use existing configured profiles and
 agents for those tests; no disposable-profile sign-in is required.
+
+Current-source ARM64-only watch and phone release APKs rebuilt offline after
+`474390ab8`. Watch SHA-256 is
+`3F8699D89D55BA1D501FA96D56C9265CA76F60E6A2A49C2C0F4BB3BADA5F94DA`;
+phone SHA-256 is
+`D42F00160D2CB47870C65F4431AF3E47A883D7C408B0854027840C70EE6E83C3`.
+Both verify under the same test certificate, contain bundled JavaScript, and
+report only `arm64-v8a`. The watch manifest declares `standalone=false`, and
+the phone's Wear Headless JS service is non-exported. These are build and
+packaging checks, not physical installation or headless-wake evidence. A fresh
+ADB scan still lists only emulators; the advertised physical phone endpoint
+`192.168.68.106:45379` refuses TCP, and no watch endpoint is visible.
