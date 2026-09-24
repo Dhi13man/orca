@@ -32,6 +32,23 @@ export type WearNativeDashboard = {
   expiresAt: number
   serialized: string
 }
+export type WearClaimedAction = {
+  bindingId: string
+  requestId: string
+  actionHash: string
+  claimToken: string
+  expiresAt: number
+  canonical: string
+}
+export type WearJournalRecord = {
+  bindingId: string
+  requestId: string
+  actionHash: string
+  actionName: string
+  state: 'recorded' | 'effect_started' | 'accepted' | 'rejected' | 'unknown'
+  expiresAt: number
+}
+export type WearJournalHandoff = 'recorded' | 'already_recorded' | 'conflict' | 'missing' | 'full'
 
 type WearDataLayerModule = {
   addListener(
@@ -57,6 +74,22 @@ type WearDataLayerModule = {
     serialized: string
   ): Promise<void>
   readDashboard(bindingId: string): Promise<WearNativeDashboard | null>
+  claimAction(): Promise<WearClaimedAction | null>
+  commitActionHandoff(
+    bindingId: string,
+    requestId: string,
+    actionHash: string,
+    claimToken: string,
+    canonical: string
+  ): Promise<WearJournalHandoff>
+  journalAction(bindingId: string, requestId: string): Promise<WearJournalRecord | null>
+  startActionEffect(bindingId: string, requestId: string, actionHash: string): Promise<boolean>
+  finishActionEffect(
+    bindingId: string,
+    requestId: string,
+    actionHash: string,
+    outcome: 'accepted' | 'rejected' | 'unknown'
+  ): Promise<boolean>
 }
 
 export const wearDataLayer = requireOptionalNativeModule<WearDataLayerModule>('ExpoWearDataLayer')

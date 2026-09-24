@@ -209,6 +209,102 @@ internal class WearCompanionOwner private constructor(private val context: Conte
         }
     }
 
+    fun claimAction(completed: (Map<String, Any>?, Exception?) -> Unit) {
+        if (role != CompanionRole.PHONE) {
+            completed(null, IllegalStateException("wear_action_wrong_role"))
+            return
+        }
+        var result: Map<String, Any>? = null
+        submit({ completed(result, it) }, false) { ticket ->
+            var claimed: ClaimedWearAction? = null
+            ticket.effect { claimed = actions.claim(System.currentTimeMillis()) }
+            val claim = claimed ?: return@submit
+            val peerNodeId = bindings.withBinding(claim.bindingId) { binding ->
+                check(binding.state == "active") { "wear_binding_not_active" }
+                binding.peerNodeId
+            }
+            val path = "/orca/wear/v1/${claim.bindingId}/action"
+            val opened = try {
+                WearEnvelope(bindings).open(path, peerNodeId, claim.wire, System.currentTimeMillis())
+            } finally { claim.wire.fill(0) }
+            try {
+                val decoded = decodeAuthenticatedWearAction(opened.metadata, opened.plaintext,
+                    System.currentTimeMillis())
+                check(decoded?.hash == claim.actionHash && opened.metadata.bindingId == claim.bindingId &&
+                    opened.metadata.requestId == claim.requestId) { "wear_action_claim_changed" }
+                ticket.checkLive()
+                result = mapOf("bindingId" to claim.bindingId, "requestId" to claim.requestId,
+                    "actionHash" to claim.actionHash, "claimToken" to claim.claimToken,
+                    "expiresAt" to claim.expiresAt.toDouble(),
+                    "canonical" to String(opened.plaintext, Charsets.UTF_8))
+            } finally { opened.plaintext.fill(0) }
+        }
+    }
+
+    fun commitActionHandoff(bindingId: String, requestId: String, actionHash: String,
+        claimToken: String, canonical: String, completed: (String?, Exception?) -> Unit) {
+        if (role != CompanionRole.PHONE) {
+            completed(null, IllegalStateException("wear_action_wrong_role"))
+            return
+        }
+        var result: String? = null
+        submit({ completed(result, it) }, false) { ticket ->
+            val bytes = canonical.toByteArray(Charsets.UTF_8)
+            try {
+                require(bytes.size <= 8192)
+                bindings.withBinding(bindingId) { binding ->
+                    check(binding.state == "active") { "wear_binding_not_active" }
+                    ticket.effect {
+                        result = actions.commitHandoff(bindingId, requestId, actionHash,
+                            claimToken, bytes, System.currentTimeMillis()).name.lowercase()
+                    }
+                }
+            } finally { bytes.fill(0) }
+        }
+    }
+
+    fun journalAction(bindingId: String, requestId: String,
+        completed: (WearJournalRecord?, Exception?) -> Unit) {
+        if (role != CompanionRole.PHONE) {
+            completed(null, IllegalStateException("wear_action_wrong_role"))
+            return
+        }
+        var result: WearJournalRecord? = null
+        submit({ completed(result, it) }, false) { result = actions.journalRecord(bindingId, requestId) }
+    }
+
+    fun startActionEffect(bindingId: String, requestId: String, actionHash: String,
+        completed: (Boolean?, Exception?) -> Unit) {
+        if (role != CompanionRole.PHONE) {
+            completed(null, IllegalStateException("wear_action_wrong_role"))
+            return
+        }
+        var result: Boolean? = null
+        submit({ completed(result, it) }, false) { ticket ->
+            bindings.withBinding(bindingId) { binding ->
+                check(binding.state == "active") { "wear_binding_not_active" }
+                ticket.effect {
+                    result = actions.startEffect(bindingId, requestId, actionHash, System.currentTimeMillis())
+                }
+            }
+        }
+    }
+
+    fun finishActionEffect(bindingId: String, requestId: String, actionHash: String,
+        outcome: String, completed: (Boolean?, Exception?) -> Unit) {
+        if (role != CompanionRole.PHONE) {
+            completed(null, IllegalStateException("wear_action_wrong_role"))
+            return
+        }
+        var result: Boolean? = null
+        submit({ completed(result, it) }, false) { ticket ->
+            ticket.effect {
+                result = actions.finishEffect(bindingId, requestId, actionHash,
+                    outcome, System.currentTimeMillis())
+            }
+        }
+    }
+
     fun receiveDashboard(nodeId: String, path: String, wire: ByteArray) {
         if (role == CompanionRole.PHONE) {
             if (nodeId == localNodeId && DASHBOARD_PATH.matches(path)) scheduleDashboardCleanup(0)

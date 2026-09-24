@@ -68,6 +68,43 @@ class ExpoWearDataLayerModule : Module() {
                 })
             }
         }
+        AsyncFunction("claimAction") { promise: Promise ->
+            owner.claimAction { claim, error ->
+                if (error != null) complete(promise, error)
+                else promise.resolve(claim)
+            }
+        }
+        AsyncFunction("commitActionHandoff") { bindingId: String, requestId: String,
+            actionHash: String, claimToken: String, canonical: String, promise: Promise ->
+            owner.commitActionHandoff(bindingId, requestId, actionHash, claimToken, canonical) { outcome, error ->
+                if (error != null) complete(promise, error)
+                else promise.resolve(outcome)
+            }
+        }
+        AsyncFunction("journalAction") { bindingId: String, requestId: String, promise: Promise ->
+            owner.journalAction(bindingId, requestId) { record, error ->
+                if (error != null) complete(promise, error)
+                else promise.resolve(record?.let {
+                    mapOf("bindingId" to it.bindingId, "requestId" to it.requestId,
+                        "actionHash" to it.actionHash, "actionName" to it.actionName,
+                        "state" to it.state, "expiresAt" to it.expiresAt.toDouble())
+                })
+            }
+        }
+        AsyncFunction("startActionEffect") { bindingId: String, requestId: String,
+            actionHash: String, promise: Promise ->
+            owner.startActionEffect(bindingId, requestId, actionHash) { started, error ->
+                if (error != null) complete(promise, error)
+                else promise.resolve(started)
+            }
+        }
+        AsyncFunction("finishActionEffect") { bindingId: String, requestId: String,
+            actionHash: String, outcome: String, promise: Promise ->
+            owner.finishActionEffect(bindingId, requestId, actionHash, outcome) { finished, error ->
+                if (error != null) complete(promise, error)
+                else promise.resolve(finished)
+            }
+        }
     }
 
     private fun complete(promise: Promise, error: Exception?) {

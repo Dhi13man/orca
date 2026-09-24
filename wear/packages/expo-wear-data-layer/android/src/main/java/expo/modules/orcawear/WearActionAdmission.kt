@@ -11,6 +11,12 @@ internal fun admitWearAction(metadata: WearEnvelopeMetadata, plaintext: ByteArra
     if (metadata.kind != WearEnvelopeKind.ACTION || published == null ||
         published.revision != metadata.revision ||
         published.publisherEpoch != metadata.publisherEpoch || published.expiresAt <= now) return null
+    return decodeAuthenticatedWearAction(metadata, plaintext, now)
+}
+
+internal fun decodeAuthenticatedWearAction(metadata: WearEnvelopeMetadata, plaintext: ByteArray,
+    now: Long): AdmittedWearAction? {
+    if (metadata.kind != WearEnvelopeKind.ACTION) return null
     val decoded = WearActionDecoder.decode(plaintext, now) as? ActionAdmission.Accepted ?: return null
     val action = decoded.envelope
     if (action.getString("bindingId") != metadata.bindingId ||

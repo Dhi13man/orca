@@ -20,6 +20,8 @@ class WearActionAdmissionTest {
         }
         assertEquals(AdmittedWearAction(expectedHash, 1000, "refresh"),
             admitWearAction(metadata, plaintext, published, 0))
+        assertEquals(AdmittedWearAction(expectedHash, 1000, "refresh"),
+            decodeAuthenticatedWearAction(metadata, plaintext, 0))
     }
 
     @Test fun rejectsStalePublicationAndHeaderPayloadMismatchBeforeInboxInsertion() {
@@ -35,6 +37,7 @@ class WearActionAdmissionTest {
         assertNull(admitWearAction(metadata.copy(publisherEpoch = UUID.randomUUID().toString()), plaintext, published, 0))
         assertNull(admitWearAction(metadata.copy(revision = 5), plaintext, published.copy(revision = 5), 0))
         assertNull(admitWearAction(metadata.copy(expiresAt = 1100), plaintext, published, 0))
+        assertNull(decodeAuthenticatedWearAction(metadata.copy(expiresAt = 1100), plaintext, 0))
         assertNull(admitWearAction(metadata.copy(kind = WearEnvelopeKind.PAGE), plaintext, published, 0))
         assertNull(admitWearAction(metadata, (canonical + " ").toByteArray(), published, 0))
     }
