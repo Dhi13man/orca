@@ -1710,3 +1710,13 @@ and focusable buttons labelled "Previous page", "Next page", and "Refresh
 from phone". This verifies these rendered accessibility-tree labels on the
 emulator; TalkBack speech/order, rotating input, and physical small-round
 ergonomics remain untested.
+
+`apksigner verify --print-certs` on the current canonical ARM64 release pair
+confirms both APKs share certificate SHA-256
+`fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c`.
+`aapt dump badging` reports package `com.stably.orca.mobile` for both (watch
+versionCode 1, phone versionCode 15). This proves pairwise compatibility for
+these internal test-signed artifacts. It does not establish compatibility with
+Dhiman's installed production phone signature; that package must be inspected
+before any physical phone install and never replaced across a signature
+mismatch.
