@@ -13,6 +13,7 @@ import { useOpenNotificationRoute } from '../src/notifications/use-open-notifica
 import { loadHostCatalog } from '../src/transport/host-store'
 import { extractPairingCodeFromUrl } from '../src/transport/pairing'
 import { recoverMobileRelayPairing } from '../src/transport/mobile-relay-pairing-recovery'
+import { startForegroundWearDashboardPublisher } from '../src/wear/wear-dashboard-publisher'
 
 // Why: keeps the native splash screen visible until the React tree is mounted
 // and ready to render. Without this the user sees a blank white/black frame
@@ -43,6 +44,14 @@ export default function RootLayout() {
     // reconcile the server result before another scan can replace that journal.
     void recoverMobileRelayPairing()
   }, [])
+
+  useEffect(
+    () =>
+      startForegroundWearDashboardPublisher(() => {
+        console.warn('Wear dashboard refresh failed')
+      }),
+    []
+  )
 
   // Why: route `orca://pair?...` deep links to the confirm screen so
   // the same pairing flow runs whether the link arrived via QR scan,
