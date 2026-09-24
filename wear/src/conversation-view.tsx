@@ -9,6 +9,8 @@ export function ConversationView({
   status,
   page,
   reason,
+  draft,
+  onDraftChange,
   onBack,
   onRetry,
   reply
@@ -17,6 +19,8 @@ export function ConversationView({
   status: 'idle' | 'loading' | 'ready' | 'unavailable'
   page: WearConversationPage | null
   reason: 'rejected' | 'timeout' | 'unavailable' | null
+  draft: string
+  onDraftChange: (text: string) => void
   onBack: () => void
   onRetry: () => void
   reply: {
@@ -27,13 +31,12 @@ export function ConversationView({
     clear: (verified?: boolean) => Promise<void>
   }
 }) {
-  const [draft, setDraft] = useState('')
   const [confirmRecovery, setConfirmRecovery] = useState(false)
   useEffect(() => {
-    if (reply.status === 'accepted') {
-      setDraft('')
+    if (reply.status === 'accepted' && draft) {
+      onDraftChange('')
     }
-  }, [reply.status])
+  }, [reply.status, draft, onDraftChange])
   useEffect(() => setConfirmRecovery(false), [page?.requestId])
   return (
     <View style={styles.section}>
@@ -80,7 +83,7 @@ export function ConversationView({
               accessibilityLabel="Reply to agent"
               multiline
               maxLength={2048}
-              onChangeText={setDraft}
+              onChangeText={onDraftChange}
               placeholder="Reply to agent"
               placeholderTextColor={wearColors.secondary}
               style={styles.input}

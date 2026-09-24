@@ -1295,3 +1295,10 @@ was sent. The physical watch remains absent from ADB. Outstanding acceptance:
 an authenticated existing-agent conversation and harmless exact-target reply,
 SSH host-side send durability, autonomous host-originated notification delivery,
 real usage/freshness, and physical watch installation and operation.
+
+An unsent reply draft now survives the temporary conversation-view unmount
+caused by inventory revalidation. It is keyed to binding, host, workspace,
+tab, and host publication epoch, so it cannot carry into a different target;
+an accepted receipt clears it. Wear typecheck, lint, 140 tests, and the rebuilt
+release APK install on the disposable watch emulator pass. The draft-retention
+behavior still needs an interactive watch check with a live agent page.

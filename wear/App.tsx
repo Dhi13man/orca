@@ -34,6 +34,7 @@ export default function App() {
   const [showAllMachines, setShowAllMachines] = useState(false)
   const [selectedHost, setSelectedHost] = useState<{ id: string; name: string } | null>(null)
   const [selectedAgent, setSelectedAgent] = useState<WearAgentRow | null>(null)
+  const [replyDraft, setReplyDraft] = useState({ target: '', text: '' })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const bindingId = state?.bindings?.[0]?.bindingId ?? null
@@ -54,6 +55,17 @@ export default function App() {
   const currentAgent =
     agentPages.state.status === 'ready' && selectedAgent
       ? selectCurrentWearAgent(agentPages.state.agents, selectedAgent)
+      : null
+  const draftTarget =
+    bindingId && selectedHostId && selectedAgent
+      ? JSON.stringify([
+          bindingId,
+          selectedHostId,
+          selectedAgent.workspaceId,
+          selectedAgent.workspaceKind,
+          selectedAgent.sessionTabId,
+          selectedAgent.targetPublicationEpoch
+        ])
       : null
   const conversation = useConversationPage(
     dashboard.state === 'ready' ? dashboard.dashboard : null,
@@ -283,6 +295,8 @@ export default function App() {
               <ConversationView
                 title={currentAgent.title}
                 {...conversation}
+                draft={replyDraft.target === draftTarget ? replyDraft.text : ''}
+                onDraftChange={(text) => setReplyDraft({ target: draftTarget!, text })}
                 onBack={() => setSelectedAgent(null)}
                 onRetry={conversation.retry}
                 reply={reply}
