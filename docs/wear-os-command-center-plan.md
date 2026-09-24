@@ -1655,3 +1655,13 @@ it contains bundled JavaScript and only `arm64-v8a` native libraries. The
 matching phone APK remains the verified prior checkpoint with SHA-256
 `38D4B9EC5B88E858442215F3D2098258C589B939A5261365035AE8043F61E11E`.
 Neither current ARM64 artifact has been installed on Dhiman's devices.
+
+The SSH relay's new Wear transcript-tail handler now independently requires
+the authenticated current relay owner principal and rejects a stale request
+before and after the host transcript read. The desktop's proved-channel check
+remains in place. Commit `01dcf5a24` passes 34 focused relay/provider tests,
+node typecheck, scoped lint/format, and relay bundles for Linux, macOS, Windows,
+and WSL; independent read-only review found no code defect. The tests check
+proof and handler admission separately, not one end-to-end dispatcher request.
+This guard does not enable SSH sends or prove a live SSH transcript on a paired
+device.
