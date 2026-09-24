@@ -7,6 +7,7 @@ import type { RpcClient } from './rpc-client'
 type Observer = {
   onAccounts?: (snapshot: AccountsSnapshot) => void
   onInventory?: (summary: WearSessionInventorySummary) => void
+  onNotificationsReady?: (complete: boolean) => void
 }
 
 type HostEntry = {
@@ -19,6 +20,8 @@ type HostEntry = {
   closeNotifications: (() => void) | null
   closeAccounts: (() => void) | null
   closeInventory: (() => void) | null
+  notificationsReady: boolean | null
+  notificationsGeneration: number
 }
 
 export type HostObservationCoordinator = {
@@ -39,6 +42,8 @@ export function createHostObservationCoordinator(): HostObservationCoordinator {
     entry.generation++
     entry.closeNotifications?.()
     entry.closeNotifications = null
+    entry.notificationsReady = null
+    entry.notificationsGeneration++
     entry.closeAccounts?.()
     entry.closeAccounts = null
   }
@@ -51,7 +56,22 @@ export function createHostObservationCoordinator(): HostObservationCoordinator {
   }
   const wire = (hostId: string, entry: HostEntry): void => {
     if (entry.client.getState() === 'connected') {
-      entry.closeNotifications ??= subscribeToDesktopNotifications(entry.client, hostId)
+      if (!entry.closeNotifications) {
+        const generation = entry.notificationsGeneration
+        entry.closeNotifications = subscribeToDesktopNotifications(
+          entry.client,
+          hostId,
+          (complete) => {
+            if (entry.notificationsGeneration !== generation || hosts.get(hostId) !== entry) {
+              return
+            }
+            entry.notificationsReady = complete
+            for (const observer of entry.observers) {
+              observer.onNotificationsReady?.(complete)
+            }
+          }
+        )
+      }
       if (!entry.closeAccounts) {
         const generation = entry.generation
         const client = entry.client
@@ -112,7 +132,9 @@ export function createHostObservationCoordinator(): HostObservationCoordinator {
           closeState: null,
           closeNotifications: null,
           closeAccounts: null,
-          closeInventory: null
+          closeInventory: null,
+          notificationsReady: null,
+          notificationsGeneration: 0
         }
         hosts.set(hostId, entry)
       } else if (entry.client !== client) {
@@ -124,7 +146,16 @@ export function createHostObservationCoordinator(): HostObservationCoordinator {
       const current = entry
       const previousAccounts = current.accounts
       const previousInventory = current.inventory
+      const previousNotificationsReady = current.notificationsReady
       current.observers.add(observer)
+      const retryNotifications =
+        observer.onNotificationsReady && current.notificationsReady === false
+      if (retryNotifications) {
+        current.closeNotifications?.()
+        current.closeNotifications = null
+        current.notificationsReady = null
+        current.notificationsGeneration++
+      }
       if (!current.closeState) {
         current.closeState = client.onStateChange(() => wire(hostId, current))
       }
@@ -134,6 +165,9 @@ export function createHostObservationCoordinator(): HostObservationCoordinator {
       }
       if (previousInventory) {
         observer.onInventory?.(previousInventory)
+      }
+      if (previousNotificationsReady !== null && !retryNotifications) {
+        observer.onNotificationsReady?.(previousNotificationsReady)
       }
       let released = false
       return () => {

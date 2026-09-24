@@ -1361,3 +1361,32 @@ tests pass. This is best-effort periodic freshness, not immediate host-originate
 notification delivery: Android may defer periodic jobs, no screen-off/Doze or
 physical-watch behavior was tested, and the real existing-agent conversation,
 safe idle reply, SSH send durability, and physical acceptance remain open.
+
+The scheduled phone job now keeps its host observation alive through
+notification catch-up and rotates across every authenticated catalog host
+within a bounded 35-second run. A first phone subscription records the
+desktop's current sequence as an optional ready-frame baseline, so later jobs
+replay only events dispatched after pairing. Delayed or failed watermark
+storage reads remain unknown rather than authorizing a new baseline; a timed
+out read allows live delivery without advancing the cursor and catches up when
+it completes. A failed baseline write keeps the in-memory cursor for the
+current process. Phone notification/Wear tests (156), desktop replay/RPC
+tests (14), both TypeScript checks, and scoped lint/format pass. The optional
+field preserves old-client decoding; an older desktop runtime without the
+baseline cannot safely recover notifications after a first pairing with no
+live event, so that host needs a runtime upgrade for this guarantee. This
+does not establish timely host-originated wake or a physical notification:
+Android may defer the periodic job, and installed-device delivery still needs
+direct evidence. The existing authenticated agents remain the validation
+targets; no disposable profile or sign-in is required. Send a harmless
+acknowledgement only after an existing session's exact identity and idle state
+are verified; no such reply has been sent.
+
+The final source APK (`3A1883B5CB3F517EA22AD0547E51B38EDF378755E9B51C2DB26BC59BE9D828C2`)
+installed on the already-paired disposable API-36 phone emulator. With the
+launcher on top, `am kill` removed the phone process; the forced app-specific
+job started a new process, advanced the API-33 watch's visible phone snapshot
+from 9:20 to 9:24 PM without watch input, and called `jobFinished` after
+about 33 seconds, below the native 90-second stop bound. Its emulator host
+connections were unavailable or unauthorized, so no host notification was
+delivered and this is not physical-device or screen-off acceptance.

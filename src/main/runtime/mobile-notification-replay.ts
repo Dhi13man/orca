@@ -56,6 +56,10 @@ export class MobileNotificationReplayBuffer {
     return this.epochId
   }
 
+  get currentSeq(): number {
+    return this.seq
+  }
+
   // Records a dispatched event and returns the monotonic seq assigned to it.
   // Callers surface the seq so clients can watermark their last-seen position
   // (both on the live fan-out and on explicit catch-up requests).

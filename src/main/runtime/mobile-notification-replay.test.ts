@@ -23,6 +23,7 @@ function dispatch(
 describe('MobileNotificationReplayBuffer', () => {
   it('assigns a strictly increasing monotonic notificationSeq to every recorded event', () => {
     const buffer = new MobileNotificationReplayBuffer()
+    expect(buffer.currentSeq).toBe(0)
     const a = dispatch(buffer, { notificationId: 'agent:one' })
     const b = dispatch(buffer, { notificationId: 'agent:two' })
     const c = dispatch(buffer, { notificationId: 'agent:three' })
@@ -31,6 +32,7 @@ describe('MobileNotificationReplayBuffer', () => {
     expect(c.notificationSeq).toBe(3)
     expect(c.notificationSeq).toBeGreaterThan(b.notificationSeq)
     expect(b.notificationSeq).toBeGreaterThan(a.notificationSeq)
+    expect(buffer.currentSeq).toBe(3)
   })
 
   // Why: the client watermarks + dedups on `notificationSeq` (the same field

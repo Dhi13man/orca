@@ -133,4 +133,26 @@ describe('process-owned host observation coordinator', () => {
     releaseNew()
     expect(next.accounts[0].close).toHaveBeenCalledOnce()
   })
+
+  it('retries a failed replay on the same connected client for a later observer', () => {
+    const coordinator = createHostObservationCoordinator()
+    const host = fakeClient()
+    const firstReady = vi.fn()
+    const releaseFirst = coordinator.observeHost('host-a', host.client, {
+      onNotificationsReady: firstReady
+    })
+    vi.mocked(subscribeToDesktopNotifications).mock.calls[0][2]?.(false)
+    expect(firstReady).toHaveBeenCalledWith(false)
+    const secondReady = vi.fn()
+    const releaseSecond = coordinator.observeHost('host-a', host.client, {
+      onNotificationsReady: secondReady
+    })
+    expect(vi.mocked(subscribeToDesktopNotifications).mock.results[0].value).toHaveBeenCalledOnce()
+    expect(subscribeToDesktopNotifications).toHaveBeenCalledTimes(2)
+    expect(secondReady).not.toHaveBeenCalled()
+    vi.mocked(subscribeToDesktopNotifications).mock.calls[1][2]?.(true)
+    expect(secondReady).toHaveBeenCalledWith(true)
+    releaseSecond()
+    releaseFirst()
+  })
 })

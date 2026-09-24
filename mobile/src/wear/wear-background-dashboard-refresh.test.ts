@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   getState: vi.fn(),
   addListener: vi.fn(),
   refresh: vi.fn(),
+  replay: vi.fn(),
   isActive: vi.fn(() => true),
   complete: vi.fn(),
   listener: null as ((state: WearCompanionState) => void) | null,
@@ -20,12 +21,14 @@ vi.mock('@orca/expo-wear-data-layer', () => ({
   }
 }))
 vi.mock('./wear-dashboard-refresh', () => ({ refreshWearDashboardOnce: mocks.refresh }))
+vi.mock('./wear-notification-replay', () => ({ replayWearNotifications: mocks.replay }))
 
 import { refreshBoundWearDashboards } from './wear-background-dashboard-refresh'
 
 afterEach(() => {
   vi.useRealTimers()
   vi.clearAllMocks()
+  mocks.replay.mockResolvedValue(undefined)
   mocks.isActive.mockReturnValue(true)
   mocks.listener = null
 })
@@ -51,12 +54,14 @@ describe('background Wear dashboard refresh', () => {
     expect(mocks.refresh.mock.calls.map(([id]) => id)).toEqual(['watch-a', 'watch-b'])
     expect(mocks.remove).toHaveBeenCalledOnce()
     expect(mocks.complete).toHaveBeenCalledWith(1)
+    expect(mocks.replay).toHaveBeenCalledOnce()
   })
 
   it('does not start a host feed when the phone has no active watch binding', async () => {
     mocks.getState.mockReturnValue({ role: 'phone', phase: 'unbound', bindings: [] })
     await refreshBoundWearDashboards(1)
     expect(mocks.refresh).not.toHaveBeenCalled()
+    expect(mocks.replay).not.toHaveBeenCalled()
   })
 
   it('does not miss binding initialization between state read and subscription', async () => {
@@ -81,6 +86,27 @@ describe('background Wear dashboard refresh', () => {
     mocks.refresh.mockResolvedValue(true)
     await refreshBoundWearDashboards(2)
     expect(mocks.refresh).toHaveBeenCalledWith('watch-a', 30_000, expect.any(AbortSignal))
+  })
+
+  it('finishes the job only after all-host notification replay settles', async () => {
+    mocks.getState.mockReturnValue({
+      role: 'phone',
+      phase: 'bound',
+      bindings: [{ bindingId: 'watch-a', nodeId: 'node-a' }]
+    })
+    mocks.refresh.mockResolvedValue(true)
+    let finishReplay!: () => void
+    mocks.replay.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishReplay = resolve
+      })
+    )
+    const task = refreshBoundWearDashboards(5)
+    await vi.waitFor(() => expect(mocks.replay).toHaveBeenCalledOnce())
+    expect(mocks.complete).not.toHaveBeenCalled()
+    finishReplay()
+    await task
+    expect(mocks.complete).toHaveBeenCalledWith(5)
   })
 
   it('allows native recovery to finish after ten seconds', async () => {

@@ -133,10 +133,12 @@ describe('#8591 catch-up failure quarantines the watermark', () => {
     const host = makeHostClient()
     host.setOutcome({ kind: 'reject' })
 
-    subscribeToDesktopNotifications(host.client, 'host-1')
+    const catchUpSettled = vi.fn()
+    subscribeToDesktopNotifications(host.client, 'host-1', catchUpSettled)
     host.onData?.({ type: 'ready', subscriptionId: 'sub-1', epoch: 'epoch-1' })
     await flushAsync()
     expect(host.askedFrom).toEqual([5])
+    expect(catchUpSettled).toHaveBeenLastCalledWith(false)
 
     host.onData?.({ ...notification(11), notificationEpoch: 'epoch-1' })
     await flushAsync()
@@ -149,6 +151,7 @@ describe('#8591 catch-up failure quarantines the watermark', () => {
     host.onData?.({ ...notification(12), notificationEpoch: 'epoch-1' })
     await flushAsync()
     expect(host.askedFrom).toEqual([5, 5])
+    expect(catchUpSettled).toHaveBeenLastCalledWith(false)
     expect(persistedSeq()).toBe(5)
 
     // Third succeeds and replays the abandoned range.
@@ -157,6 +160,7 @@ describe('#8591 catch-up failure quarantines the watermark', () => {
     await flushAsync()
 
     expect(host.askedFrom).toEqual([5, 5, 5])
+    expect(catchUpSettled).toHaveBeenLastCalledWith(true)
     const titles = vi
       .mocked(Notifications.scheduleNotificationAsync)
       .mock.calls.map((call) => (call[0] as { content: { title: string } }).content.title)

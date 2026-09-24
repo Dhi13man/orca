@@ -741,26 +741,26 @@ describe('subscribeToDesktopNotifications — reconnect catch-up', () => {
     })
 
     subscribeToDesktopNotifications(sub.client, 'host-1')
-    sub.onData?.({ type: 'ready', subscriptionId: 'sub-1' })
+    sub.onData?.({ type: 'ready', subscriptionId: 'sub-1', epoch: 'epoch-a', baselineSeq: 0 })
     await flushAsync()
     // First reconnect → replay delivers seq 8 (no prior live delivery).
-    sub.onData?.({ type: 'ready', subscriptionId: 'sub-1' })
+    sub.onData?.({ type: 'ready', subscriptionId: 'sub-1', epoch: 'epoch-a', baselineSeq: 0 })
     await flushAsync()
     await flushAsync()
 
     // Watermark advanced to the replayed seq and was persisted.
     expect(AsyncStorageMock.setItem).toHaveBeenCalledWith(
       'orca:mobileNotificationsWatermark:host-1',
-      JSON.stringify({ seq: 8, epoch: null })
+      JSON.stringify({ seq: 8, epoch: 'epoch-a' })
     )
 
     // Second reconnect resumes from the advanced watermark, not 0.
-    sub.onData?.({ type: 'ready', subscriptionId: 'sub-1' })
+    sub.onData?.({ type: 'ready', subscriptionId: 'sub-1', epoch: 'epoch-a', baselineSeq: 0 })
     await flushAsync()
     const missedCalls = vi
       .mocked(sub.client.sendRequest)
       .mock.calls.filter((c: unknown[]) => c[0] === 'notifications.getMissedSince')
-    expect(missedCalls.at(-1)?.[1]).toEqual({ lastSeenSeq: 8 })
+    expect(missedCalls.at(-1)?.[1]).toEqual({ lastSeenSeq: 8, epoch: 'epoch-a' })
   })
 
   it('replays a terminal bell at a seq the previous desktop counter already used', async () => {

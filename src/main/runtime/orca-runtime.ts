@@ -16482,6 +16482,10 @@ export class OrcaRuntimeService {
     return this.mobileNotificationReplay.epoch
   }
 
+  getMobileNotificationSeq(): number {
+    return this.mobileNotificationReplay.currentSeq
+  }
+
   dismissMobileNotification(notificationId: string): void {
     this.dispatchMobileNotification({ type: 'dismiss', notificationId })
   }

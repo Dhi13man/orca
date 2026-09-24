@@ -1,4 +1,5 @@
 import { wearDataLayer, type WearCompanionState } from '@orca/expo-wear-data-layer'
+import { replayWearNotifications } from './wear-notification-replay'
 import { refreshWearDashboardOnce } from './wear-dashboard-refresh'
 
 function readyCompanionState(signal: AbortSignal): Promise<WearCompanionState | null> {
@@ -62,11 +63,17 @@ export async function refreshBoundWearDashboards(runId: number): Promise<void> {
     if (cancellation.signal.aborted || state?.role !== 'phone') {
       return
     }
+    if (!state.bindings?.length) {
+      return
+    }
     await Promise.all(
-      (state.bindings ?? []).map((binding) =>
+      state.bindings.map((binding) =>
         refreshWearDashboardOnce(binding.bindingId, 30_000, cancellation.signal)
       )
     )
+    if (!cancellation.signal.aborted) {
+      await replayWearNotifications(cancellation.signal)
+    }
   } finally {
     clearInterval(monitor)
     native.completeBackgroundRefresh(runId)

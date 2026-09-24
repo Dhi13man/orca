@@ -59,7 +59,12 @@ export const NOTIFICATION_METHODS: readonly RpcAnyMethod[] = [
 
         // Why: the epoch rides the ready frame so a reconnecting client learns the
         // counter lifetime BEFORE it sends its watermark to getMissedSince (#8591).
-        emit({ type: 'ready', subscriptionId, epoch: runtime.getMobileNotificationEpoch() })
+        emit({
+          type: 'ready',
+          subscriptionId,
+          epoch: runtime.getMobileNotificationEpoch(),
+          baselineSeq: runtime.getMobileNotificationSeq()
+        })
       })
     }
   }),

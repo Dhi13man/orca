@@ -32,10 +32,15 @@ type SubscribeResult = {
   subscriptionId: string
   // Desktop counter lifetime (#8591); absent from runtimes that predate it.
   epoch?: string
+  baselineSeq?: number
 }
 
 // Per-connection subscription; a reconnect `ready` triggers watermarked catch-up (#8129) so already-pushed events aren't re-sent.
-export function subscribeToDesktopNotifications(client: RpcClient, hostId: string): () => void {
+export function subscribeToDesktopNotifications(
+  client: RpcClient,
+  hostId: string,
+  onCatchUpSettled?: (complete: boolean) => void
+): () => void {
   configureNotificationChannel()
 
   let subscriptionId: string | null = null
@@ -102,7 +107,11 @@ export function subscribeToDesktopNotifications(client: RpcClient, hostId: strin
     // means a process death in between silently drops it — the next launch asks the
     // desktop for seq greater than one the user never saw.
     if (event.notificationSeq != null && event.notificationSeq > session.lastDeliveredSeq) {
+      if (!session.watermarkKnown) {
+        return
+      }
       session.lastDeliveredSeq = event.notificationSeq
+      session.hasSafeBaseline = true
       // Why clamped: while a failed catch-up's range is still unrecovered, persisting
       // the live seq would let the next catch-up ask from above the gap and the desktop
       // would cut it. resolveCatchUpQuarantine writes the held-back value on success.
@@ -140,9 +149,9 @@ export function subscribeToDesktopNotifications(client: RpcClient, hostId: strin
   }
 
   // Why: desktop cuts by seq > lastSeenSeq, so re-fetching from the watermark is idempotent (session.seen guards residual overlap).
-  async function fetchMissed(): Promise<void> {
+  async function fetchMissed(): Promise<boolean> {
     if (disposed) {
-      return
+      return false
     }
     // Captured before the request: everything at or below it is known delivered, so
     // it is the floor the watermark falls back to if this catch-up never completes.
@@ -168,18 +177,18 @@ export function subscribeToDesktopNotifications(client: RpcClient, hostId: strin
       // unrecovered until SOME later one succeeds, and a live seq persisting past it
       // meanwhile would make the desktop cut it forever.
       quarantineCatchUpWatermark(session, hostId, askFrom)
-      return
+      return false
     }
     // Why the whole batch is ONE queue entry (#8591): awaiting per event returns to
     // the event loop between replays, so a live seq 11 slots into the chain between
     // seq 6 and 7 and persists a watermark past a notification still unshown. Why the
     // request stays OUTSIDE the queue: sendRequest waits up to 30s, and holding the
     // chain for that would stall live delivery on a slow link.
+    let drained = false
     await enqueueHostDelivery(session, async () => {
       // Advances only past events this batch settled, so a teardown or a failing show
       // quarantines the true contiguous point instead of the range it never reached.
       let contiguousSeq = askFrom
-      let drained = false
       try {
         for (const raw of missed) {
           // Re-checked per event: the batch can start before a teardown and still be
@@ -203,6 +212,7 @@ export function subscribeToDesktopNotifications(client: RpcClient, hostId: strin
       // and the only caller is an un-awaited 'ready' continuation — letting a failed
       // show escape turns every one into an unhandled rejection (a RN redbox).
     }).catch(() => {})
+    return drained
   }
 
   seedWatermarkFromStorage(session, hostId)
@@ -221,7 +231,6 @@ export function subscribeToDesktopNotifications(client: RpcClient, hostId: strin
       | { type: 'end' }
     if (event.type === 'ready') {
       subscriptionId = (event as SubscribeResult).subscriptionId
-      const isReconnect = session.connectedBefore
       session.connectedBefore = true
       if (disposed) {
         unsubscribeServer(subscriptionId)
@@ -233,8 +242,7 @@ export function subscribeToDesktopNotifications(client: RpcClient, hostId: strin
       // flight, so deciding here would see watermarkLoaded false and skip catch-up —
       // which is precisely the post-upgrade / post-process-death case that loses
       // every notification between the stored watermark and the next live seq.
-      void (async () => {
-        await session.watermarkSeeded
+      const settleReady = async () => {
         if (disposed) {
           return
         }
@@ -242,11 +250,50 @@ export function subscribeToDesktopNotifications(client: RpcClient, hostId: strin
         // left over from a previous desktop lifetime, so the catch-up request carries
         // a watermark that means something against the counter now answering it.
         adoptNotificationEpoch(session, hostId, readyEpoch)
-        // A reconnect always catches up. A cold open catches up only when this device
-        // has delivered for this host before — a first-ever pairing must not be handed
-        // the desktop's whole retained buffer.
-        if (isReconnect || session.hadStoredWatermark) {
-          await fetchMissed()
+        if (!session.watermarkKnown) {
+          await session.deliveryTail
+          if (!disposed) {
+            onCatchUpSettled?.(false)
+          }
+          return
+        }
+        const firstPairing = !session.hadStoredWatermark && !session.hasSafeBaseline
+        let complete: boolean
+        if (firstPairing) {
+          const baseline = (event as SubscribeResult).baselineSeq
+          if (
+            readyEpoch != null &&
+            baseline != null &&
+            Number.isSafeInteger(baseline) &&
+            baseline >= 0
+          ) {
+            session.lastDeliveredSeq = Math.max(session.lastDeliveredSeq, baseline)
+            session.hasSafeBaseline = true
+            complete = await saveWatermark(hostId, {
+              seq: session.lastDeliveredSeq,
+              epoch: session.lastDeliveredEpoch
+            })
+            session.hadStoredWatermark = complete
+          } else {
+            complete = false
+          }
+        } else {
+          complete = await fetchMissed()
+        }
+        await session.deliveryTail
+        if (!disposed) {
+          onCatchUpSettled?.(complete)
+        }
+      }
+      void (async () => {
+        await session.watermarkSeeded
+        await settleReady()
+        if (!session.watermarkKnown) {
+          void session.watermarkLoaded?.then(() => {
+            if (session.watermarkKnown) {
+              void settleReady()
+            }
+          })
         }
       })()
       return

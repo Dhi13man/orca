@@ -60,6 +60,48 @@ describe('#8591 per-host delivery ordering', () => {
     vi.mocked(Notifications.dismissNotificationAsync).mockResolvedValue(undefined)
   })
 
+  it('settles the background replay fence only after notification delivery', async () => {
+    let releaseShow!: () => void
+    vi.mocked(Notifications.scheduleNotificationAsync).mockImplementation(async () => {
+      await new Promise<void>((resolve) => {
+        releaseShow = resolve
+      })
+      return 'sched-1'
+    })
+    let onData: ((data: unknown) => void) | null = null
+    const client = {
+      subscribe: vi.fn((_m: string, _p: unknown, cb: (data: unknown) => void) => {
+        onData = cb
+        return vi.fn()
+      }),
+      getState: vi.fn(() => 'connected'),
+      sendRequest: vi.fn(async () => ({
+        ok: true,
+        result: {
+          epoch: 'epoch-1',
+          notifications: [
+            {
+              type: 'notification',
+              title: 'Done',
+              body: 'A task finished',
+              notificationId: 'agent:done',
+              notificationSeq: 6,
+              notificationEpoch: 'epoch-1'
+            }
+          ]
+        }
+      }))
+    } as unknown as RpcClient
+    storage.set(WATERMARK_KEY, JSON.stringify({ seq: 5, epoch: 'epoch-1' }))
+    const settled = vi.fn()
+    subscribeToDesktopNotifications(client, 'host-1', settled)
+    onData?.({ type: 'ready', subscriptionId: 'sub-1', epoch: 'epoch-1' })
+    await vi.waitFor(() => expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledOnce())
+    expect(settled).not.toHaveBeenCalled()
+    releaseShow()
+    await vi.waitFor(() => expect(settled).toHaveBeenCalledWith(true))
+  })
+
   it('never persists a watermark past a notification the catch-up has not shown', async () => {
     // The watermark is a promise that everything up to that seq reached the user.
     // If a live seq 11 is processed while catch-up is still showing seq 6, it

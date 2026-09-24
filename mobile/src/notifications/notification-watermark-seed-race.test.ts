@@ -145,6 +145,66 @@ describe('#8591 watermark seeding races a cold open', () => {
     expect(host.getMissedCalls).toEqual([{ lastSeenSeq: 5, epoch: 'epoch-a' }])
   })
 
+  it('does not overwrite a returning phone watermark when its read exceeds three seconds', async () => {
+    storage.set(WATERMARK_KEY, JSON.stringify({ seq: 5, epoch: 'epoch-a' }))
+    holdReads = true
+    const host = makeHostClient()
+    subscribeToDesktopNotifications(host.client, 'host-1')
+    host.onData?.({ type: 'ready', subscriptionId: 'sub-1', epoch: 'epoch-a', baselineSeq: 10 })
+
+    await new Promise((resolve) => setTimeout(resolve, 3100))
+    expect(host.getMissedCalls).toEqual([])
+    expect(storage.get(WATERMARK_KEY)).toBe(JSON.stringify({ seq: 5, epoch: 'epoch-a' }))
+
+    host.onData?.({
+      type: 'notification',
+      title: 'live-12',
+      body: 'b',
+      notificationId: 'agent:live',
+      notificationSeq: 12,
+      notificationEpoch: 'epoch-a'
+    })
+    await flushAsync()
+    expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledOnce()
+    expect(storage.get(WATERMARK_KEY)).toBe(JSON.stringify({ seq: 5, epoch: 'epoch-a' }))
+
+    releaseReads()
+    await flushAsync()
+    expect(host.getMissedCalls).toEqual([{ lastSeenSeq: 5, epoch: 'epoch-a' }])
+  })
+
+  it('keeps a failed read unknown and retries the saved watermark on reconnect', async () => {
+    storage.set(WATERMARK_KEY, JSON.stringify({ seq: 5, epoch: 'epoch-a' }))
+    vi.mocked(AsyncStorage.getItem).mockRejectedValueOnce(new Error('read failed'))
+    const host = makeHostClient()
+    const settled = vi.fn()
+    subscribeToDesktopNotifications(host.client, 'host-1', settled)
+    host.onData?.({ type: 'ready', subscriptionId: 'sub-1', epoch: 'epoch-a', baselineSeq: 10 })
+    await flushAsync()
+    expect(settled).toHaveBeenCalledWith(false)
+    expect(storage.get(WATERMARK_KEY)).toBe(JSON.stringify({ seq: 5, epoch: 'epoch-a' }))
+
+    subscribeToDesktopNotifications(host.client, 'host-1')
+    host.onData?.({ type: 'ready', subscriptionId: 'sub-2', epoch: 'epoch-a', baselineSeq: 11 })
+    await flushAsync()
+    expect(host.getMissedCalls).toEqual([{ lastSeenSeq: 5, epoch: 'epoch-a' }])
+  })
+
+  it('replays from an in-memory baseline after the first persistence write fails', async () => {
+    vi.mocked(AsyncStorage.setItem).mockRejectedValueOnce(new Error('write failed'))
+    const host = makeHostClient()
+    const settled = vi.fn()
+    subscribeToDesktopNotifications(host.client, 'host-1', settled)
+    host.onData?.({ type: 'ready', subscriptionId: 'sub-1', epoch: 'epoch-a', baselineSeq: 7 })
+    await flushAsync()
+    expect(settled).toHaveBeenCalledWith(false)
+    expect(storage.has(WATERMARK_KEY)).toBe(false)
+
+    host.onData?.({ type: 'ready', subscriptionId: 'sub-2', epoch: 'epoch-a', baselineSeq: 8 })
+    await flushAsync()
+    expect(host.getMissedCalls).toEqual([{ lastSeenSeq: 7, epoch: 'epoch-a' }])
+  })
+
   it('treats a zeroed-but-present watermark as a returning device, not a first pairing', async () => {
     // adoptNotificationEpoch persists {seq: 0, epoch} when it voids a watermark from a
     // dead counter. That record still proves this device has been subscribed here, so a
@@ -167,6 +227,30 @@ describe('#8591 watermark seeding races a cold open', () => {
     await flushAsync()
 
     expect(host.getMissedCalls).toEqual([])
+    expect(storage.has(WATERMARK_KEY)).toBe(false)
+    resetHostNotificationSessionsForTests()
+    subscribeToDesktopNotifications(host.client, 'host-1')
+    host.onData?.({ type: 'ready', subscriptionId: 'sub-2', epoch: 'epoch-a' })
+    await flushAsync()
+    expect(host.getMissedCalls).toEqual([])
+  })
+
+  it('seeds the desktop baseline on first pairing and replays only later events after restart', async () => {
+    const host = makeHostClient()
+    const settled = vi.fn()
+    subscribeToDesktopNotifications(host.client, 'host-1', settled)
+    host.onData?.({ type: 'ready', subscriptionId: 'sub-1', epoch: 'epoch-a', baselineSeq: 7 })
+    await flushAsync()
+
+    expect(host.getMissedCalls).toEqual([])
+    expect(storage.get(WATERMARK_KEY)).toBe(JSON.stringify({ seq: 7, epoch: 'epoch-a' }))
+    expect(settled).toHaveBeenCalledWith(true)
+
+    resetHostNotificationSessionsForTests()
+    subscribeToDesktopNotifications(host.client, 'host-1')
+    host.onData?.({ type: 'ready', subscriptionId: 'sub-2', epoch: 'epoch-a', baselineSeq: 9 })
+    await flushAsync()
+    expect(host.getMissedCalls).toEqual([{ lastSeenSeq: 7, epoch: 'epoch-a' }])
   })
 
   it('a seed landing after a live epoch is adopted cannot reinstate the dead watermark', async () => {
