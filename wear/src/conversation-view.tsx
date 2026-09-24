@@ -74,6 +74,7 @@ export function ConversationView({
           {page.hasOlder ? (
             <Text style={styles.detail}>Earlier messages are outside this preview.</Text>
           ) : null}
+          <WearButton label="Refresh messages" quiet onPress={onRetry} />
           {page.kind === 'terminal' ? (
             <View style={styles.composer}>
               <TextInput
