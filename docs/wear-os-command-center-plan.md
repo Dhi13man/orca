@@ -31,7 +31,7 @@ At fork-base source commit `4065d053cf942c1879379ebd8f1b50dda5568ff8`, `mobile/p
 
 ### Approval decisions
 
-Dhiman authorized the full companion scope on 2026-09-23, including the independent Wear workspace, phone-only runtime authority, all paired machines, and terminal-backed plus structured agent parity. This supersedes the earlier spike-only and phase-permission restrictions. Reversible in-scope implementation may proceed through the phases below; security and evidence requirements remain acceptance gates. Internal sideload acceptance is separate from unrequested Play publication. A signing-incompatible production phone install blocks only that deployment lane: never uninstall or overwrite it, change production pairings, or expose credentials to make a test pass. Test messages target disposable agents only.
+Dhiman authorized the full companion scope on 2026-09-23, including the independent Wear workspace, phone-only runtime authority, all paired machines, and terminal-backed plus structured agent parity. This supersedes the earlier spike-only and phase-permission restrictions. Reversible in-scope implementation may proceed through the phases below; security and evidence requirements remain acceptance gates. Internal sideload acceptance is separate from unrequested Play publication. A signing-incompatible production phone install blocks only that deployment lane: never uninstall or overwrite it, change production pairings, or expose credentials to make a test pass. Inventory and conversation validation use existing configured agents; a reply test requires an exactly identified idle session and only a harmless bounded acknowledgement through the watch path. Busy sessions remain untouched.
 
 1. **Companion-first boundary:** the phone remains the paired Orca client for the minimum release. The watch can show cached state offline, but live state and commands depend on the phone's Orca connection.
 2. **Independent-workspace stack (revised 2026-09-23; supersedes the earlier "shared mobile workspace" wording):** use a dedicated Expo/React Native app at root `wear/`, its own pnpm workspace (matching the incumbent prototype's location), version-parity-checked against `mobile/` rather than lockfile-shared with it. Do not port phone screen layouts or the terminal WebView. Keep Kotlin confined to the shared Expo Wear module and generated Android integration, living inside the portable `wear/` tree so it stays extraction-ready.
@@ -1404,3 +1404,11 @@ conversation reader was also made Node 18 compatible. This is authentication
 substrate, not a remote-write receipt: host-owned durable admission, exact PTY
 incarnation checks, failure recovery, and end-to-end watch delivery remain
 open. No existing agent received a test message.
+
+A POSIX slot-file receipt prototype was removed after review found a pruning
+race that could erase a newly reserved command and crash-orphaned slots that
+could exhaust capacity. Its single-process and same-key race probes do not
+establish durable cross-process safety. SSH Wear send stays disabled until a
+host-owned transactional receipt store passes concurrent reservation, pruning,
+crash-recovery, and exact-PTY acceptance tests; no receipt from the generic
+relay PTY notification is authoritative.
