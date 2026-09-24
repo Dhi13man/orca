@@ -1302,3 +1302,10 @@ tab, and host publication epoch, so it cannot carry into a different target;
 an accepted receipt clears it. Wear typecheck, lint, 140 tests, and the rebuilt
 release APK install on the disposable watch emulator pass. The draft-retention
 behavior still needs an interactive watch check with a live agent page.
+
+An SSH relay file-journal prototype passed sequential restart tests but failed
+independent safety review: Windows cannot prove its newly created reservation
+directory entry survives power loss, and concurrent relay processes could race
+capacity and outcome updates. The uncommitted prototype was removed; no SSH
+reply route was enabled. A host-owned transactional, durable reservation and
+receipt remains required before the SSH send capability can be advertised.
