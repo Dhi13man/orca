@@ -79,7 +79,11 @@ export const NOTIFICATION_METHODS: readonly RpcAnyMethod[] = [
     // client missed while its socket was reaped.
     handler: async (params, { runtime }) => {
       const missed = runtime.getMissedNotificationsSince(params.lastSeenSeq, params.epoch)
-      return { notifications: missed, epoch: runtime.getMobileNotificationEpoch() }
+      return {
+        notifications: missed,
+        epoch: runtime.getMobileNotificationEpoch(),
+        wearReplayVersion: 1
+      }
     }
   })
 ]

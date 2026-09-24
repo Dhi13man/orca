@@ -11,6 +11,7 @@ import { projectWearAgentPage } from './wear-agent-page-projection'
 import { encodeWearConversationPage } from '@orca/wear-companion-contract/conversation-page'
 import { projectWearConversationPage } from './wear-conversation-page-projection'
 import { refreshWearDashboardOnce } from './wear-dashboard-publisher'
+import { sendWearNotificationsPage } from './wear-notification-action'
 
 type HostOutcome =
   | { outcome: 'accepted' | 'unknown'; reason: null }
@@ -171,6 +172,13 @@ async function drain(): Promise<void> {
           folderIds: inventory.folderIds
         })
         await native.sendAgentPage(claim.bindingId, claim.requestId, encodeWearAgentPage(page))
+        outcome = { outcome: 'accepted', reason: null }
+      } catch {
+        outcome = { outcome: 'unknown', reason: null }
+      }
+    } else if (decoded.ok && decoded.action.action === 'readNotificationsPage') {
+      try {
+        await sendWearNotificationsPage(claim, decoded.action)
         outcome = { outcome: 'accepted', reason: null }
       } catch {
         outcome = { outcome: 'unknown', reason: null }

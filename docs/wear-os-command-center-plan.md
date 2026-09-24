@@ -1174,3 +1174,16 @@ Kotlin compile, and a release APK build/install/start on a disposable Wear
 emulator pass. A paired watch receipt, refreshed data while the phone is
 backgrounded, autonomous background/notification refresh, and refresh after
 dashboard expiry remain unproved.
+
+The watch now has a transient Inbox path for retained notification dispatches,
+one paired machine per request. The desktop replay adds dispatch time and an
+optional version marker; the phone durably seeds a binding-and-host-key-specific
+sequence floor on first read, showing no older entries, and rejects older hosts
+without the marker. Later reads return only redacted event kinds and times,
+apply dismissals, and label unavailable machines. Native PAGE admission is
+bound to the journal action and current dashboard; watch decode correlates
+request/hash/revision/cursor and expiry. Focused runtime, mobile, Wear, and
+API-36 native tests pass; paired watch delivery remains unproved. This is
+not yet the planned session-scoped Attention feed: safe event-to-agent
+navigation, autonomous background refresh, and physical notification parity
+remain open.

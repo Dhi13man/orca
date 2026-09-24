@@ -23,6 +23,7 @@ import type { MobileNotificationEvent } from './orca-runtime'
 // single field name end-to-end is what makes live and replay interchangeable.
 export type ReplayableMobileNotification = MobileNotificationEvent & {
   notificationSeq: number
+  notificationAt: number
   // The counter lifetime `notificationSeq` belongs to. Lets a client tell "seq 3
   // is older than my watermark" from "seq 3 came from a counter I've never seen".
   notificationEpoch: string
@@ -58,9 +59,14 @@ export class MobileNotificationReplayBuffer {
   // Records a dispatched event and returns the monotonic seq assigned to it.
   // Callers surface the seq so clients can watermark their last-seen position
   // (both on the live fan-out and on explicit catch-up requests).
-  record(event: MobileNotificationEvent): number {
+  record(event: MobileNotificationEvent, now = Date.now()): number {
     const seq = ++this.seq
-    this.buffer.push({ ...event, notificationSeq: seq, notificationEpoch: this.epochId })
+    this.buffer.push({
+      ...event,
+      notificationSeq: seq,
+      notificationAt: now,
+      notificationEpoch: this.epochId
+    })
     if (this.buffer.length > this.capacity) {
       // Why: insertion-order array; oldest entries sit at the front.
       this.buffer.splice(0, this.buffer.length - this.capacity)

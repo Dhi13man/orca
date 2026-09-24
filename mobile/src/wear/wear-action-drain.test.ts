@@ -10,6 +10,7 @@ const native = vi.hoisted(() => ({
   sendHostPage: vi.fn(),
   sendAgentPage: vi.fn(),
   sendConversationPage: vi.fn(),
+  sendNotificationsPage: vi.fn(),
   pendingJournalReceipts: vi.fn(),
   pendingJournalReconciliation: vi.fn()
 }))
@@ -20,6 +21,8 @@ const loadHostCatalog = vi.hoisted(() => vi.fn())
 const readWearHostAgentInventory = vi.hoisted(() => vi.fn())
 const projectWearAgentPage = vi.hoisted(() => vi.fn())
 const refreshWearDashboardOnce = vi.hoisted(() => vi.fn())
+const loadWearNotificationFloor = vi.hoisted(() => vi.fn())
+const saveWearNotificationFloor = vi.hoisted(() => vi.fn())
 
 vi.mock('@orca/expo-wear-data-layer', () => ({ wearDataLayer: native }))
 vi.mock('./wear-host-command-client', () => ({ requestWearHostCommand, withWearHostClient }))
@@ -27,6 +30,10 @@ vi.mock('../transport/host-store', () => ({ loadHostCatalog }))
 vi.mock('./wear-host-agent-inventory', () => ({ readWearHostAgentInventory }))
 vi.mock('./wear-agent-page-projection', () => ({ projectWearAgentPage }))
 vi.mock('./wear-dashboard-publisher', () => ({ refreshWearDashboardOnce }))
+vi.mock('./wear-notification-floor', () => ({
+  loadWearNotificationFloor,
+  saveWearNotificationFloor
+}))
 vi.mock('expo-crypto', async () => {
   const { createHash } = await import('node:crypto')
   return {
@@ -57,6 +64,7 @@ describe('Wear action drain', () => {
     native.sendHostPage.mockResolvedValue(undefined)
     native.sendAgentPage.mockResolvedValue(undefined)
     native.sendConversationPage.mockResolvedValue(undefined)
+    native.sendNotificationsPage.mockResolvedValue(undefined)
     loadHostCatalog.mockResolvedValue([])
     native.pendingJournalReceipts.mockResolvedValue([
       { bindingId: 'binding', requestId: 'request' }
@@ -67,6 +75,8 @@ describe('Wear action drain', () => {
       result: { outcome: 'accepted', reason: null, actionHash: 'a'.repeat(64) }
     })
     refreshWearDashboardOnce.mockResolvedValue(true)
+    loadWearNotificationFloor.mockResolvedValue(null)
+    saveWearNotificationFloor.mockResolvedValue(undefined)
   })
 
   it('serializes concurrent wakes and sends a receipt only after journal completion', async () => {
@@ -135,6 +145,217 @@ describe('Wear action drain', () => {
       'accepted',
       null
     )
+  })
+
+  it('sends only a floor-filtered, redacted notification PAGE for the selected paired host', async () => {
+    loadWearNotificationFloor.mockResolvedValue({
+      bindingId: 'binding',
+      hostId: 'host-a',
+      epoch: 'host-epoch',
+      seq: 0
+    })
+    native.claimAction
+      .mockReset()
+      .mockResolvedValueOnce({
+        bindingId: 'binding',
+        requestId: 'notifications-request',
+        actionHash: 'a'.repeat(64),
+        claimToken: 'token',
+        canonical: JSON.stringify({
+          schemaVersion: 1,
+          bindingId: 'binding',
+          requestId: 'notifications-request',
+          expiresAt: Date.now() + 60_000,
+          action: 'readNotificationsPage',
+          target: {},
+          publisherEpoch: 'epoch',
+          expectedRevision: 4,
+          targetPublicationEpoch: null,
+          targetSnapshotVersion: null,
+          payload: { cursor: null }
+        })
+      })
+      .mockResolvedValue(null)
+    loadHostCatalog.mockResolvedValue([
+      {
+        id: 'host-a',
+        name: 'Machine',
+        publicKeyB64: 'private-key',
+        credentialStatus: 'ready',
+        profile: { private: 'not sent' }
+      }
+    ])
+    const sendRequest = vi.fn().mockResolvedValue({
+      ok: true,
+      result: {
+        wearReplayVersion: 1,
+        epoch: 'host-epoch',
+        notifications: [
+          {
+            type: 'notification',
+            source: 'terminal-bell',
+            notificationSeq: 1,
+            notificationAt: Date.now(),
+            notificationEpoch: 'host-epoch',
+            title: 'private title',
+            body: 'private body'
+          }
+        ]
+      }
+    })
+    withWearHostClient.mockImplementation(async (_hostId, admits, request) => {
+      expect(admits({})).toBe(true)
+      return request({ sendRequest })
+    })
+    await drainWearActions()
+    expect(sendRequest).toHaveBeenCalledWith(
+      'notifications.getMissedSince',
+      { lastSeenSeq: 0, epoch: 'host-epoch' },
+      { timeoutMs: 8_000, failWhenDisconnected: true }
+    )
+    const page = native.sendNotificationsPage.mock.calls[0][2] as string
+    expect(JSON.parse(page).items).toEqual([
+      { eventKey: '1', kind: 'terminal-bell', notificationAt: expect.any(Number) }
+    ])
+    expect(page).not.toMatch(/private|body|title/)
+    expect(native.finishActionEffect).toHaveBeenCalledWith(
+      'binding',
+      'notifications-request',
+      'a'.repeat(64),
+      'accepted',
+      null
+    )
+  })
+
+  it('seeds a durable host floor and shows no retained pre-pair events on first read', async () => {
+    native.claimAction
+      .mockReset()
+      .mockResolvedValueOnce({
+        bindingId: 'binding',
+        requestId: 'first-inbox',
+        actionHash: 'a'.repeat(64),
+        claimToken: 'token',
+        canonical: JSON.stringify({
+          schemaVersion: 1,
+          bindingId: 'binding',
+          requestId: 'first-inbox',
+          expiresAt: Date.now() + 60_000,
+          action: 'readNotificationsPage',
+          target: {},
+          publisherEpoch: 'epoch',
+          expectedRevision: 4,
+          targetPublicationEpoch: null,
+          targetSnapshotVersion: null,
+          payload: { cursor: null }
+        })
+      })
+      .mockResolvedValue(null)
+    loadHostCatalog.mockResolvedValue([
+      {
+        id: 'host-a',
+        name: 'Machine',
+        publicKeyB64: 'private-key',
+        credentialStatus: 'ready',
+        profile: { private: 'not sent' }
+      }
+    ])
+    withWearHostClient.mockImplementation(async (_id, _admits, request) =>
+      request({
+        sendRequest: vi.fn().mockResolvedValue({
+          ok: true,
+          result: {
+            wearReplayVersion: 1,
+            epoch: 'host-epoch',
+            notifications: [
+              {
+                type: 'notification',
+                source: 'terminal-bell',
+                notificationSeq: 7,
+                notificationAt: Date.now(),
+                notificationEpoch: 'host-epoch',
+                title: 'pre-pair',
+                body: 'private'
+              }
+            ]
+          }
+        })
+      })
+    )
+    await drainWearActions()
+    expect(saveWearNotificationFloor).toHaveBeenCalledWith({
+      bindingId: 'binding',
+      hostId: 'host-a',
+      hostKey: createHash('sha256').update('private-key').digest('hex'),
+      epoch: 'host-epoch',
+      seq: 7
+    })
+    expect(JSON.parse(native.sendNotificationsPage.mock.calls[0][2]).items).toEqual([])
+  })
+
+  it('marks an older host unsupported without projecting its private replay', async () => {
+    loadWearNotificationFloor.mockResolvedValue({
+      bindingId: 'binding',
+      hostId: 'host-a',
+      hostKey: 'a'.repeat(64),
+      epoch: 'old-epoch',
+      seq: 1
+    })
+    native.claimAction
+      .mockReset()
+      .mockResolvedValueOnce({
+        bindingId: 'binding',
+        requestId: 'older-host',
+        actionHash: 'a'.repeat(64),
+        claimToken: 'token',
+        canonical: JSON.stringify({
+          schemaVersion: 1,
+          bindingId: 'binding',
+          requestId: 'older-host',
+          expiresAt: Date.now() + 60_000,
+          action: 'readNotificationsPage',
+          target: {},
+          publisherEpoch: 'epoch',
+          expectedRevision: 4,
+          targetPublicationEpoch: null,
+          targetSnapshotVersion: null,
+          payload: { cursor: null }
+        })
+      })
+      .mockResolvedValue(null)
+    loadHostCatalog.mockResolvedValue([
+      {
+        id: 'host-a',
+        name: 'Machine',
+        publicKeyB64: 'private-key',
+        credentialStatus: 'ready',
+        profile: { private: 'not sent' }
+      }
+    ])
+    withWearHostClient.mockImplementation(async (_id, _admits, request) =>
+      request({
+        sendRequest: vi.fn().mockResolvedValue({
+          ok: true,
+          result: {
+            epoch: 'old-epoch',
+            notifications: [
+              {
+                type: 'notification',
+                source: 'terminal-bell',
+                notificationSeq: 2,
+                notificationAt: Date.now(),
+                notificationEpoch: 'old-epoch',
+                title: 'private title',
+                body: 'private body'
+              }
+            ]
+          }
+        })
+      })
+    )
+    await drainWearActions()
+    const page = JSON.parse(native.sendNotificationsPage.mock.calls[0][2])
+    expect(page).toMatchObject({ hostState: 'unsupported', items: [] })
+    expect(JSON.stringify(page)).not.toMatch(/private title|private body/)
   })
 
   it('does not start an effect when journal handoff was not recorded', async () => {

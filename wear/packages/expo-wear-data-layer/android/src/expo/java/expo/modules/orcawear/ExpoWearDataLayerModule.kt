@@ -152,6 +152,10 @@ class ExpoWearDataLayerModule : Module() {
             serialized: String, promise: Promise ->
             owner.sendConversationPage(bindingId, requestId, serialized) { complete(promise, it) }
         }
+        AsyncFunction("sendNotificationsPage") { bindingId: String, requestId: String,
+            serialized: String, promise: Promise ->
+            owner.sendNotificationsPage(bindingId, requestId, serialized) { complete(promise, it) }
+        }
         AsyncFunction("readHostPage") { bindingId: String, requestId: String,
             promise: Promise ->
             owner.readHostPage(bindingId, requestId) { page, error ->
@@ -179,6 +183,18 @@ class ExpoWearDataLayerModule : Module() {
         AsyncFunction("readConversationPage") { bindingId: String, requestId: String,
             promise: Promise ->
             owner.readConversationPage(bindingId, requestId) { page, error ->
+                if (error != null) complete(promise, error)
+                else promise.resolve(page?.let {
+                    mapOf("bindingId" to it.bindingId, "requestId" to it.requestId,
+                        "actionHash" to it.actionHash, "publisherEpoch" to it.publisherEpoch,
+                        "revision" to it.revision.toDouble(),
+                        "expiresAt" to it.expiresAt.toDouble(), "serialized" to it.serialized)
+                })
+            }
+        }
+        AsyncFunction("readNotificationsPage") { bindingId: String, requestId: String,
+            promise: Promise ->
+            owner.readNotificationsPage(bindingId, requestId) { page, error ->
                 if (error != null) complete(promise, error)
                 else promise.resolve(page?.let {
                     mapOf("bindingId" to it.bindingId, "requestId" to it.requestId,

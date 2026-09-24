@@ -13,13 +13,15 @@ import { useConversationPage } from './src/use-conversation-page'
 import { ConversationView } from './src/conversation-view'
 import { useWearReply } from './src/use-wear-reply'
 import { useDashboardRefresh } from './src/use-dashboard-refresh'
+import { useNotificationPages } from './src/use-notification-pages'
+import { NotificationInboxView } from './src/notification-inbox-view'
 
 export default function App() {
   const [state, setState] = useState<WearCompanionState | null>(
     () => wearDataLayer?.getState() ?? null
   )
   const [peers, setPeers] = useState<WearPeer[]>([])
-  const [page, setPage] = useState<DashboardPage>('Attention')
+  const [page, setPage] = useState<DashboardPage | 'Inbox'>('Attention')
   const [showAllMachines, setShowAllMachines] = useState(false)
   const [selectedHostId, setSelectedHostId] = useState<string | null>(null)
   const [selectedAgent, setSelectedAgent] = useState<WearAgentRow | null>(null)
@@ -29,6 +31,9 @@ export default function App() {
   const dashboard = usePhoneDashboard(bindingId)
   const dashboardRefresh = useDashboardRefresh(
     dashboard.state === 'ready' ? dashboard.dashboard : null
+  )
+  const notificationPages = useNotificationPages(
+    page === 'Inbox' && dashboard.state === 'ready' ? dashboard.dashboard : null
   )
   const hostPages = useHostPages(dashboard.state === 'ready' ? dashboard.dashboard : null)
   const agentPages = useAgentPages(
@@ -65,6 +70,17 @@ export default function App() {
     const subscription = wearDataLayer.addListener('onState', setState)
     return () => subscription.remove()
   }, [])
+
+  useEffect(() => {
+    if (
+      page === 'Inbox' &&
+      dashboard.state === 'ready' &&
+      dashboard.dashboard.hostPage.total > 0 &&
+      notificationPages.state.status === 'idle'
+    ) {
+      void notificationPages.load(null)
+    }
+  }, [page, dashboard, notificationPages])
 
   const discover = useCallback(async () => {
     if (!wearDataLayer) {
@@ -191,7 +207,7 @@ export default function App() {
         {bound ? (
           <>
             <View style={styles.pages}>
-              {(['Attention', 'Agents', 'Usage'] as const).map((name) => (
+              {(['Attention', 'Agents', 'Usage', 'Inbox'] as const).map((name) => (
                 <WearButton
                   key={name}
                   compact={false}
@@ -244,9 +260,18 @@ export default function App() {
                 onLoad={(cursor) => void hostPages.load(cursor)}
                 onSelectHost={setSelectedHostId}
               />
+            ) : page === 'Inbox' && dashboard.state === 'ready' ? (
+              dashboard.dashboard.hostPage.total === 0 ? (
+                <Text style={styles.detail}>No paired machines reported.</Text>
+              ) : (
+                <NotificationInboxView
+                  {...notificationPages.state}
+                  onLoad={(cursor) => void notificationPages.load(cursor)}
+                />
+              )
             ) : (
               <DashboardPages
-                page={page}
+                page={page as DashboardPage}
                 view={dashboard}
                 refresh={dashboardRefresh}
                 onAllMachines={() => {

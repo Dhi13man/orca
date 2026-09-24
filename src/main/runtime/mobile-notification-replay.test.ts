@@ -147,6 +147,12 @@ describe('MobileNotificationReplayBuffer', () => {
     expect(new MobileNotificationReplayBuffer().epoch).not.toBe(buffer.epoch)
   })
 
+  it('stamps dispatch time for an enrolled watch event page', () => {
+    const buffer = new MobileNotificationReplayBuffer()
+    buffer.record({ type: 'notification', source: 'terminal-bell', title: 'x', body: 'y' }, 1234)
+    expect(buffer.getMissedSince(0)[0].notificationAt).toBe(1234)
+  })
+
   it('evicts oldest entries once the capacity is exceeded', () => {
     const buffer = new MobileNotificationReplayBuffer(2)
     dispatch(buffer, { notificationId: 'agent:one' })

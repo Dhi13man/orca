@@ -68,4 +68,14 @@ class WearTransientPageStoreTest {
             store.put(metadata, serialized.replace(hash, "c".repeat(64)), action, 1)
         }
     }
+
+    @Test fun acceptsNotificationPageShapeOnlyForTheExactOutstandingActionHash() {
+        val serialized = """{"schemaVersion":1,"bindingId":"$binding","requestId":"request","actionHash":"$hash","publisherEpoch":"$epoch","revision":4,"cursor":null,"generatedAt":0,"expiresAt":120000,"hostId":"host-a","hostName":"Machine","hostIndex":0,"totalHosts":1,"hostState":"ready","items":[],"omitted":0,"nextCursor":null}"""
+        val store = WearTransientPageStore()
+        assertTrue(store.put(metadata, serialized, action, 1))
+        assertEquals(serialized, store.read(binding, "request", 1)?.serialized)
+        assertThrows(IllegalArgumentException::class.java) {
+            store.put(metadata, serialized.replace(hash, "c".repeat(64)), action, 1)
+        }
+    }
 }
