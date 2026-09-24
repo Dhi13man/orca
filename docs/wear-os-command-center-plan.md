@@ -1476,3 +1476,20 @@ launched with its existing hosts intact. Another unbound Wear emulator
 observations prove startup and update continuity, not notification delivery or
 an agent conversation. The physical watch is still absent from `adb devices`
 and no physical APK install has occurred for this commit.
+
+The next bounded source unit enables **Open on phone** for structured agents
+without adding an agent-management system. The existing exact-target host
+resolution and `conversationRead` capability gate select a dedicated read-only
+mobile conversation view; notification taps reverify the target, and the view
+reads the existing `wear.conversation.read` RPC with the same publication epoch
+and snapshot version. The latest tap wins if notifications verify out of order,
+and a mounted view cannot show messages from a previous target while a new
+read is pending. Focused mobile tests (20), all Wear tests (144), both typechecks,
+and changed-file lint/format pass. This is source verification only: the new
+view, notification timing, and a real structured-agent conversation have not
+yet been accepted on a paired device. Validation uses Dhiman's existing
+authenticated agents and paired machines; there is no disposable profile or
+sign-in prerequisite. A reply test may use only a reverified idle exact session
+and a harmless bounded acknowledgement; busy agents remain untouched. SSH
+durable send, actual usage/freshness, physical-watch installation and operation,
+and end-to-end receipt/recovery acceptance remain open.

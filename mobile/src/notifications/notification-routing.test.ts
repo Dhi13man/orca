@@ -97,7 +97,8 @@ describe('notification routing', () => {
       sessionTabId: 'tab-1',
       targetPublicationEpoch: 'epoch-1',
       targetSnapshotVersion: 8,
-      requestId: 'request-1'
+      requestId: 'request-1',
+      kind: 'terminal'
     })
     expect(
       getNotificationNavigationTarget(data, {
@@ -121,6 +122,23 @@ describe('notification routing', () => {
         credentialStatusByHostId: new Map([['host-1', 'missing']])
       })
     ).toBeNull()
+    expect(
+      getNotificationNavigationTarget(
+        { ...data, kind: 'structured' },
+        {
+          knownHostIds: new Set(['host-1']),
+          credentialStatusByHostId: new Map([['host-1', 'ready']])
+        }
+      )?.sessionTarget
+    ).toMatchObject({
+      name: '[hostId]/wear-conversation/[worktreeId]',
+      params: {
+        worktreeId: 'folder:one',
+        sessionTabId: 'tab-1',
+        targetPublicationEpoch: 'epoch-1',
+        targetSnapshotVersion: '8'
+      }
+    })
     expect(
       getNotificationNavigationTarget(data, {
         knownHostIds: new Set(['other']),

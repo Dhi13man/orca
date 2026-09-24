@@ -41,8 +41,9 @@ describe('Wear phone handoff', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     withWearHostClient.mockImplementation(async (_hostId, admits, request) => {
-      expect(admits({ exactTargets: true })).toBe(true)
-      return request({ sendRequest })
+      const capabilities = { exactTargets: true, conversationRead: true }
+      expect(admits(capabilities)).toBe(true)
+      return request({ sendRequest }, capabilities)
     })
     sendRequest.mockResolvedValue({
       ok: true,
@@ -78,19 +79,48 @@ describe('Wear phone handoff', () => {
       sessionTabId: 'tab-a',
       targetPublicationEpoch: 'runtime-epoch',
       targetSnapshotVersion: 7,
-      requestId: 'request'
+      requestId: 'request',
+      kind: 'terminal'
     })
   })
 
   it.each([
     [null, 'target-changed'],
-    [{ kind: 'structured', sessionId: 'session-a' }, 'unsupported'],
     [{ kind: 'terminal', terminal: '', ptyId: 'pty-a' }, 'unavailable']
   ])('rejects an unrenderable resolution without notifying', async (result, reason) => {
     sendRequest.mockResolvedValue({ ok: true, result })
     await expect(executeWearPhoneHandoff(action)).resolves.toEqual({
       outcome: 'rejected',
       reason
+    })
+    expect(scheduleNotificationAsync).not.toHaveBeenCalled()
+  })
+
+  it('routes a resolved structured session to the phone conversation view', async () => {
+    sendRequest.mockResolvedValue({
+      ok: true,
+      result: { kind: 'structured', sessionId: 'session-a' }
+    })
+    await expect(executeWearPhoneHandoff(action)).resolves.toEqual({
+      outcome: 'accepted',
+      reason: null
+    })
+    expect(scheduleNotificationAsync.mock.calls[0][0].content.data.kind).toBe('structured')
+  })
+
+  it('rejects a structured session when conversation reading is unavailable', async () => {
+    sendRequest.mockResolvedValue({
+      ok: true,
+      result: { kind: 'structured', sessionId: 'session-a' }
+    })
+    withWearHostClient.mockImplementation(async (_hostId, admits, request) => {
+      const capabilities = { exactTargets: true, conversationRead: false }
+      expect(admits(capabilities)).toBe(true)
+      return request({ sendRequest }, capabilities)
+    })
+    await expect(executeWearPhoneHandoff(action)).resolves.toEqual({
+      outcome: 'rejected',
+      reason: 'unsupported'
     })
     expect(scheduleNotificationAsync).not.toHaveBeenCalled()
   })

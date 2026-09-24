@@ -56,11 +56,19 @@ describe('watch phone handoff action', () => {
     }
   })
 
-  it('rejects an expired dashboard or unsupported target before sending', () => {
+  it('encodes an exact structured target for phone handoff', () => {
+    const decoded = decodeWearAction(
+      encodeWearHandoffAction({ ...input, agent: { ...agent, kind: 'structured' } }),
+      now
+    )
+    expect(decoded.ok).toBe(true)
+    if (decoded.ok) {
+      expect(decoded.action.target.sessionTabId).toBe('tab')
+    }
+  })
+
+  it('rejects an expired dashboard or missing workspace kind before sending', () => {
     expect(() => encodeWearHandoffAction({ ...input, now: dashboard.expiresAt })).toThrow()
-    expect(() =>
-      encodeWearHandoffAction({ ...input, agent: { ...agent, kind: 'structured' } })
-    ).toThrow()
     expect(() =>
       encodeWearHandoffAction({ ...input, agent: { ...agent, workspaceKind: null } })
     ).toThrow()

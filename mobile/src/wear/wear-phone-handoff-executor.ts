@@ -16,13 +16,13 @@ type HandoffOutcome =
   | { outcome: 'unknown'; reason: null }
 
 export async function verifyWearPhoneHandoffTarget(
-  target: WearHandoffTarget
-): Promise<'terminal' | 'target-changed' | 'unsupported' | 'unavailable'> {
+  target: Omit<WearHandoffTarget, 'kind'>
+): Promise<'terminal' | 'structured' | 'target-changed' | 'unsupported' | 'unavailable'> {
   try {
     return await withWearHostClient(
       target.hostId,
       (capabilities) => capabilities.exactTargets,
-      async (client) => {
+      async (client, capabilities) => {
         const response = await client.sendRequest(
           'wear.target.resolve',
           {
@@ -42,7 +42,12 @@ export async function verifyWearPhoneHandoffTarget(
         }
         if (response.result && typeof response.result === 'object') {
           if ('kind' in response.result && response.result.kind === 'structured') {
-            return 'unsupported'
+            return capabilities.conversationRead &&
+              'sessionId' in response.result &&
+              typeof response.result.sessionId === 'string' &&
+              response.result.sessionId.length > 0
+              ? 'structured'
+              : 'unsupported'
           }
           if (
             'kind' in response.result &&
@@ -68,7 +73,7 @@ export async function verifyWearPhoneHandoffTarget(
 }
 
 export async function executeWearPhoneHandoff(action: HandoffAction): Promise<HandoffOutcome> {
-  const target: WearHandoffTarget = {
+  const target: Omit<WearHandoffTarget, 'kind'> = {
     hostId: action.target.hostId,
     workspaceId: action.target.workspaceId,
     workspaceKind: action.target.workspaceKind,
@@ -78,7 +83,7 @@ export async function executeWearPhoneHandoff(action: HandoffAction): Promise<Ha
     requestId: action.requestId
   }
   const verdict = await verifyWearPhoneHandoffTarget(target)
-  if (verdict !== 'terminal') {
+  if (verdict !== 'terminal' && verdict !== 'structured') {
     return { outcome: 'rejected', reason: verdict }
   }
   try {
@@ -94,7 +99,7 @@ export async function executeWearPhoneHandoff(action: HandoffAction): Promise<Ha
       content: {
         title: 'Orca',
         body: 'Open this agent on your phone',
-        data: buildWearHandoffNotificationData(target),
+        data: buildWearHandoffNotificationData({ ...target, kind: verdict }),
         ...(Platform.OS === 'android' ? { channelId: 'orca-desktop' } : {})
       },
       trigger: null

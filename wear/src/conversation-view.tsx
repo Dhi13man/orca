@@ -14,8 +14,7 @@ export function ConversationView({
   onBack,
   onRetry,
   reply,
-  phoneHandoff,
-  handoffAvailable
+  phoneHandoff
 }: {
   title: string
   status: 'idle' | 'loading' | 'ready' | 'unavailable'
@@ -38,7 +37,6 @@ export function ConversationView({
     request: () => Promise<void>
     clear: (verified?: boolean) => Promise<void>
   }
-  handoffAvailable: boolean
 }) {
   const [confirmRecovery, setConfirmRecovery] = useState(false)
   const [confirmHandoffRecovery, setConfirmHandoffRecovery] = useState(false)
@@ -54,14 +52,12 @@ export function ConversationView({
       <Text accessibilityRole="header" style={styles.heading}>
         {title}
       </Text>
-      {handoffAvailable ? (
-        <WearButton
-          disabled={phoneHandoff.status !== 'idle'}
-          label={phoneHandoff.status === 'pending' ? 'Opening on phone…' : 'Open on phone'}
-          quiet
-          onPress={() => void phoneHandoff.request()}
-        />
-      ) : null}
+      <WearButton
+        disabled={phoneHandoff.status !== 'idle'}
+        label={phoneHandoff.status === 'pending' ? 'Opening on phone…' : 'Open on phone'}
+        quiet
+        onPress={() => void phoneHandoff.request()}
+      />
       {phoneHandoff.status === 'accepted' ? (
         <>
           <Text style={styles.detail}>Phone notification ready. Tap it to open this agent.</Text>

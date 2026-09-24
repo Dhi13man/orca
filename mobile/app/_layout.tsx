@@ -129,6 +129,8 @@ export default function RootLayout() {
       })
     }
 
+    let latestTapGeneration = 0
+
     async function handleNotificationResponse(response: Notifications.NotificationResponse) {
       const selectionGeneration = readMobileSessionUserSelectionGeneration()
       if (response.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) {
@@ -140,6 +142,7 @@ export default function RootLayout() {
       if (handledNotificationIdsRef.current.has(notificationId)) {
         return
       }
+      const tapGeneration = ++latestTapGeneration
       handledNotificationIdsRef.current.add(notificationId)
       // Why: RootLayout never unmounts, so cap this tap-dedup set (FIFO) rather
       // than letting it grow one id per notification tapped for the app's life.
@@ -152,14 +155,17 @@ export default function RootLayout() {
 
       const target = await getNavigationTarget(response.notification.request.content.data)
       clearLastNotificationResponse()
-      if (disposed) {
+      if (disposed || tapGeneration !== latestTapGeneration) {
         return
       }
       if (
         target?.wearHandoff &&
-        (await verifyWearPhoneHandoffTarget(target.wearHandoff)) !== 'terminal'
+        (await verifyWearPhoneHandoffTarget(target.wearHandoff)) !== target.wearHandoff.kind
       ) {
         handledNotificationIdsRef.current.delete(notificationId)
+        return
+      }
+      if (disposed || tapGeneration !== latestTapGeneration) {
         return
       }
       if (
@@ -169,7 +175,7 @@ export default function RootLayout() {
         handledNotificationIdsRef.current.delete(notificationId)
         return
       }
-      if (!disposed && target) {
+      if (!disposed && tapGeneration === latestTapGeneration && target) {
         openNotificationRoute(target)
       }
     }

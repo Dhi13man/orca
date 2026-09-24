@@ -10,7 +10,7 @@ export function encodeWearHandoffAction(input: {
   now: number
 }): string {
   const { dashboard, hostId, agent, now } = input
-  if (agent.kind !== 'terminal' || !agent.workspaceKind || dashboard.expiresAt <= now) {
+  if (!agent.workspaceKind || dashboard.expiresAt <= now) {
     throw new Error('Wear phone handoff target is stale or unsupported')
   }
   return encodeWearAction({

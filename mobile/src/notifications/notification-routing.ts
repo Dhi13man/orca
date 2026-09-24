@@ -60,6 +60,7 @@ export type WearHandoffTarget = Readonly<{
   targetPublicationEpoch: string
   targetSnapshotVersion: number
   requestId: string
+  kind: 'terminal' | 'structured'
 }>
 
 export function buildWearHandoffNotificationData(
@@ -80,6 +81,7 @@ function readWearHandoffTarget(value: Record<string, unknown>): WearHandoffTarge
     !sessionTabId ||
     !targetPublicationEpoch ||
     !requestId ||
+    (value.kind !== 'terminal' && value.kind !== 'structured') ||
     !['worktree', 'folder'].includes(value.workspaceKind as string) ||
     !Number.isSafeInteger(value.targetSnapshotVersion) ||
     (value.targetSnapshotVersion as number) < 0
@@ -93,7 +95,8 @@ function readWearHandoffTarget(value: Record<string, unknown>): WearHandoffTarge
     sessionTabId,
     targetPublicationEpoch,
     targetSnapshotVersion: value.targetSnapshotVersion as number,
-    requestId
+    requestId,
+    kind: value.kind
   }
 }
 
@@ -126,11 +129,25 @@ export function getNotificationNavigationTarget(
     }
     return {
       hostId: handoff.hostId,
-      sessionTarget: mobileSessionRouteTarget({
-        hostId: handoff.hostId,
-        worktreeId: handoff.workspaceId,
-        handoff
-      }),
+      sessionTarget:
+        handoff.kind === 'terminal'
+          ? mobileSessionRouteTarget({
+              hostId: handoff.hostId,
+              worktreeId: handoff.workspaceId,
+              handoff
+            })
+          : {
+              name: '[hostId]/wear-conversation/[worktreeId]',
+              params: {
+                hostId: handoff.hostId,
+                worktreeId: handoff.workspaceId,
+                requestId: handoff.requestId,
+                sessionTabId: handoff.sessionTabId,
+                workspaceKind: handoff.workspaceKind,
+                targetPublicationEpoch: handoff.targetPublicationEpoch,
+                targetSnapshotVersion: String(handoff.targetSnapshotVersion)
+              }
+            },
       wearHandoff: handoff
     }
   }

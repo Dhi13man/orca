@@ -299,7 +299,6 @@ export default function App() {
                 onRetry={conversation.retry}
                 reply={reply}
                 phoneHandoff={phoneHandoff}
-                handoffAvailable={currentAgent.kind === 'terminal'}
               />
             ) : selectedHost && selectedAgent ? (
               <View style={styles.pages}>
