@@ -2,6 +2,7 @@ package expo.modules.orcawear
 
 import org.junit.Assert.*
 import org.junit.Test
+import java.security.MessageDigest
 import java.util.UUID
 
 class WearActionInboxTest {
@@ -10,9 +11,11 @@ class WearActionInboxTest {
 
     @Test fun persistsPendingCiphertextAndRequiresExactClaimForHandoff() = withWearTestDatabase { context ->
         val binding = UUID.randomUUID().toString()
+        val canonical = actionBytes(binding, "one", "readHostPage", 120_000)
+        val actionHash = hashOf(canonical)
         WearActionInbox(context) { WearAdmissionTime(it, 1) }.use { inbox ->
-            assertEquals(WearActionInsertResult.INSERTED, inbox.insert(binding, "one", "readHostPage", hash, 120_000, wire, 0))
-            assertEquals(WearActionInsertResult.DUPLICATE, inbox.insert(binding, "one", "readHostPage", hash, 120_000, wire, 0))
+            assertEquals(WearActionInsertResult.INSERTED, inbox.insert(binding, "one", "readHostPage", actionHash, 120_000, wire, 0))
+            assertEquals(WearActionInsertResult.DUPLICATE, inbox.insert(binding, "one", "readHostPage", actionHash, 120_000, wire, 0))
             assertEquals(WearActionInsertResult.CONFLICT,
                 inbox.insert(binding, "one", "readHostPage", "b".repeat(64), 120_000, wire, 0))
         }
@@ -22,22 +25,29 @@ class WearActionInboxTest {
             assertEquals("one", claim.requestId)
             assertArrayEquals(wire, claim.wire)
             assertNull(reopened.claim(2))
-            assertFalse(reopened.confirmHandoff(binding, "one", hash, UUID.randomUUID().toString()))
-            assertFalse(reopened.confirmHandoff(binding, "one", "b".repeat(64), claim.claimToken))
-            assertTrue(reopened.confirmHandoff(binding, "one", hash, claim.claimToken))
+            assertEquals(WearJournalHandoff.MISSING, reopened.commitHandoff(binding, "one", actionHash,
+                UUID.randomUUID().toString(), canonical, 2))
+            assertEquals(WearJournalHandoff.CONFLICT, reopened.commitHandoff(binding, "one",
+                "b".repeat(64), claim.claimToken, canonical, 2))
+            assertEquals(WearJournalHandoff.RECORDED, reopened.commitHandoff(binding, "one",
+                actionHash, claim.claimToken, canonical, 2))
+            assertEquals("recorded", reopened.journalRecord(binding, "one")!!.state)
             assertNull(reopened.claim(2))
         }
     }
 
     @Test fun expiredClaimsRequeueWithNewTokenAndExpiredActionsAreDeleted() = withWearTestDatabase { context ->
         val binding = UUID.randomUUID().toString()
+        val canonical = actionBytes(binding, "one", "readHostPage", 30_000)
+        val actionHash = hashOf(canonical)
         WearActionInbox(context) { WearAdmissionTime(it, 1) }.use { inbox ->
-            assertEquals(WearActionInsertResult.INSERTED, inbox.insert(binding, "one", "readHostPage", hash, 30_000, wire, 0))
+            assertEquals(WearActionInsertResult.INSERTED, inbox.insert(binding, "one", "readHostPage", actionHash, 30_000, wire, 0))
             val first = inbox.claim(0)!!
             assertNull(inbox.claim(14_999))
             val second = inbox.claim(15_000)!!
             assertNotEquals(first.claimToken, second.claimToken)
-            assertFalse(inbox.confirmHandoff(binding, "one", hash, first.claimToken))
+            assertEquals(WearJournalHandoff.MISSING, inbox.commitHandoff(binding, "one", actionHash,
+                first.claimToken, canonical, 15_000))
             assertEquals(1, inbox.prune(30_000))
             assertNull(inbox.claim(30_000))
         }
@@ -104,15 +114,18 @@ class WearActionInboxTest {
             assertEquals(WearActionInsertResult.RATE_LIMITED,
                 inbox.insert(binding, "send-eleven", "sendAgentMessage", hash, 120_000, wire, 20_000))
             acceptAndConfirm(inbox, binding, "send-new-window", "sendAgentMessage", 60_000)
+            val refreshBytes = actionBytes(binding, "refresh", "refresh", 120_000)
+            val refreshHash = hashOf(refreshBytes)
             assertEquals(WearActionInsertResult.INSERTED,
-                inbox.insert(binding, "refresh", "refresh", hash, 120_000, wire, 60_000))
+                inbox.insert(binding, "refresh", "refresh", refreshHash, 120_000, wire, 60_000))
             assertEquals(WearActionInsertResult.DUPLICATE,
-                inbox.insert(binding, "refresh", "refresh", hash, 120_000, wire, 60_000))
+                inbox.insert(binding, "refresh", "refresh", refreshHash, 120_000, wire, 60_000))
             assertEquals(WearActionInsertResult.RATE_LIMITED,
                 inbox.insert(binding, "refresh-early", "refresh", hash, 120_000, wire, 69_999))
             val refreshClaim = inbox.claim(60_000)!!
             assertEquals("refresh", refreshClaim.requestId)
-            assertTrue(inbox.confirmHandoff(binding, "refresh", hash, refreshClaim.claimToken))
+            assertEquals(WearJournalHandoff.RECORDED, inbox.commitHandoff(binding, "refresh",
+                refreshHash, refreshClaim.claimToken, refreshBytes, 60_000))
             acceptAndConfirm(inbox, binding, "handoff", "requestPhoneHandoff", 60_000)
             assertEquals(WearActionInsertResult.RATE_LIMITED,
                 inbox.insert(binding, "handoff-early", "requestPhoneHandoff", hash, 120_000, wire, 64_999))
@@ -123,11 +136,17 @@ class WearActionInboxTest {
 
     private fun acceptAndConfirm(inbox: WearActionInbox, binding: String, request: String,
         action: String, now: Long) {
+        val expiresAt = now + 120_000
+        val canonical = actionBytes(binding, request, action, expiresAt)
+        val actionHash = hashOf(canonical)
         assertEquals(WearActionInsertResult.INSERTED,
-            inbox.insert(binding, request, action, hash, now + 120_000, wire, now))
+            inbox.insert(binding, request, action, actionHash, expiresAt, wire, now))
         val claim = inbox.claim(now)!!
         assertEquals(request, claim.requestId)
-        assertTrue(inbox.confirmHandoff(binding, request, hash, claim.claimToken))
+        assertEquals(WearJournalHandoff.RECORDED, inbox.commitHandoff(binding, request,
+            actionHash, claim.claimToken, canonical, now))
+        assertTrue(inbox.startEffect(binding, request, actionHash, now))
+        assertTrue(inbox.finishEffect(binding, request, actionHash, "accepted", now))
     }
 
     @Test fun recentHandoffReplayReturnsDuplicateOrConflictWithoutASecondAdmission() = withWearTestDatabase { context ->
@@ -136,12 +155,33 @@ class WearActionInboxTest {
             acceptAndConfirm(inbox, binding, "one", "sendAgentMessage", 0)
         }
         WearActionInbox(context) { WearAdmissionTime(it, 1) }.use { reopened ->
+            val actionHash = hashOf(actionBytes(binding, "one", "sendAgentMessage", 120_000))
             assertEquals(WearActionInsertResult.DUPLICATE,
-                reopened.insert(binding, "one", "sendAgentMessage", hash, 120_000, wire, 1))
+                reopened.insert(binding, "one", "sendAgentMessage", actionHash, 120_000, wire, 1))
             assertEquals(WearActionInsertResult.CONFLICT,
                 reopened.insert(binding, "one", "sendAgentMessage", "b".repeat(64), 120_000, wire, 1))
             assertNull(reopened.claim(1))
         }
+    }
+
+    private fun hashOf(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
+        .digest(bytes).joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
+    private fun actionBytes(binding: String, request: String, action: String, expiresAt: Long): ByteArray {
+        val session = action in setOf("renewConversation", "sendAgentMessage", "requestPhoneHandoff")
+        val target = if (session)
+            """{"hostId":"host","workspaceId":"workspace","workspaceKind":"folder","sessionTabId":"session"}"""
+        else "{}"
+        val payload = when (action) {
+            "readHostPage" -> """{"cursor":null}"""
+            "renewConversation" -> """{"leaseId":"lease"}"""
+            "sendAgentMessage" -> """{"text":"test"}"""
+            else -> "{}"
+        }
+        val targetEpoch = if (session) "\"runtime\"" else "null"
+        val targetVersion = if (session) "1" else "null"
+        return """{"schemaVersion":1,"bindingId":"$binding","requestId":"$request","expiresAt":$expiresAt,"action":"$action","target":$target,"publisherEpoch":"publisher","expectedRevision":1,"targetPublicationEpoch":$targetEpoch,"targetSnapshotVersion":$targetVersion,"payload":$payload}"""
+            .toByteArray(Charsets.UTF_8)
     }
 
     @Test fun wallClockJumpsDoNotResetReadBurstOrSendAndRefreshGaps() = withWearTestDatabase { context ->

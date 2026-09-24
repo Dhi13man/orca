@@ -53,6 +53,7 @@ internal class WearActionInbox(context: Context, private val admissionTime: (Lon
             PRIMARY KEY(binding_id,request_id)
         )""")
         db.execSQL("CREATE INDEX admission_window ON admission_events(binding_id,action_class,elapsed_at)")
+        WearCommandJournal.onCreate(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) =
@@ -67,6 +68,7 @@ internal class WearActionInbox(context: Context, private val admissionTime: (Lon
         require(wire.size in 16..8192)
         gc(db, now)
         val sampledTime = admissionTime(now)
+        WearCommandJournal.prune(db, now, sampledTime)
         if (!pruneAdmissionEvents(db, sampledTime)) return@transaction WearActionInsertResult.RATE_LIMITED
         val existing = db.rawQuery(
             "SELECT action_hash FROM actions WHERE binding_id=? AND request_id=?",
@@ -74,6 +76,11 @@ internal class WearActionInbox(context: Context, private val admissionTime: (Lon
         ).use { if (it.moveToFirst()) it.getString(0) else null }
         if (existing != null) {
             return@transaction if (existing == actionHash) WearActionInsertResult.DUPLICATE
+                else WearActionInsertResult.CONFLICT
+        }
+        val journaled = WearCommandJournal.read(db, bindingId, requestId)
+        if (journaled != null) {
+            return@transaction if (journaled.actionHash == actionHash) WearActionInsertResult.DUPLICATE
                 else WearActionInsertResult.CONFLICT
         }
         val admittedHash = db.rawQuery(
@@ -125,19 +132,36 @@ internal class WearActionInbox(context: Context, private val admissionTime: (Lon
         record.copy(claimToken = token)
     }
 
-    fun confirmHandoff(bindingId: String, requestId: String, actionHash: String,
-        claimToken: String): Boolean = transaction { db ->
-        db.delete("actions", "binding_id=? AND request_id=? AND action_hash=? AND claim_token=?",
-            arrayOf(bindingId, requestId, actionHash, claimToken)) == 1
+    fun commitHandoff(bindingId: String, requestId: String, actionHash: String,
+        claimToken: String, canonical: ByteArray, now: Long): WearJournalHandoff = transaction { db ->
+        WearCommandJournal.handoff(db, bindingId, requestId, actionHash, claimToken,
+            canonical, now, admissionTime(now))
+    }
+
+    fun journalRecord(bindingId: String, requestId: String): WearJournalRecord? =
+        WearCommandJournal.read(readableDatabase, bindingId, requestId)
+
+    fun startEffect(bindingId: String, requestId: String, actionHash: String, now: Long): Boolean =
+        transaction { db -> WearCommandJournal.startEffect(db, bindingId, requestId, actionHash,
+            now, admissionTime(now)) }
+
+    fun finishEffect(bindingId: String, requestId: String, actionHash: String,
+        outcome: String, now: Long): Boolean = transaction { db ->
+        WearCommandJournal.finish(db, bindingId, requestId, actionHash, outcome,
+            now, admissionTime(now))
     }
 
     fun removeBinding(bindingId: String): Int = transaction { db ->
         val removed = db.delete("actions", "binding_id=?", arrayOf(bindingId))
         db.delete("admission_events", "binding_id=?", arrayOf(bindingId))
+        WearCommandJournal.removeBinding(db, bindingId)
         removed
     }
 
-    fun prune(now: Long): Int = transaction { db -> gc(db, now) }
+    fun prune(now: Long): Int = transaction { db ->
+        WearCommandJournal.prune(db, now, admissionTime(now))
+        gc(db, now)
+    }
 
     private fun gc(db: SQLiteDatabase, now: Long): Int =
         db.delete("actions", "expires_at<=?", arrayOf(now.toString()))
