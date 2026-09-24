@@ -42,11 +42,28 @@ export class SshPtyProvider implements IPtyProvider {
   requestHostRpc: NonNullable<IPtyProvider['requestHostRpc']> = (method, params, options) =>
     this.mux.request(method, params as Record<string, unknown>, options)
 
+  get requestAuthenticatedWearHostRpc(): IPtyProvider['requestAuthenticatedWearHostRpc'] {
+    return this.getAuthenticatedWearMux?.() === this.mux ? this.requestProvedWearHostRpc : undefined
+  }
+
+  private requestProvedWearHostRpc: NonNullable<IPtyProvider['requestAuthenticatedWearHostRpc']> = (
+    method,
+    params,
+    options
+  ) => {
+    const proved = this.getAuthenticatedWearMux?.()
+    if (!proved || proved !== this.mux) {
+      throw new Error('wear_relay_primary_unproved')
+    }
+    return proved.request(method, params as Record<string, unknown>, options)
+  }
+
   constructor(
     connectionId: string,
     mux: SshChannelMultiplexer,
     private readonly remoteCliBridgeEnv?: RemoteCliBridgeEnv,
-    readonly providerGeneration = 1
+    readonly providerGeneration = 1,
+    private readonly getAuthenticatedWearMux?: () => SshChannelMultiplexer | null
   ) {
     this.connectionId = connectionId
     this.mux = mux

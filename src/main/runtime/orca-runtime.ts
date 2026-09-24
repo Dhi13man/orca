@@ -4724,7 +4724,7 @@ export class OrcaRuntimeService {
   ): {
     connectionId: string
     provider: IPtyProvider
-    requestHostRpc: NonNullable<IPtyProvider['requestHostRpc']>
+    requestHostRpc: NonNullable<IPtyProvider['requestAuthenticatedWearHostRpc']>
   } | null {
     const pty = this.ptysById.get(ptyId)
     if (
@@ -4735,8 +4735,13 @@ export class OrcaRuntimeService {
       return null
     }
     const provider = this.getSshProviderFn?.(pty.connectionId)
-    return provider?.requestHostRpc
-      ? { connectionId: pty.connectionId, provider, requestHostRpc: provider.requestHostRpc }
+    const requestHostRpc = provider?.requestAuthenticatedWearHostRpc
+    return requestHostRpc
+      ? {
+          connectionId: pty.connectionId,
+          provider,
+          requestHostRpc
+        }
       : null
   }
 
@@ -4746,7 +4751,9 @@ export class OrcaRuntimeService {
     handle: string,
     ptyId: string
   ): boolean {
-    const kind = this.listFolderWorkspaces().some((folder) => folderWorkspaceKey(folder.id) === fence.workspaceId)
+    const kind = this.listFolderWorkspaces().some(
+      (folder) => folderWorkspaceKey(folder.id) === fence.workspaceId
+    )
       ? 'folder'
       : 'worktree'
     const resolved = resolveWearActionTarget(
@@ -4767,7 +4774,9 @@ export class OrcaRuntimeService {
     pairedDeviceId: string,
     sessionId: string
   ): boolean {
-    const kind = this.listFolderWorkspaces().some((folder) => folderWorkspaceKey(folder.id) === fence.workspaceId)
+    const kind = this.listFolderWorkspaces().some(
+      (folder) => folderWorkspaceKey(folder.id) === fence.workspaceId
+    )
       ? 'folder'
       : 'worktree'
     const resolved = resolveWearActionTarget(

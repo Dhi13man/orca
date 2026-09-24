@@ -32,6 +32,30 @@ describe('SshPtyProvider', () => {
     expect(mux.request).not.toHaveBeenCalled()
   })
 
+  it('routes Wear host reads only through the proved current primary channel', async () => {
+    let proved: MockMultiplexer | null = null
+    const wearProvider = new SshPtyProvider(
+      'conn-1',
+      mux as never,
+      undefined,
+      1,
+      () => proved as never
+    )
+    expect(wearProvider.requestAuthenticatedWearHostRpc).toBeUndefined()
+    proved = createMockMux()
+    expect(wearProvider.requestAuthenticatedWearHostRpc).toBeUndefined()
+    proved = mux
+    const request = wearProvider.requestAuthenticatedWearHostRpc!
+    await request('wear.conversation.tail', { sessionId: 'session-a' }, { timeoutMs: 15_000 })
+    proved = null
+    expect(() => request('wear.conversation.tail', {})).toThrow('wear_relay_primary_unproved')
+    expect(mux.request).toHaveBeenCalledWith(
+      'wear.conversation.tail',
+      { sessionId: 'session-a' },
+      { timeoutMs: 15_000 }
+    )
+  })
+
   it('keeps a shared claim probe alive when one waiter disconnects', async () => {
     let finishProbe!: (result: { agentSessionClaimVersion: number }) => void
     mux.request.mockReturnValueOnce(

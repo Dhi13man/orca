@@ -1525,3 +1525,12 @@ under the same verified emulator certificate. An in-place update on paired
 phone `emulator-5556` returned `Success`; phone and bound watch `MainActivity`
 were both resumed afterward. This remains startup evidence, not a measured
 20-second host response or a physical-device conversation.
+
+The SSH terminal conversation route now uses only the current relay session's
+proved primary channel. The provider exposes its Wear RPC only while the
+session's authenticated mux matches the current provider mux, and the call
+rechecks immediately before dispatch; a proof loss or replacement route stays
+unavailable. The route still rechecks its target and provider after the host
+read. Three focused test files (75 tests), node typecheck, scoped lint/format,
+and independent read-only review pass. This does not enable SSH Wear sends or
+prove a physical SSH transcript read.
