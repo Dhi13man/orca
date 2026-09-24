@@ -1,4 +1,31 @@
 import { wearDataLayer } from '@orca/expo-wear-data-layer'
+import { decodeWearAction } from '@orca/wear-companion-contract'
+import { wearReceiptReasons, type WearReceiptReason } from '@orca/wear-companion-contract/receipt'
+import { requestWearHostCommand } from './wear-host-command-client'
+
+type HostOutcome =
+  | { outcome: 'accepted' | 'unknown'; reason: null }
+  | { outcome: 'rejected'; reason: WearReceiptReason }
+
+function hostOutcome(value: unknown, actionHash: string): HostOutcome | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null
+  }
+  const record = value as Record<string, unknown>
+  if (record.actionHash !== actionHash) {
+    return null
+  }
+  if ((record.outcome === 'accepted' || record.outcome === 'unknown') && record.reason === null) {
+    return { outcome: record.outcome, reason: null }
+  }
+  if (
+    record.outcome === 'rejected' &&
+    wearReceiptReasons.includes(record.reason as WearReceiptReason)
+  ) {
+    return { outcome: 'rejected', reason: record.reason as WearReceiptReason }
+  }
+  return null
+}
 
 let draining: Promise<void> | null = null
 let wakeGeneration = 0
@@ -30,6 +57,35 @@ async function drain(): Promise<void> {
   if (!native) {
     return
   }
+  for (const record of await native.pendingJournalReconciliation()) {
+    let outcome: HostOutcome | null = null
+    try {
+      const response = await requestWearHostCommand(record.hostId, 'wear.command.receipt', {
+        bindingId: record.bindingId,
+        requestId: record.requestId
+      })
+      outcome = response.ok ? hostOutcome(response.result, record.actionHash) : null
+    } catch {
+      // A missing host verdict cannot authorize a second execution.
+    }
+    if (outcome?.outcome === 'accepted' || outcome?.outcome === 'rejected') {
+      await native.finishActionEffect(
+        record.bindingId,
+        record.requestId,
+        record.actionHash,
+        outcome.outcome,
+        outcome.reason
+      )
+    } else if (record.state === 'effect_started') {
+      await native.finishActionEffect(
+        record.bindingId,
+        record.requestId,
+        record.actionHash,
+        'unknown',
+        null
+      )
+    }
+  }
   for (let attempt = 0; attempt < 64; attempt++) {
     const claim = await native.claimAction()
     if (!claim) {
@@ -48,12 +104,29 @@ async function drain(): Promise<void> {
     if (!(await native.startActionEffect(claim.bindingId, claim.requestId, claim.actionHash))) {
       continue
     }
+    const decoded = decodeWearAction(claim.canonical, -1)
+    let outcome: HostOutcome = { outcome: 'rejected', reason: 'unsupported' }
+    if (decoded.ok && decoded.action.action === 'sendAgentMessage') {
+      try {
+        const response = await requestWearHostCommand(
+          decoded.action.target.hostId,
+          'wear.terminal.send',
+          decoded.action
+        )
+        outcome = (response.ok && hostOutcome(response.result, claim.actionHash)) || {
+          outcome: 'unknown',
+          reason: null
+        }
+      } catch {
+        outcome = { outcome: 'unknown', reason: null }
+      }
+    }
     await native.finishActionEffect(
       claim.bindingId,
       claim.requestId,
       claim.actionHash,
-      'rejected',
-      'unsupported'
+      outcome.outcome,
+      outcome.reason
     )
   }
   const pending = await native.pendingJournalReceipts()

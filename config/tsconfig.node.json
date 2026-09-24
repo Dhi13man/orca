@@ -9,7 +9,10 @@
     "../src/preload/**/*",
     "../src/shared/**/*",
     "../src/relay/**/*",
-    "../src/types/**/*"
+    "../src/types/**/*",
+    "../wear/packages/wear-companion-contract/src/action.ts",
+    "../wear/packages/wear-companion-contract/src/action-manifest.ts",
+    "../wear/packages/wear-companion-contract/src/utf8.ts"
   ],
   "compilerOptions": {
     "composite": true,

@@ -61,7 +61,8 @@ internal class WearCompanionOwner private constructor(private val context: Conte
                 reconcilePublicationIntents()
                 if (role == CompanionRole.PHONE) {
                     syncDashboardItems()
-                    if (actions.pendingReceipts().isNotEmpty()) scheduleReceiptRetry()
+                    if (actions.pendingReceipts().isNotEmpty() ||
+                        actions.hasPendingReconciliation()) scheduleReceiptRetry()
                 }
             })
         }
@@ -263,6 +264,7 @@ internal class WearCompanionOwner private constructor(private val context: Conte
                 require(bytes.size <= 8192)
                 bindings.withBinding(bindingId) { binding ->
                     check(binding.state == "active") { "wear_binding_not_active" }
+                    WearReceiptRetryJobService.schedule(context)
                     ticket.effect {
                         result = actions.commitHandoff(bindingId, requestId, actionHash,
                             claimToken, bytes, System.currentTimeMillis()).name.lowercase()
@@ -366,12 +368,28 @@ internal class WearCompanionOwner private constructor(private val context: Conte
         }
     }
 
+    fun pendingJournalReconciliation(completed: (List<Map<String, String>>?, Exception?) -> Unit) {
+        if (role != CompanionRole.PHONE) {
+            completed(null, IllegalStateException("wear_reconciliation_wrong_role"))
+            return
+        }
+        var result: List<Map<String, String>>? = null
+        submit({ completed(result, it) }, false) {
+            result = actions.pendingReconciliation(System.currentTimeMillis()).map { record ->
+                mapOf("bindingId" to record.bindingId, "requestId" to record.requestId,
+                    "actionHash" to record.actionHash, "hostId" to record.hostId,
+                    "state" to record.state)
+            }
+        }
+    }
+
     fun retryPendingReceipts(limit: Int, completed: (Boolean) -> Unit) {
         require(limit in 1..2)
         if (role != CompanionRole.PHONE) {
             completed(false)
             return
         }
+        if (actions.hasPendingReconciliation()) wakeActionDrain()
         pendingJournalReceipts { records, error ->
             if (error != null) {
                 completed(true)
@@ -381,7 +399,8 @@ internal class WearCompanionOwner private constructor(private val context: Conte
             fun next(index: Int) {
                 if (index == batch.size) {
                     pendingJournalReceipts { remaining, checkError ->
-                        completed(checkError != null || remaining.orEmpty().isNotEmpty())
+                        completed(checkError != null || remaining.orEmpty().isNotEmpty() ||
+                            actions.hasPendingReconciliation())
                     }
                     return
                 }

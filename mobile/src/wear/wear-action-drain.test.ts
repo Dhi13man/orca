@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 
 const native = vi.hoisted(() => ({
   claimAction: vi.fn(),
@@ -6,10 +7,14 @@ const native = vi.hoisted(() => ({
   startActionEffect: vi.fn(),
   finishActionEffect: vi.fn(),
   sendJournalReceipt: vi.fn(),
-  pendingJournalReceipts: vi.fn()
+  pendingJournalReceipts: vi.fn(),
+  pendingJournalReconciliation: vi.fn()
 }))
 
+const requestWearHostCommand = vi.hoisted(() => vi.fn())
+
 vi.mock('@orca/expo-wear-data-layer', () => ({ wearDataLayer: native }))
+vi.mock('./wear-host-command-client', () => ({ requestWearHostCommand }))
 
 import { drainWearActions } from './wear-action-drain'
 
@@ -32,6 +37,11 @@ describe('Wear action drain', () => {
     native.pendingJournalReceipts.mockResolvedValue([
       { bindingId: 'binding', requestId: 'request' }
     ])
+    native.pendingJournalReconciliation.mockResolvedValue([])
+    requestWearHostCommand.mockResolvedValue({
+      ok: true,
+      result: { outcome: 'accepted', reason: null, actionHash: 'a'.repeat(64) }
+    })
   })
 
   it('serializes concurrent wakes and sends a receipt only after journal completion', async () => {
@@ -87,6 +97,7 @@ describe('Wear action drain', () => {
       .mockResolvedValue(null)
     const first = drainWearActions()
     const second = drainWearActions()
+    await Promise.resolve()
     completeEmpty!(null)
     await Promise.all([first, second])
     expect(native.claimAction).toHaveBeenCalledTimes(3)
@@ -133,5 +144,108 @@ describe('Wear action drain', () => {
     } finally {
       warning.mockRestore()
     }
+  })
+
+  it('sends one journaled exact action to its paired host and completes from the host outcome', async () => {
+    const canonical = JSON.stringify({
+      schemaVersion: 1,
+      bindingId: 'binding',
+      requestId: 'request',
+      expiresAt: Date.now() + 60_000,
+      action: 'sendAgentMessage',
+      target: {
+        hostId: 'host-a',
+        workspaceId: 'workspace-a',
+        workspaceKind: 'worktree',
+        sessionTabId: 'tab-a'
+      },
+      publisherEpoch: 'phone-epoch',
+      expectedRevision: 2,
+      targetPublicationEpoch: 'runtime-epoch',
+      targetSnapshotVersion: 7,
+      payload: { text: '  exact reply  ' }
+    })
+    const actionHash = createHash('sha256').update(canonical).digest('hex')
+    native.claimAction
+      .mockReset()
+      .mockResolvedValueOnce({
+        bindingId: 'binding',
+        requestId: 'request',
+        actionHash,
+        claimToken: 'token',
+        canonical
+      })
+      .mockResolvedValue(null)
+    requestWearHostCommand.mockResolvedValue({
+      ok: true,
+      result: { outcome: 'accepted', reason: null, actionHash }
+    })
+    await drainWearActions()
+    expect(requestWearHostCommand).toHaveBeenCalledWith(
+      'host-a',
+      'wear.terminal.send',
+      JSON.parse(canonical)
+    )
+    expect(native.finishActionEffect).toHaveBeenCalledWith(
+      'binding',
+      'request',
+      actionHash,
+      'accepted',
+      null
+    )
+  })
+
+  it('queries a prior effect instead of resending after a process restart', async () => {
+    native.claimAction.mockReset().mockResolvedValue(null)
+    native.pendingJournalReconciliation.mockResolvedValue([
+      {
+        bindingId: 'binding',
+        requestId: 'request',
+        actionHash: 'a'.repeat(64),
+        hostId: 'host-a',
+        state: 'effect_started'
+      }
+    ])
+    await drainWearActions()
+    expect(requestWearHostCommand).toHaveBeenCalledWith('host-a', 'wear.command.receipt', {
+      bindingId: 'binding',
+      requestId: 'request'
+    })
+    expect(native.finishActionEffect).toHaveBeenCalledWith(
+      'binding',
+      'request',
+      'a'.repeat(64),
+      'accepted',
+      null
+    )
+    expect(requestWearHostCommand).toHaveBeenCalledTimes(1)
+  })
+
+  it('never assigns another action’s accepted receipt to a conflicting local hash', async () => {
+    native.claimAction.mockReset().mockResolvedValue(null)
+    native.pendingJournalReconciliation.mockResolvedValue([
+      {
+        bindingId: 'binding',
+        requestId: 'request',
+        actionHash: 'b'.repeat(64),
+        hostId: 'host-a',
+        state: 'effect_started'
+      }
+    ])
+    await drainWearActions()
+    expect(native.finishActionEffect).toHaveBeenCalledWith(
+      'binding',
+      'request',
+      'b'.repeat(64),
+      'unknown',
+      null
+    )
+    expect(native.finishActionEffect).not.toHaveBeenCalledWith(
+      'binding',
+      'request',
+      'b'.repeat(64),
+      'accepted',
+      null
+    )
   })
 })

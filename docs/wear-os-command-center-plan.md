@@ -1060,3 +1060,18 @@ this RPC, so no watch action has reached an agent. Structured sends,
 authoritative receipt query/reconciliation, phone integration, actual
 conversations, physical delivery, and remote execution-host durability remain
 open.
+
+The phone drain now executes `sendAgentMessage` only through the exact paired
+host's negotiated Wear terminal capability. The host returns the SHA-256 hash
+of the canonical action with every outcome; the phone accepts a result only
+when it matches the native journal hash. It queries the host ledger after an
+interrupted effect and never resends that action. A persisted retry job is
+scheduled before ciphertext handoff, and restart recovery retires stranded
+unstarted or currently unsupported actions to an `unknown` watch receipt.
+One reconciliation candidate is claimed fairly per wake. Eighteen focused
+TypeScript tests, 63 API-36 native emulator tests, node/mobile typechecks,
+phone native compile, and scoped lint/format pass. These are component tests:
+no paired phone/watch command delivery or physical background recovery is yet
+proved. Structured-agent and SSH execution-host sends, actual conversation
+views, notifications, background refresh, and installed-product acceptance
+remain open.

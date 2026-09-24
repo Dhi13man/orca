@@ -11,6 +11,89 @@ import java.util.concurrent.TimeUnit
 class WearCommandJournalTest {
     private val wire = ByteArray(32) { 7 }
 
+    @Test fun restartRetiresHandoffWithoutEffectToUnknownReceipt() =
+        withWearTestDatabase { context ->
+            val binding = UUID.randomUUID().toString()
+            val canonical = action(binding, "lost-start", 120_000)
+            val hash = hash(canonical)
+            WearActionInbox(context) { WearAdmissionTime(it, 1) }.use { inbox ->
+                assertEquals(WearActionInsertResult.INSERTED,
+                    inbox.insert(binding, "lost-start", "readHostPage", hash,
+                        120_000, wire, 0))
+                val claim = inbox.claim(0)!!
+                assertEquals(WearJournalHandoff.RECORDED,
+                    inbox.commitHandoff(binding, "lost-start", hash,
+                        claim.claimToken, canonical, 0))
+                val second = action(binding, "lost-finish", 120_000)
+                val secondHash = hash(second)
+                assertEquals(WearActionInsertResult.INSERTED,
+                    inbox.insert(binding, "lost-finish", "readHostPage", secondHash,
+                        120_000, wire, 0))
+                val secondClaim = inbox.claim(0)!!
+                assertEquals(WearJournalHandoff.RECORDED,
+                    inbox.commitHandoff(binding, "lost-finish", secondHash,
+                        secondClaim.claimToken, second, 0))
+                assertTrue(inbox.startEffect(binding, "lost-finish", secondHash, 0))
+                assertTrue(inbox.hasPendingReconciliation())
+            }
+            WearActionInbox(context) { WearAdmissionTime(it, 1) }.use { reopened ->
+                assertTrue(reopened.pendingReconciliation(1).isEmpty())
+                assertEquals("unknown", reopened.journalRecord(binding, "lost-start")!!.state)
+                assertEquals("unknown", reopened.journalRecord(binding, "lost-finish")!!.state)
+                assertEquals(setOf(binding to "lost-start", binding to "lost-finish"),
+                    reopened.pendingReceipts().toSet())
+                assertFalse(reopened.startEffect(binding, "lost-start", hash, 1))
+                assertFalse(reopened.hasPendingReconciliation())
+            }
+        }
+
+    @Test fun recoveryListsOnlyStartedTerminalSendsWithoutMessageText() =
+        withWearTestDatabase { context ->
+            val binding = UUID.randomUUID().toString()
+            val canonical = sendAction(binding, "one", 120_000)
+            val hash = hash(canonical)
+            WearActionInbox(context) { WearAdmissionTime(it, 1) }.use { inbox ->
+                assertEquals(WearActionInsertResult.INSERTED,
+                    inbox.insert(binding, "one", "sendAgentMessage", hash, 120_000, wire, 0))
+                val claim = inbox.claim(0)!!
+                assertEquals(WearJournalHandoff.RECORDED,
+                    inbox.commitHandoff(binding, "one", hash, claim.claimToken, canonical, 0))
+                assertTrue(inbox.hasPendingReconciliation())
+                assertTrue(inbox.startEffect(binding, "one", hash, 1))
+            }
+            WearActionInbox(context) { WearAdmissionTime(it, 1) }.use { reopened ->
+                assertEquals(listOf(WearJournalRecovery(binding, "one", hash,
+                    "host-a", "effect_started")), reopened.pendingReconciliation(2))
+                assertTrue(reopened.finishEffect(binding, "one", hash, "unknown", 2))
+                assertEquals("unknown", reopened.pendingReconciliation(2).single().state)
+                assertTrue(reopened.finishEffect(binding, "one", hash, "accepted", 3))
+                assertTrue(reopened.pendingReconciliation(3).isEmpty())
+            }
+        }
+
+    @Test fun unavailableReconciliationRotatesBehindUntriedRows() =
+        withWearTestDatabase { context ->
+            val bindings = List(3) { UUID.randomUUID().toString() }
+            WearActionInbox(context) { WearAdmissionTime(it, 1) }.use { inbox ->
+                bindings.forEachIndexed { index, binding ->
+                    val now = index * 2_000L
+                    val request = "request-$index"
+                    val canonical = sendAction(binding, request, now + 120_000)
+                    val hash = hash(canonical)
+                    assertEquals(WearActionInsertResult.INSERTED,
+                        inbox.insert(binding, request, "sendAgentMessage", hash,
+                            now + 120_000, wire, now))
+                    val claim = inbox.claim(now)!!
+                    assertEquals(WearJournalHandoff.RECORDED,
+                        inbox.commitHandoff(binding, request, hash, claim.claimToken, canonical, now))
+                    assertTrue(inbox.startEffect(binding, request, hash, now))
+                }
+                assertEquals(bindings[0], inbox.pendingReconciliation(6_000).single().bindingId)
+                assertEquals(bindings[1], inbox.pendingReconciliation(6_000).single().bindingId)
+                assertEquals(bindings[2], inbox.pendingReconciliation(6_000).single().bindingId)
+            }
+        }
+
     @Test fun atomicallyHandsOffCiphertextAndReplaysLostBridgeResponseAcrossRestart() =
         withWearTestDatabase { context ->
             val binding = UUID.randomUUID().toString()
@@ -299,6 +382,10 @@ class WearCommandJournalTest {
 
     private fun action(binding: String, request: String, expiresAt: Long): ByteArray =
         """{"schemaVersion":1,"bindingId":"$binding","requestId":"$request","expiresAt":$expiresAt,"action":"readHostPage","target":{},"publisherEpoch":"publisher","expectedRevision":1,"targetPublicationEpoch":null,"targetSnapshotVersion":null,"payload":{"cursor":null}}"""
+            .toByteArray(Charsets.UTF_8)
+
+    private fun sendAction(binding: String, request: String, expiresAt: Long): ByteArray =
+        """{"schemaVersion":1,"bindingId":"$binding","requestId":"$request","expiresAt":$expiresAt,"action":"sendAgentMessage","target":{"hostId":"host-a","workspaceId":"workspace-a","workspaceKind":"worktree","sessionTabId":"tab-a"},"publisherEpoch":"publisher","expectedRevision":1,"targetPublicationEpoch":"runtime-epoch","targetSnapshotVersion":7,"payload":{"text":"private prompt"}}"""
             .toByteArray(Charsets.UTF_8)
 
     private fun hash(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")

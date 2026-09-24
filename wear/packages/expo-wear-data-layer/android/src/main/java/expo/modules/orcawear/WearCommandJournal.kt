@@ -5,12 +5,16 @@ import android.database.sqlite.SQLiteDatabase
 import dev.orca.wear.contract.ActionAdmission
 import dev.orca.wear.contract.WearActionDecoder
 import java.security.MessageDigest
+import org.json.JSONObject
 
 internal enum class WearJournalHandoff { RECORDED, ALREADY_RECORDED, CONFLICT, MISSING, FULL }
 
 internal data class WearJournalRecord(val bindingId: String, val requestId: String,
     val actionHash: String, val actionName: String, val state: String, val expiresAt: Long,
     val reason: String?)
+
+internal data class WearJournalRecovery(val bindingId: String, val requestId: String,
+    val actionHash: String, val hostId: String, val state: String)
 
 internal object WearCommandJournal {
     fun onCreate(db: SQLiteDatabase) {
@@ -27,6 +31,7 @@ internal object WearCommandJournal {
             expires_at INTEGER NOT NULL,
             state TEXT NOT NULL CHECK(state IN ('recorded','effect_started','accepted','rejected','unknown')),
             result_reason TEXT,
+            reconciliation_attempts INTEGER NOT NULL DEFAULT 0,
             receipt_attempts INTEGER NOT NULL DEFAULT 0,
             receipt_transmitted INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL,
@@ -112,6 +117,39 @@ internal object WearCommandJournal {
     ).use { cursor -> buildList {
         while (cursor.moveToNext()) add(cursor.getString(0) to cursor.getString(1))
     } }
+
+    fun pendingReconciliation(db: SQLiteDatabase): List<WearJournalRecovery> = db.rawQuery(
+        """SELECT binding_id,request_id,action_hash,target_json,state FROM command_journal
+            WHERE action_name='sendAgentMessage' AND
+                (state='effect_started' OR (state='unknown' AND effect_boot_count IS NOT NULL))
+            ORDER BY reconciliation_attempts,updated_at,binding_id,request_id LIMIT 1""", null
+    ).use { cursor -> buildList {
+        while (cursor.moveToNext()) add(WearJournalRecovery(
+            cursor.getString(0), cursor.getString(1), cursor.getString(2),
+            JSONObject(cursor.getString(3)).getString("hostId"), cursor.getString(4)
+        ))
+    } }
+
+    fun claimReconciliation(db: SQLiteDatabase, now: Long, time: WearAdmissionTime): List<WearJournalRecovery> {
+        db.execSQL("""UPDATE command_journal SET state='unknown',updated_at=?,
+            terminal_boot_count=?,terminal_elapsed_at=? WHERE state='recorded' OR
+                (state='effect_started' AND action_name!='sendAgentMessage')""",
+            arrayOf(now, time.bootCount, time.elapsedMillis))
+        val records = pendingReconciliation(db)
+        for (record in records) db.execSQL("""UPDATE command_journal
+            SET reconciliation_attempts=reconciliation_attempts+1
+            WHERE binding_id=? AND request_id=?""", arrayOf(record.bindingId, record.requestId))
+        return records
+    }
+
+    fun hasPendingReconciliation(db: SQLiteDatabase): Boolean = db.rawQuery(
+        """SELECT 1 FROM command_journal WHERE state='recorded' OR
+            (state='effect_started' AND action_name!='sendAgentMessage') OR
+            (action_name='sendAgentMessage' AND
+                (state='effect_started' OR
+                    (state='unknown' AND effect_boot_count IS NOT NULL)))
+            LIMIT 1""", null
+    ).use { it.moveToFirst() }
 
     fun noteReceiptAttempt(db: SQLiteDatabase, record: WearJournalRecord): Boolean =
         db.compileStatement("""UPDATE command_journal SET receipt_attempts=receipt_attempts+1

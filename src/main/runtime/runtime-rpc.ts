@@ -201,6 +201,7 @@ const MOBILE_RPC_METHOD_ALLOWLIST = new Set([
   'client.capabilities.set',
   'wear.target.resolve',
   'wear.terminal.send',
+  'wear.command.receipt',
   'agentSession.history',
   'agentSession.subscribe',
   'agentSession.unsubscribe',

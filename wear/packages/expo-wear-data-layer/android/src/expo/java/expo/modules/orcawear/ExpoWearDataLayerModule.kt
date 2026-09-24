@@ -130,6 +130,12 @@ class ExpoWearDataLayerModule : Module() {
                 else promise.resolve(records)
             }
         }
+        AsyncFunction("pendingJournalReconciliation") { promise: Promise ->
+            owner.pendingJournalReconciliation { records, error ->
+                if (error != null) complete(promise, error)
+                else promise.resolve(records)
+            }
+        }
         AsyncFunction("sendAction") { canonical: String, promise: Promise ->
             owner.sendAction(canonical) { outcome, error ->
                 if (error != null) complete(promise, error)

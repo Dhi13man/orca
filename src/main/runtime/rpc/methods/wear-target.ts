@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { createHash } from 'node:crypto'
 import {
   WEAR_ACTION_TARGET_RUNTIME_CAPABILITY,
   WEAR_TERMINAL_SEND_RUNTIME_CAPABILITY
@@ -7,6 +8,7 @@ import { computeAgentSessionPayloadFingerprint } from '../../../../shared/agent-
 import { resolveWearActionTarget } from '../../wear-action-target'
 import { defineMethod, type RpcAnyMethod, type RpcContext } from '../core'
 import { projectSessionTabsForClient } from './session-tabs-inventory'
+import { encodeWearAction } from '../../../../../wear/packages/wear-companion-contract/src/action'
 
 const id = z.string().min(1).max(256)
 const target = z
@@ -102,11 +104,7 @@ export const WEAR_TARGET_METHODS: RpcAnyMethod[] = [
         sessionId: pairedDeviceId,
         fields: { bindingId: params.bindingId }
       })
-      const fingerprint = computeAgentSessionPayloadFingerprint({
-        method: 'wear.terminal.send',
-        sessionId: ledgerBindingId,
-        fields: { action: params }
-      })
+      const fingerprint = createHash('sha256').update(encodeWearAction(params)).digest('hex')
       const reservation = ledger.reserve({
         bindingId: ledgerBindingId,
         requestId: params.requestId,
@@ -116,7 +114,11 @@ export const WEAR_TARGET_METHODS: RpcAnyMethod[] = [
       })
       if (reservation.disposition === 'replay') {
         const { state, reason } = reservation.record
-        return { outcome: state === 'pending' ? 'unknown' : state, reason }
+        return {
+          outcome: state === 'pending' ? 'unknown' : state,
+          reason,
+          actionHash: reservation.record.fingerprint
+        }
       }
       if (reservation.disposition !== 'started') {
         const reason =
@@ -125,7 +127,7 @@ export const WEAR_TARGET_METHODS: RpcAnyMethod[] = [
             : reservation.disposition === 'conflict'
               ? 'conflict'
               : 'unavailable'
-        return { outcome: 'rejected', reason }
+        return { outcome: 'rejected', reason, actionHash: fingerprint }
       }
       const finish = (
         outcome: 'accepted' | 'rejected' | 'unknown',
@@ -139,7 +141,7 @@ export const WEAR_TARGET_METHODS: RpcAnyMethod[] = [
           reason,
           now: Date.now()
         })
-        return { outcome: record.state, reason: record.reason }
+        return { outcome: record.state, reason: record.reason, actionHash: record.fingerprint }
       }
       const currentTarget = async () => {
         const snapshot = projectSessionTabsForClient(
@@ -216,6 +218,26 @@ export const WEAR_TARGET_METHODS: RpcAnyMethod[] = [
       } catch {
         return finish('unknown', null)
       }
+    }
+  }),
+  defineMethod({
+    name: 'wear.command.receipt',
+    params: z.object({ bindingId: id, requestId: id }).strict(),
+    handler: (params, context) => {
+      const pairedDeviceId = terminalCapability(context)
+      const bindingId = computeAgentSessionPayloadFingerprint({
+        method: 'wear.terminal.binding',
+        sessionId: pairedDeviceId,
+        fields: { bindingId: params.bindingId }
+      })
+      const record = context.runtime.getWearCommandLedger().get(bindingId, params.requestId)
+      return record
+        ? {
+            outcome: record.state === 'pending' ? 'unknown' : record.state,
+            reason: record.reason,
+            actionHash: record.fingerprint
+          }
+        : null
     }
   })
 ]

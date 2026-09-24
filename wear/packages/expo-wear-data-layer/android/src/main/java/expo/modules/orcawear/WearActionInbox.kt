@@ -25,7 +25,7 @@ internal class WearActionInbox(context: Context, private val admissionTime: (Lon
     WearAdmissionTime(SystemClock.elapsedRealtime(),
         Settings.Global.getInt(context.contentResolver, Settings.Global.BOOT_COUNT, -1))
 }) : SQLiteOpenHelper(
-    context, File(context.noBackupFilesDir, "orca-wear-actions.db").absolutePath, null, 1
+    context, File(context.noBackupFilesDir, "orca-wear-actions.db").absolutePath, null, 2
 ) {
     override fun onConfigure(db: SQLiteDatabase) {
         db.execSQL("PRAGMA synchronous=FULL")
@@ -56,8 +56,10 @@ internal class WearActionInbox(context: Context, private val admissionTime: (Lon
         WearCommandJournal.onCreate(db)
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) =
-        error("wear_action_inbox_schema_unsupported")
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) db.execSQL("""ALTER TABLE command_journal
+            ADD COLUMN reconciliation_attempts INTEGER NOT NULL DEFAULT 0""")
+    }
 
     fun insert(bindingId: String, requestId: String, actionName: String, actionHash: String,
         expiresAt: Long, wire: ByteArray, now: Long): WearActionInsertResult = transaction { db ->
@@ -143,6 +145,13 @@ internal class WearActionInbox(context: Context, private val admissionTime: (Lon
 
     fun pendingReceipts(): List<Pair<String, String>> =
         WearCommandJournal.pendingReceipts(readableDatabase)
+
+    fun pendingReconciliation(now: Long): List<WearJournalRecovery> = transaction { db ->
+        WearCommandJournal.claimReconciliation(db, now, admissionTime(now))
+    }
+
+    fun hasPendingReconciliation(): Boolean =
+        WearCommandJournal.hasPendingReconciliation(readableDatabase)
 
     fun noteReceiptAttempt(record: WearJournalRecord): Boolean = transaction { db ->
         WearCommandJournal.noteReceiptAttempt(db, record)

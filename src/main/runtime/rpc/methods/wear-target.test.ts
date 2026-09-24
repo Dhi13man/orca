@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 import { WEAR_ACTION_TARGET_RUNTIME_CAPABILITY } from '../../../../shared/protocol-version'
 import type { RuntimeMobileSessionTabsResult } from '../../../../shared/runtime-types'
 import type { OrcaRuntimeService } from '../../orca-runtime'
@@ -8,6 +9,7 @@ import { WEAR_TARGET_METHODS } from './wear-target'
 
 const method = WEAR_TARGET_METHODS[0] as RpcMethod
 const sendMethod = WEAR_TARGET_METHODS[1] as RpcMethod
+const receiptMethod = WEAR_TARGET_METHODS[2] as RpcMethod
 const target = {
   workspaceId: 'workspace-a',
   workspaceKind: 'worktree',
@@ -88,6 +90,8 @@ describe('wear.target.resolve', () => {
 })
 
 describe('wear.terminal.send', () => {
+  const actionHash = (value: unknown) =>
+    createHash('sha256').update(JSON.stringify(value)).digest('hex')
   const action = {
     schemaVersion: 1,
     bindingId: 'binding-a',
@@ -146,6 +150,9 @@ describe('wear.terminal.send', () => {
     await expect(sendMethod.handler(action, current.rpc)).rejects.toThrow(
       'wear_terminal_send_unsupported'
     )
+    expect(() =>
+      receiptMethod.handler({ bindingId: 'binding-a', requestId: 'request-a' }, current.rpc)
+    ).toThrow('wear_terminal_send_unsupported')
     expect(current.listMobileSessionTabs).not.toHaveBeenCalled()
     current.ledger.close()
   })
@@ -154,21 +161,46 @@ describe('wear.terminal.send', () => {
     const current = setup()
     expect(await sendMethod.handler(action, current.rpc)).toEqual({
       outcome: 'accepted',
-      reason: null
+      reason: null,
+      actionHash: actionHash(action)
     })
     expect(current.sendTerminalAgentPrompt).toHaveBeenCalledOnce()
+    expect(
+      await receiptMethod.handler(
+        { bindingId: action.bindingId, requestId: action.requestId },
+        current.rpc
+      )
+    ).toEqual({ outcome: 'accepted', reason: null, actionHash: actionHash(action) })
+    expect(
+      await receiptMethod.handler(
+        { bindingId: 'other-binding', requestId: action.requestId },
+        current.rpc
+      )
+    ).toBeNull()
+    const otherPhone = { ...current.rpc, pairedDeviceId: 'phone-b' }
+    expect(
+      await receiptMethod.handler(
+        { bindingId: action.bindingId, requestId: action.requestId },
+        otherPhone
+      )
+    ).toBeNull()
     const options = current.sendTerminalAgentPrompt.mock.calls[0][2]
     await options.beforeWrite('pty-a')
     options.beforeWriteNow('pty-a')
     expect(current.listMobileSessionTabs).toHaveBeenCalledTimes(2)
     expect(await sendMethod.handler(action, current.rpc)).toEqual({
       outcome: 'accepted',
-      reason: null
+      reason: null,
+      actionHash: actionHash(action)
     })
     expect(current.sendTerminalAgentPrompt).toHaveBeenCalledOnce()
     expect(
       await sendMethod.handler({ ...action, payload: { text: 'changed' } }, current.rpc)
-    ).toEqual({ outcome: 'rejected', reason: 'conflict' })
+    ).toEqual({
+      outcome: 'rejected',
+      reason: 'conflict',
+      actionHash: actionHash({ ...action, payload: { text: 'changed' } })
+    })
     current.ledger.close()
   })
 
@@ -177,18 +209,21 @@ describe('wear.terminal.send', () => {
     current.listMobileSessionTabs.mockResolvedValueOnce({ ...snapshot, snapshotVersion: 8 })
     expect(await sendMethod.handler(action, current.rpc)).toEqual({
       outcome: 'rejected',
-      reason: 'target-changed'
+      reason: 'target-changed',
+      actionHash: actionHash(action)
     })
     expect(current.sendTerminalAgentPrompt).not.toHaveBeenCalled()
     const retry = { ...action, requestId: 'request-b' }
     current.sendTerminalAgentPrompt.mockRejectedValueOnce(new Error('ambiguous terminal write'))
     expect(await sendMethod.handler(retry, current.rpc)).toEqual({
       outcome: 'unknown',
-      reason: null
+      reason: null,
+      actionHash: actionHash(retry)
     })
     expect(await sendMethod.handler(retry, current.rpc)).toEqual({
       outcome: 'unknown',
-      reason: null
+      reason: null,
+      actionHash: actionHash(retry)
     })
     expect(current.sendTerminalAgentPrompt).toHaveBeenCalledOnce()
     current.ledger.close()
@@ -209,10 +244,15 @@ describe('wear.terminal.send', () => {
     await vi.waitFor(() => expect(current.sendTerminalAgentPrompt).toHaveBeenCalledOnce())
     expect(await sendMethod.handler(action, current.rpc)).toEqual({
       outcome: 'unknown',
-      reason: null
+      reason: null,
+      actionHash: actionHash(action)
     })
     release()
-    expect(await first).toEqual({ outcome: 'unknown', reason: null })
+    expect(await first).toEqual({
+      outcome: 'unknown',
+      reason: null,
+      actionHash: actionHash(action)
+    })
     expect(current.sendTerminalAgentPrompt).toHaveBeenCalledOnce()
     current.ledger.close()
   })
@@ -227,7 +267,8 @@ describe('wear.terminal.send', () => {
     })
     expect(await sendMethod.handler(action, current.rpc)).toEqual({
       outcome: 'unknown',
-      reason: null
+      reason: null,
+      actionHash: actionHash(action)
     })
     expect(current.isCurrentLocalWearTerminalTarget).toHaveBeenCalledOnce()
     current.ledger.close()
@@ -238,7 +279,8 @@ describe('wear.terminal.send', () => {
     current.isLocalWearTerminalTarget.mockReturnValue(false)
     expect(await sendMethod.handler(action, current.rpc)).toEqual({
       outcome: 'rejected',
-      reason: 'unsupported'
+      reason: 'unsupported',
+      actionHash: actionHash(action)
     })
     expect(current.sendTerminalAgentPrompt).not.toHaveBeenCalled()
     expect(sendMethod.params?.safeParse({ ...action, rpcMethod: 'terminal.send' }).success).toBe(
