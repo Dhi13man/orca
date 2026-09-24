@@ -1802,3 +1802,12 @@ the phone's Wear Headless JS service is non-exported. These are build and
 packaging checks, not physical installation or headless-wake evidence. A fresh
 ADB scan still lists only emulators; the advertised physical phone endpoint
 `192.168.68.106:45379` refuses TCP, and no watch endpoint is visible.
+
+Attention now sums only authoritative host inventories; an incomplete host
+cannot inflate the displayed count. Wear's 147 tests, typecheck, scoped lint,
+and format pass. A read-only structured-session audit found that the host tab
+snapshot carries identity but no status. The phone correctly marks those rows
+unavailable: a bounded conversation tail cannot prove that an older pending
+prompt or running turn ended. Full structured status requires a host-owned
+full-journal projection with freshness and recovery semantics, published as an
+optional capability-gated tab field. This remains open; no status was guessed.

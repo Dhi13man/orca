@@ -62,10 +62,7 @@ function PageNotice({ children }: { children: ReactNode }) {
 
 function AttentionPage({ dashboard }: { dashboard: WearDashboard }) {
   const current = dashboard.hosts.filter((host) => host.inventoryAuthority === 'authoritative')
-  const needsAttention = dashboard.hosts.reduce(
-    (count, host) => count + host.agentCounts.needsAttention,
-    0
-  )
+  const needsAttention = current.reduce((count, host) => count + host.agentCounts.needsAttention, 0)
   const incomplete = dashboard.hosts.filter(
     (host) => host.inventoryAuthority !== 'authoritative'
   ).length
