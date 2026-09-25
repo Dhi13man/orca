@@ -29,6 +29,7 @@ export default function App() {
   const [manualCode, setManualCode] = useState('')
   const [usePairingLink, setUsePairingLink] = useState(false)
   const [hosts, setHosts] = useState<FleetHost[]>([])
+  const scrollRef = useRef<ScrollView>(null)
   const hostsRef = useRef<FleetHost[]>([])
   const refreshGeneration = useRef(0)
   const usageFollowups = useRef(0)
@@ -38,6 +39,10 @@ export default function App() {
   } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ y: 0, animated: false })
+  }, [showEnroll, selectedAgent])
 
   const refresh = useCallback(async (offers: PairingOffer[]) => {
     const generation = ++refreshGeneration.current
@@ -199,7 +204,11 @@ export default function App() {
   return (
     <View style={styles.screen}>
       <StatusBar hidden />
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
         {pairings.length > 0 && !showEnroll ? (
           selectedAgent ? (
             <AgentConversation
