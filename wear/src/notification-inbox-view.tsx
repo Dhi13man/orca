@@ -7,12 +7,14 @@ export function NotificationInboxView({
   status,
   pages,
   nextCursor,
-  onLoad
+  onLoad,
+  onOpenHost
 }: {
   status: 'idle' | 'loading' | 'ready' | 'unavailable'
   pages: WearNotificationPage[]
   nextCursor: string | null
   onLoad: (cursor: string | null) => void
+  onOpenHost: (hostId: string, hostName: string) => void
 }) {
   return (
     <View style={styles.section}>
@@ -49,6 +51,14 @@ export function NotificationInboxView({
                 {new Date(item.notificationAt).toLocaleString()}
               </Text>
             ))}
+            {page.hostState === 'ready' && page.items.length > 0 ? (
+              <WearButton
+                accessibilityLabel={`Open agents on ${page.hostName}`}
+                label="Open agents"
+                quiet
+                onPress={() => onOpenHost(page.hostId, page.hostName)}
+              />
+            ) : null}
             {page.omitted > 0 ? (
               <Text style={styles.detail}>{page.omitted} older events omitted.</Text>
             ) : null}

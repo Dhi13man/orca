@@ -27,6 +27,7 @@ function agentState(agent: WearAgentRow, available: boolean, now: number): strin
 
 export function AgentPagesView({
   hostName,
+  backLabel,
   status,
   agents,
   total,
@@ -37,6 +38,7 @@ export function AgentPagesView({
   onSelectAgent
 }: {
   hostName: string
+  backLabel: string
   status: 'idle' | 'loading' | 'ready' | 'unavailable'
   agents: WearAgentRow[]
   total: number
@@ -71,7 +73,7 @@ export function AgentPagesView({
   }, [])
   return (
     <View style={styles.section}>
-      <WearButton label="Back to machines" quiet onPress={onBack} />
+      <WearButton label={backLabel} quiet onPress={onBack} />
       <Text accessibilityRole="header" style={styles.heading}>
         {hostName} agents
       </Text>

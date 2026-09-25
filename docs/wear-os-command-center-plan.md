@@ -2181,3 +2181,19 @@ advanced the phone snapshot from 7:51 to 8:01 AM in the
 [rendered evidence](../spikes/wear-companion/evidence/2026-09-25-no-internet-refresh.png).
 This proves that emulator Data Layer refresh survived the permission removal;
 it does not establish physical-device operation or authenticated host data.
+
+An Inbox card with a ready host and retained events now opens that exact
+host's Agents page through the existing authenticated host-agent action.
+It does not auto-select an agent from a redacted event or bypass fresh target
+validation. Back returns to Inbox with its retained, still-valid pages; a
+changed dashboard revision or expired page invalidates them. Wear typecheck,
+lint, scoped formatting, the notification-page
+repository test, an offline release build, and the 15 mixed-version
+terminal/structured-session wire tests pass. No emulator currently has a
+retained authenticated event to exercise this tap end to end; session-specific
+event navigation and physical acceptance remain open. The independent
+read-only route review found no remaining blocker; it did not include a device
+tap. Validation continues with existing authenticated agents and paired
+machines. No disposable profile or sign-in is required. A reply test must use
+one reverified, exactly identified idle session through the watch path and
+only a harmless bounded acknowledgement; busy sessions remain untouched.

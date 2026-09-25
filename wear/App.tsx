@@ -281,7 +281,7 @@ export default function App() {
         {bound ? (
           <>
             <WearPageNavigation
-              page={page}
+              page={selectedHost ? 'Agents' : page}
               onSelect={(next) => {
                 setPage(next)
                 setShowAllMachines(false)
@@ -317,6 +317,7 @@ export default function App() {
               <AgentPagesView
                 {...agentPages.state}
                 hostName={selectedHost.name}
+                backLabel={page === 'Inbox' ? 'Back to Inbox' : 'Back to machines'}
                 onBack={() => {
                   setSelectedHost(null)
                   setSelectedAgent(null)
@@ -345,6 +346,11 @@ export default function App() {
                 <NotificationInboxView
                   {...notificationPages.state}
                   onLoad={(cursor) => void notificationPages.load(cursor)}
+                  onOpenHost={(hostId, hostName) => {
+                    setShowAllMachines(false)
+                    setSelectedHost({ id: hostId, name: hostName })
+                    setSelectedAgent(null)
+                  }}
                 />
               )
             ) : (
