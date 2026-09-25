@@ -45,7 +45,8 @@ export function ConversationView({
       onDraftChange('')
     }
   }, [reply.status, draft, onDraftChange])
-  useEffect(() => setConfirmRecovery(false), [page?.requestId])
+  useEffect(() => setConfirmRecovery(false), [page?.requestId, reply.status])
+  useEffect(() => setConfirmHandoffRecovery(false), [page?.requestId, phoneHandoff.status])
   return (
     <View style={styles.section}>
       <WearButton label="Back to agents" quiet onPress={onBack} />
