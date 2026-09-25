@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   AppState,
@@ -28,6 +28,7 @@ import { selectCurrentWearAgent } from './src/selected-wear-agent'
 import { WearPageNavigation } from './src/wear-page-navigation'
 
 export default function App() {
+  const scrollRef = useRef<ScrollView>(null)
   const [state, setState] = useState<WearCompanionState | null>(
     () => wearDataLayer?.getState() ?? null
   )
@@ -69,6 +70,10 @@ export default function App() {
           selectedAgent.targetPublicationEpoch
         ])
       : null
+  const viewKey = JSON.stringify([page, showAllMachines, selectedHostId, draftTarget])
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ y: 0, animated: false })
+  }, [viewKey])
   const conversation = useConversationPage(
     dashboard.state === 'ready' ? dashboard.dashboard : null,
     selectedHostId,
@@ -185,7 +190,7 @@ export default function App() {
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" backgroundColor={wearColors.background} />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView ref={scrollRef} contentContainerStyle={styles.content}>
         {!bound ? (
           <Text accessibilityRole="header" style={styles.title}>
             Orca
@@ -284,11 +289,6 @@ export default function App() {
                 setSelectedAgent(null)
               }}
             />
-            {selectedHostId || showAllMachines ? (
-              <Text accessibilityRole="header" style={styles.heading}>
-                {currentAgent ? 'Conversation' : selectedHostId ? 'Agents' : 'All machines'}
-              </Text>
-            ) : null}
             {selectedHost && currentAgent && dashboard.state === 'ready' ? (
               <ConversationView
                 title={currentAgent.title}

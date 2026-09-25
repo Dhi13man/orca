@@ -2130,3 +2130,19 @@ use the current `node:sqlite` ledger, and the existing Windows file writer does
 not guarantee directory-entry durability across power loss. These remain
 product acceptance gaps, not reasons to create a new profile or send through
 an unguarded terminal write.
+
+The paired Wear emulator exposed a navigation defect: opening All machines
+from a scrolled Agents page retained the old scroll position and clipped the
+page controls. The watch now scrolls to the top when its page, host, or exact
+agent target changes, and the repeated parent heading was removed because
+each detail view already names itself. The [before](../spikes/wear-companion/evidence/2026-09-25-ui-all-machines.png)
+and [after](../spikes/wear-companion/evidence/2026-09-25-ui-all-machines-ref.png)
+screenshots show the same emulator route. Watch typecheck, scoped lint/format,
+and an offline x86_64 release build pass; the same-signed APK (SHA-256
+`401327FEAA08551F2FE95FBE9C048BE910776229ED13AA5DA641116D77A1F094`)
+installed on emulator `5562` and rendered the corrected screen. This is an
+emulator navigation check, not TalkBack/rotary or physical-watch acceptance.
+The same source also built as a four-ABI release APK with ARM64 support,
+package `com.stably.orca.mobile`, the existing test certificate, and SHA-256
+`DBA9091A4AA7EC28F15DCE6AFE9AB61181CFEC2BD372CA6EDB76D536D279FB1F`.
+That multi-ABI artifact has not been installed on the physical watch.
