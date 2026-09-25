@@ -2031,3 +2031,13 @@ launched to a rendered Attention page; Usage rendered one unverified Claude
 account as unavailable with its last-reported time and Host 2 source. The
 phone APK remains uninstalled. ADB still lists only emulators, so these checks
 do not close physical installation, real usage, or paired-agent acceptance.
+
+The current phone source also built offline for x86_64 and updated paired phone
+emulator `5556` in place after its signing certificate and versionCode were
+verified. Paired watch emulator `5562` rendered a new 5:34 AM Usage snapshot
+with unavailable, unverified Claude and Codex readings. The phone's existing
+host pairing then returned `e2ee_error: unauthorized`; no credentials or
+pairing data were changed. This confirms current-source phone-to-watch snapshot
+delivery, but leaves real host usage, conversations, and a safe idle reply
+unverified. Existing configured agents remain the live validation targets; no
+disposable sign-in is a prerequisite. Physical ADB still lists only emulators.
