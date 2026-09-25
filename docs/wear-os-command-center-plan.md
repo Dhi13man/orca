@@ -2041,3 +2041,18 @@ pairing data were changed. This confirms current-source phone-to-watch snapshot
 delivery, but leaves real host usage, conversations, and a safe idle reply
 unverified. Existing configured agents remain the live validation targets; no
 disposable sign-in is a prerequisite. Physical ADB still lists only emulators.
+
+The paired emulator's All machines page now reports the phone's current known
+connection state for each catalog host while leaving unobserved hosts and agent
+counts unverified. The current phone and watch release builds updated the
+same-signed emulator pair; the watch rendered Host 1 as authentication needed
+and Host 2 as connected. Focused mobile projection tests (3), mobile/watch
+typechecks, scoped lint/format, and independent read-only review passed. The
+ARM64 phone release was rebuilt after emulator testing (SHA-256
+`E4BFD4DB24DD1B8DBDF7B58710BFDF4FD9F5158DC013F5EB78DD3E9D354DABB6`);
+the current watch APK SHA-256 is
+`1A43ED4156716C851C067E95112C8D1E92D75696DED9A90CB04CB589943F8718`.
+Structured-session parity remains deeper than watch projection: the existing
+host currently installs only the local-native Codex adapter and gates other
+provider/location combinations. Live host conversation/reply, SSH durable
+send, notification delivery, and physical installed acceptance remain open.

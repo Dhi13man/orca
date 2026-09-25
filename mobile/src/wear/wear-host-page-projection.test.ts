@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { decodeWearHostPage } from '@orca/wear-companion-contract/host-page'
-import type { HostCatalogEntry } from '../transport/types'
+import type { ConnectionState, HostCatalogEntry } from '../transport/types'
 import { projectWearHostPage } from './wear-host-page-projection'
 
 vi.mock('expo-crypto', async () => {
@@ -23,7 +23,11 @@ const catalog: HostCatalogEntry[] = Array.from({ length: 20 }, (_, index) => ({
   profile: null
 }))
 
-function page(cursor: string | null, entries: HostCatalogEntry[] = catalog) {
+function page(
+  cursor: string | null,
+  entries: HostCatalogEntry[] = catalog,
+  connectionStates: ReadonlyMap<string, ConnectionState | null> = new Map()
+) {
   return projectWearHostPage({
     bindingId: 'binding',
     requestId: 'request',
@@ -32,7 +36,8 @@ function page(cursor: string | null, entries: HostCatalogEntry[] = catalog) {
     revision: 4,
     cursor,
     now,
-    catalog: entries
+    catalog: entries,
+    connectionStates
   })
 }
 
@@ -56,5 +61,24 @@ describe('Wear host catalog page', () => {
     const first = await page(null)
     const changed = [...catalog.slice(1), { ...catalog[0], id: 'host-new' }]
     await expect(page(first.nextCursor, changed)).rejects.toThrow('stale')
+  })
+
+  it('shows observed live and rejected connections without inventing agent counts', async () => {
+    const current = await page(
+      null,
+      catalog,
+      new Map([
+        ['host-00', 'connected'],
+        ['host-01', 'auth-failed'],
+        ['host-02', 'disconnected']
+      ] as const)
+    )
+    expect(current.hosts[0]).toMatchObject({
+      connectionState: 'connected',
+      inventoryAuthority: 'unavailable',
+      agentCounts: { total: 0, working: 0, needsAttention: 0 }
+    })
+    expect(current.hosts[1].connectionState).toBe('auth-failed')
+    expect(current.hosts[2].connectionState).toBe('unverifiable')
   })
 })

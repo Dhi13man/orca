@@ -29,6 +29,15 @@ export function HostPagesView({
       {(status === 'unavailable' ? [] : hosts).map((host) => (
         <View key={host.hostId} style={styles.card}>
           <Text style={styles.title}>{host.displayName}</Text>
+          <Text style={styles.detail}>
+            {host.connectionState === 'connected'
+              ? 'Connected'
+              : host.connectionState === 'auth-failed'
+                ? 'Authentication needed'
+                : host.connectionState === 'incompatible'
+                  ? 'Update needed'
+                  : 'Connection unverified'}
+          </Text>
           <WearButton label="Open agents" quiet onPress={() => onSelectHost(host.hostId)} />
         </View>
       ))}

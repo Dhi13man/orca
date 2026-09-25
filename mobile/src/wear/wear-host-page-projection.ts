@@ -1,6 +1,6 @@
 import * as ExpoCrypto from 'expo-crypto'
 import { encodeWearHostPage, type WearHostPage } from '@orca/wear-companion-contract/host-page'
-import type { HostCatalogEntry } from '../transport/types'
+import type { ConnectionState, HostCatalogEntry } from '../transport/types'
 import { wearHostDisplayName } from './wear-dashboard-projection'
 
 export async function projectWearHostPage(input: {
@@ -12,6 +12,7 @@ export async function projectWearHostPage(input: {
   cursor: string | null
   now: number
   catalog: readonly HostCatalogEntry[]
+  connectionStates: ReadonlyMap<string, ConnectionState | null>
 }): Promise<WearHostPage> {
   const hosts = [...input.catalog].sort((a, b) => a.id.localeCompare(b.id))
   if (new Set(hosts.map((host) => host.id)).size !== hosts.length) {
@@ -32,16 +33,25 @@ export async function projectWearHostPage(input: {
   ) {
     throw new Error('Wear host cursor is stale')
   }
-  const pageHosts = hosts.slice(offset, offset + 16).map((host) => ({
-    hostId: host.id,
-    displayName: wearHostDisplayName(host.name) || host.id,
-    connectionState:
-      host.credentialStatus === 'missing' ? ('auth-failed' as const) : ('unverifiable' as const),
-    inventoryAuthority: 'unavailable' as const,
-    usageGroupKeys: { claude: null, codex: null },
-    agentCounts: { total: 0, working: 0, needsAttention: 0 },
-    lastActivityAt: null
-  }))
+  const pageHosts = hosts.slice(offset, offset + 16).map((host) => {
+    const current = input.connectionStates.get(host.id)
+    return {
+      hostId: host.id,
+      displayName: wearHostDisplayName(host.name) || host.id,
+      connectionState:
+        host.credentialStatus === 'missing'
+          ? ('auth-failed' as const)
+          : host.credentialStatus === 'ready' && current === 'connected'
+            ? ('connected' as const)
+            : host.credentialStatus === 'ready' && current === 'auth-failed'
+              ? ('auth-failed' as const)
+              : ('unverifiable' as const),
+      inventoryAuthority: 'unavailable' as const,
+      usageGroupKeys: { claude: null, codex: null },
+      agentCounts: { total: 0, working: 0, needsAttention: 0 },
+      lastActivityAt: null
+    }
+  })
   const page: WearHostPage = {
     schemaVersion: 1,
     bindingId: input.bindingId,
