@@ -69,7 +69,9 @@ export const WEAR_TARGET_METHODS: RpcAnyMethod[] = [
     params: wearSendAction,
     handler: async (params, context) => {
       const pairedDeviceId = terminalCapability(context)
+      const fingerprint = createHash('sha256').update(encodeWearAction(params)).digest('hex')
       if (
+        params.expiresAt - Date.now() > 120_000 ||
         Buffer.byteLength(params.payload.text, 'utf8') > 2_048 ||
         params.payload.text.trim().length === 0 ||
         [
@@ -82,11 +84,10 @@ export const WEAR_TARGET_METHODS: RpcAnyMethod[] = [
           params.target.sessionTabId
         ].some((value) => Buffer.byteLength(value, 'utf8') > 256)
       ) {
-        return { outcome: 'rejected', reason: 'invalid-action' }
+        return { outcome: 'rejected', reason: 'invalid-action', actionHash: fingerprint }
       }
       const ledger = context.runtime.getWearCommandLedger()
       const ledgerBindingId = wearLedgerBindingId(pairedDeviceId, params.bindingId)
-      const fingerprint = createHash('sha256').update(encodeWearAction(params)).digest('hex')
       const reservation = ledger.reserve({
         bindingId: ledgerBindingId,
         requestId: params.requestId,

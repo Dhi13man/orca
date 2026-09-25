@@ -192,6 +192,23 @@ describe('wear.agent.send', () => {
     current.ledger.close()
   })
 
+  it('replays an accepted receipt after the action deadline without sending again', async () => {
+    const current = setup()
+    expect(await send.handler(action, current.rpc)).toMatchObject({ outcome: 'accepted' })
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(action.expiresAt + 1)
+    try {
+      expect(await send.handler(action, current.rpc)).toEqual({
+        outcome: 'accepted',
+        reason: null,
+        actionHash: hash
+      })
+      expect(current.sendTurn).toHaveBeenCalledOnce()
+    } finally {
+      clock.mockRestore()
+      current.ledger.close()
+    }
+  })
+
   it('resolves a structured folder target through its published workspace key', async () => {
     const current = setup()
     const folderId = 'folder-a'

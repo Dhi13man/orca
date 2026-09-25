@@ -2056,3 +2056,18 @@ Structured-session parity remains deeper than watch projection: the existing
 host currently installs only the local-native Codex adapter and gates other
 provider/location combinations. Live host conversation/reply, SSH durable
 send, notification delivery, and physical installed acceptance remain open.
+
+The next send-contract checkpoint closes two receipt edge cases: terminal
+actions beyond the two-minute admission window return a fingerprinted
+`invalid-action` result the phone can reconcile, and an exact structured
+action retry after expiry replays its prior durable receipt without sending
+again. Focused host tests (23), node typecheck, scoped lint/format, and an
+independent read-only review pass. The existing Crowley and Choisoonsil agent
+sessions are busy, so no live reply was sent. Physical ADB lists only
+emulators; the advertised phone endpoint refused its connection. The paired
+emulator's scheduled refresh job remains installed, but the current screen-off
+probe has not established a new cold-process wake. Existing authenticated
+agents remain the validation targets; no disposable profile or sign-in is
+required. Remaining acceptance is real conversation and usage values, one
+exact idle-session reply, host-originated notification delivery, SSH durable
+reply support, and physical phone/watch installation and use.

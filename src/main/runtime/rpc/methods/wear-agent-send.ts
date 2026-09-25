@@ -33,7 +33,6 @@ export const WEAR_AGENT_SEND_METHODS: RpcAnyMethod[] = [
       const text = action.payload.text
       const now = Date.now()
       if (
-        action.expiresAt <= now ||
         action.expiresAt - now > 120_000 ||
         Buffer.byteLength(text, 'utf8') > 2_048 ||
         !text.trim() ||
@@ -62,6 +61,9 @@ export const WEAR_AGENT_SEND_METHODS: RpcAnyMethod[] = [
               actionHash
             }
           : { outcome: 'rejected', reason: 'conflict', actionHash }
+      }
+      if (action.expiresAt <= now) {
+        return { outcome: 'rejected', reason: 'expired', actionHash }
       }
       const fence: WearActionTargetFence = {
         ...action.target,

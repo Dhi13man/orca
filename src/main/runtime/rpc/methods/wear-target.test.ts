@@ -176,6 +176,24 @@ describe('wear.terminal.send', () => {
     current.ledger.close()
   })
 
+  it('refuses a distant deadline before reserving or writing', async () => {
+    const current = setup()
+    const distant = { ...action, expiresAt: Date.now() + 121_000 }
+    expect(await sendMethod.handler(distant, current.rpc)).toEqual({
+      outcome: 'rejected',
+      reason: 'invalid-action',
+      actionHash: actionHash(distant)
+    })
+    expect(
+      await receiptMethod.handler(
+        { bindingId: action.bindingId, requestId: action.requestId },
+        current.rpc
+      )
+    ).toBeNull()
+    expect(current.sendTerminalAgentPrompt).not.toHaveBeenCalled()
+    current.ledger.close()
+  })
+
   it('writes once and replays the durable accepted outcome without sending again', async () => {
     const current = setup()
     expect(await sendMethod.handler(action, current.rpc)).toEqual({
