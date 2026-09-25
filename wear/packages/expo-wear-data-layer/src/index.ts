@@ -82,6 +82,7 @@ type WearDataLayerModule = {
     listener: (event: { bindingId: string; requestId: string }) => void
   ): { remove(): void }
   getState(): WearCompanionState
+  getPushToken(): Promise<string | null>
   isBackgroundRefreshActive(runId: number): boolean
   completeBackgroundRefresh(runId: number): void
   discoverPeers(): Promise<WearPeer[]>

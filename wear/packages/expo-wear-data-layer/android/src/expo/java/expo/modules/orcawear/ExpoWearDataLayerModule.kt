@@ -1,6 +1,8 @@
 package expo.modules.orcawear
 
 import com.google.android.gms.wearable.Wearable
+import com.google.firebase.FirebaseApp
+import com.google.firebase.messaging.FirebaseMessaging
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -41,6 +43,16 @@ class ExpoWearDataLayerModule : Module() {
             observedOwner = null
         }
         Function("getState") { owner.snapshot() }
+        AsyncFunction("getPushToken") { promise: Promise ->
+            val context = requireNotNull(appContext.reactContext)
+            if (FirebaseApp.getApps(context).isEmpty()) {
+                promise.resolve(null)
+            } else {
+                FirebaseMessaging.getInstance().token
+                    .addOnSuccessListener { token -> promise.resolve(token) }
+                    .addOnFailureListener { promise.reject("E_WEAR_PUSH", "Push token unavailable", null) }
+            }
+        }
         Function("isBackgroundRefreshActive") { runId: Int ->
             WearDashboardRefreshJobService.isActive(runId)
         }
