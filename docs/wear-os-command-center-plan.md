@@ -2217,11 +2217,11 @@ installed.
 The phone's Wear host feed no longer leaves a failed synchronous host
 acquisition in its active set or aborts the selected batch. It releases only
 that acquisition token, reports the error, continues healthy hosts, and
-retries the failed host on the next refresh. The focused 13-test host-feed
-suite, mobile typecheck/lint/scoped formatting, and independent read-only
-ownership review pass. This fixes one all-host starvation path in source; the
-ordinary asynchronous connection failure path and physical fleet timing still
-require live acceptance evidence.
+retries the failed host when the fair rotation selects it again. The 13 focused
+host-feed tests, mobile typecheck/lint/scoped formatting, and independent
+read-only ownership review pass. This fixes one all-host starvation path in
+source. Ordinary asynchronous connection failures and physical fleet timing
+still require live acceptance evidence.
 
 The background notification replay now releases its exact host-acquisition
 token if acquisition throws before a client is returned. A successful replay

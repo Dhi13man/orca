@@ -292,7 +292,7 @@ describe('Wear host feed', () => {
     const stop = startWearHostFeed({
       owner: h.owner,
       coordinator: h.coordinator,
-      loadCatalog: async () => [host('a'), host('b'), host('c')],
+      loadCatalog: async () => ['a', 'b', 'c', 'd', 'e', 'f', 'g'].map((id) => host(id)),
       onUpdate: (snapshot) => h.snapshots.push(snapshot),
       onError,
       onRefreshReady: (control) => {
@@ -302,10 +302,12 @@ describe('Wear host feed', () => {
     await vi.waitFor(() => expect(h.acquired).toEqual(['b', 'c']))
     expect(onError).toHaveBeenCalledWith(new Error('host a failed'))
     expect(h.owner.release).toHaveBeenCalledOnce()
-    expect(h.snapshots.at(-1)?.catalog).toHaveLength(3)
+    expect(h.snapshots.at(-1)?.catalog).toHaveLength(7)
     acquire.mockImplementation(originalAcquire)
     expect(await refresh()).toBe(true)
-    expect(h.acquired).toEqual(['b', 'c', 'a'])
+    expect(h.acquired).toEqual(['b', 'c', 'd', 'e', 'f'])
+    expect(await refresh()).toBe(true)
+    expect(h.acquired).toEqual(['b', 'c', 'd', 'e', 'f', 'a', 'b', 'g'])
     stop()
   })
 
