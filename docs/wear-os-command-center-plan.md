@@ -2115,3 +2115,14 @@ host authentication still failed, so it proves no live Usage or conversation
 data, notification timing, or physical-device acceptance. Existing configured
 agents and paired machines remain the validation targets, with no disposable
 profile or sign-in gate; the observed sessions were busy, so no reply was sent.
+
+The runtime audit found that terminal conversation reads cover Claude,
+OpenClaude, Codex, Grok, and OMP, but settled-prompt reply admission currently
+recognizes only Claude and Codex. The existing OMP sessions cannot be used for
+the reply acceptance test without provider-specific prompt-settlement proof.
+Structured sessions are implemented only for native local Codex. SSH terminal
+send still lacks a host-owned durable receipt store; the Node 18 relay cannot
+use the current `node:sqlite` ledger, and the existing Windows file writer does
+not guarantee directory-entry durability across power loss. These remain
+product acceptance gaps, not reasons to create a new profile or send through
+an unguarded terminal write.
