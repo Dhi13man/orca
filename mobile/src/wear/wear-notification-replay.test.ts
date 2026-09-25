@@ -5,6 +5,7 @@ import type { RpcClient } from '../transport/rpc-client'
 const mocks = vi.hoisted(() => ({
   catalog: vi.fn(),
   acquire: vi.fn(),
+  releaseToken: vi.fn(),
   release: vi.fn(),
   releaseLifetime: vi.fn(),
   observeHost: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock('../transport/host-store', () => ({ loadHostCatalog: mocks.catalog }))
 vi.mock('../transport/host-client-process-owner', () => ({
   getHostClientProcessOwner: () => ({
     acquire: mocks.acquire,
+    release: mocks.releaseToken,
     getAllClients: () => [...mocks.clients].map(([hostId, client]) => ({ hostId, client })),
     subscribeAllHosts: (listener: () => void) => {
       mocks.listeners.add(listener)
@@ -88,6 +90,7 @@ describe('background Wear notification replay', () => {
     mocks.ready.get('host-d')?.(true)
     await task
     expect(mocks.release).toHaveBeenCalledTimes(4)
+    expect(mocks.releaseToken).not.toHaveBeenCalled()
     expect(mocks.releaseLifetime).toHaveBeenCalledOnce()
   })
 
@@ -113,6 +116,7 @@ describe('background Wear notification replay', () => {
     }
     await task
     expect(mocks.release).toHaveBeenCalledTimes(3)
+    expect(mocks.releaseToken).toHaveBeenCalledExactlyOnceWith('host-a', expect.any(Object))
     expect(warning).toHaveBeenCalledOnce()
     expect(mocks.releaseLifetime).toHaveBeenCalledOnce()
   })

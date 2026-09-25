@@ -75,6 +75,8 @@ async function replayHost(
     closeHosts()
     if (acquired) {
       owner.releaseAndCloseIfUnused(host.id, acquisition)
+    } else {
+      owner.release(host.id, acquisition)
     }
   }
 }

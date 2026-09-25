@@ -2222,3 +2222,11 @@ suite, mobile typecheck/lint/scoped formatting, and independent read-only
 ownership review pass. This fixes one all-host starvation path in source; the
 ordinary asynchronous connection failure path and physical fleet timing still
 require live acceptance evidence.
+
+The background notification replay now releases its exact host-acquisition
+token if acquisition throws before a client is returned. A successful replay
+still uses the existing release-and-close path, and the host worker continues
+other paired machines. The seven focused replay tests, mobile typecheck/lint,
+and scoped formatting pass. This closes the synchronous ownership leak in
+source; it does not prove host-originated notification delivery or physical
+timing.
