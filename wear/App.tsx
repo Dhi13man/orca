@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   AppState,
@@ -12,32 +12,52 @@ import {
 } from 'react-native'
 import { AgentConversation } from './src/command-center/agent-conversation'
 import { RuntimeDashboard } from './src/command-center/runtime-dashboard'
-import { fetchRuntimeDashboard, fetchRuntimeStatus } from './src/orca/direct-orca-client'
+import { fetchRuntimeStatus } from './src/orca/direct-orca-client'
+import { refreshFleet, type FleetHost } from './src/orca/fleet-dashboard'
 import { loadPairings, removePairing, savePairing } from './src/orca/pairing-store'
-import { parsePairingCode, pairingEndpointLabel, type PairingOffer } from './src/orca/pairing'
-import type { OrcaDashboard, WearAgentSession } from './src/orca/runtime-dashboard'
+import { parsePairingCode, type PairingOffer } from './src/orca/pairing'
+import type { WearAgentSession } from './src/orca/runtime-dashboard'
 import { WearButton } from './src/wear-button'
 import { wearColors } from './src/wear-theme'
 
 export default function App() {
-  const [pairing, setPairing] = useState<PairingOffer | null>(null)
   const [pairings, setPairings] = useState<PairingOffer[]>([])
   const [showEnroll, setShowEnroll] = useState(false)
   const [pairingInput, setPairingInput] = useState('')
-  const [dashboard, setDashboard] = useState<OrcaDashboard | null>(null)
-  const [selectedAgent, setSelectedAgent] = useState<WearAgentSession | null>(null)
+  const [hosts, setHosts] = useState<FleetHost[]>([])
+  const hostsRef = useRef<FleetHost[]>([])
+  const refreshGeneration = useRef(0)
+  const [selectedAgent, setSelectedAgent] = useState<{
+    host: FleetHost
+    agent: WearAgentSession
+  } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
-  const refresh = useCallback(async (offer: PairingOffer) => {
+  const refresh = useCallback(async (offers: PairingOffer[]) => {
+    const generation = ++refreshGeneration.current
+    const prior = new Map(hostsRef.current.map((host) => [host.pairing.endpoint, host]))
+    setHosts(
+      offers.map((offer) => {
+        const saved = prior.get(offer.endpoint)
+        return saved?.pairing.publicKeyB64 === offer.publicKeyB64
+          ? { ...saved, pairing: offer }
+          : { pairing: offer, dashboard: null, observedAt: null, checkedAt: 0, error: null }
+      })
+    )
     setBusy(true)
     try {
-      setDashboard(await fetchRuntimeDashboard(offer))
-      setError('')
+      const updated = await refreshFleet(offers, hostsRef.current)
+      if (generation === refreshGeneration.current) {
+        hostsRef.current = updated
+        setHosts(updated)
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not reach Orca')
     } finally {
-      setBusy(false)
+      if (generation === refreshGeneration.current) {
+        setBusy(false)
+      }
     }
   }, [])
 
@@ -53,12 +73,11 @@ export default function App() {
       try {
         await fetchRuntimeStatus(offer)
         await savePairing(offer)
-        setPairings(await loadPairings())
-        setPairing(offer)
+        const saved = await loadPairings()
+        setPairings(saved)
         setShowEnroll(false)
         setPairingInput('')
-        setDashboard(null)
-        void refresh(offer)
+        void refresh(saved)
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : 'Could not pair with Orca')
       } finally {
@@ -78,9 +97,10 @@ export default function App() {
         setPairings(saved)
         if (url && parsePairingCode(url)) {
           void enroll(url)
-        } else if (saved[0]) {
-          setPairing(saved[0])
-          void refresh(saved[0])
+        } else if (saved.length) {
+          void refresh(saved)
+        } else {
+          setShowEnroll(true)
         }
       })
       .catch((caught) => {
@@ -98,91 +118,68 @@ export default function App() {
   }, [enroll, refresh])
 
   useEffect(() => {
-    if (!pairing) {
+    if (!pairings.length) {
       return
     }
     const timer = setInterval(() => {
       if (AppState.currentState === 'active') {
-        void refresh(pairing)
+        void refresh(pairings)
       }
     }, 60_000)
     const app = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
-        void refresh(pairing)
+        void refresh(pairings)
       }
     })
     return () => {
       clearInterval(timer)
       app.remove()
     }
-  }, [pairing, refresh])
+  }, [pairings, refresh])
 
-  const forget = async () => {
-    if (!pairing) {
-      return
-    }
+  const forget = async (host: FleetHost) => {
     try {
-      await removePairing(pairing)
+      await removePairing(host.pairing)
       const remaining = await loadPairings()
       setPairings(remaining)
-      setPairing(remaining[0] ?? null)
       setShowEnroll(remaining.length === 0)
-      setDashboard(null)
       setSelectedAgent(null)
       setError('')
-      if (remaining[0]) {
-        void refresh(remaining[0])
-      }
+      void refresh(remaining)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not remove this runtime')
     }
   }
 
-  const selectNextHost = () => {
-    if (!pairing) {
-      return
-    }
-    const currentIndex = pairings.findIndex((offer) => offer.endpoint === pairing.endpoint)
-    const next = pairings[(currentIndex + 1) % pairings.length]
-    if (!next) {
-      return
-    }
-    setPairing(next)
-    setDashboard(null)
-    setSelectedAgent(null)
-    void refresh(next)
-  }
+  const selectedHost = selectedAgent
+    ? hosts.find((host) => host.pairing.endpoint === selectedAgent.host.pairing.endpoint)
+    : undefined
 
   return (
     <View style={styles.screen}>
       <StatusBar hidden />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        {pairing && !showEnroll ? (
+        {pairings.length > 0 && !showEnroll ? (
           selectedAgent ? (
             <AgentConversation
-              agent={selectedAgent}
-              pairedDeviceId={dashboard?.status.pairedDeviceId ?? pairing.pairedDeviceId}
-              pairing={pairing}
-              runtimeId={dashboard?.status.runtimeId ?? ''}
+              agent={selectedAgent.agent}
+              available={Boolean(selectedHost?.dashboard && !selectedHost.error)}
+              pairedDeviceId={
+                selectedHost?.dashboard?.status.pairedDeviceId ??
+                selectedAgent.host.pairing.pairedDeviceId
+              }
+              pairing={selectedAgent.host.pairing}
+              runtimeId={selectedHost?.dashboard?.status.runtimeId ?? ''}
               onBack={() => setSelectedAgent(null)}
             />
           ) : (
             <>
-              {pairings.length > 1 ? (
-                <WearButton
-                  label={`Switch host · ${pairings.length}`}
-                  quiet
-                  onPress={selectNextHost}
-                />
-              ) : null}
               <RuntimeDashboard
-                dashboard={dashboard}
-                endpoint={pairingEndpointLabel(pairing.endpoint)}
-                error={error}
+                hosts={hosts}
                 refreshing={busy}
-                onForget={() => void forget()}
-                onOpenAgent={setSelectedAgent}
-                onRefresh={() => void refresh(pairing)}
+                onForget={(host) => void forget(host)}
+                onOpenAgent={(host, agent) => setSelectedAgent({ host, agent })}
+                onRefresh={() => void refresh(pairings)}
               />
               <WearButton label="Add Orca host" quiet onPress={() => setShowEnroll(true)} />
             </>
@@ -219,7 +216,7 @@ export default function App() {
               label="Connect"
               onPress={() => void enroll(pairingInput)}
             />
-            {pairing ? (
+            {pairings.length ? (
               <WearButton label="Back" quiet onPress={() => setShowEnroll(false)} />
             ) : null}
           </>

@@ -21,12 +21,14 @@ import { wearColors } from '../wear-theme'
 
 export function AgentConversation({
   agent,
+  available,
   pairedDeviceId,
   runtimeId,
   pairing,
   onBack
 }: {
   agent: WearAgentSession
+  available: boolean
   pairedDeviceId: string | undefined
   runtimeId: string
   pairing: PairingOffer
@@ -40,9 +42,10 @@ export function AgentConversation({
   const [outcome, setOutcome] = useState<AgentSendOutcome | null>(null)
   const [pending, setPending] = useState<PendingWearReply | null | undefined>(undefined)
   const commandLock = useRef(false)
-  const canRead = Boolean(agent.sessionId)
+  const canRead = Boolean(available && agent.sessionId)
   const canSend = Boolean(
     agent.sessionId &&
+    available &&
     pairedDeviceId &&
     runtimeId &&
     agent.execution === 'local' &&
@@ -165,7 +168,9 @@ export function AgentConversation({
           </Text>
         </View>
       </View>
-      {agent.execution !== 'local' ? (
+      {!available ? (
+        <Text style={styles.notice}>Host is unavailable; replies are disabled.</Text>
+      ) : agent.execution !== 'local' ? (
         <Text accessibilityLiveRegion="polite" style={styles.notice}>
           {agent.execution === 'remote'
             ? 'Remote replies are unavailable through this runtime.'

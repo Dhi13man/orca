@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native'
+import type { FleetHost } from '../orca/fleet-dashboard'
+import { pairingEndpointLabel } from '../orca/pairing'
 import type {
-  OrcaDashboard,
   WearAgentSession,
   WearProviderUsage,
   WearUsageWindow
@@ -9,30 +10,29 @@ import { WearButton } from '../wear-button'
 import { wearColors } from '../wear-theme'
 
 export function RuntimeDashboard({
-  dashboard,
-  endpoint,
-  error,
+  hosts,
   refreshing,
   onForget,
   onOpenAgent,
   onRefresh
 }: {
-  dashboard: OrcaDashboard | null
-  endpoint: string
-  error: string
+  hosts: FleetHost[]
   refreshing: boolean
-  onForget: () => void
-  onOpenAgent: (agent: WearAgentSession) => void
+  onForget: (host: FleetHost) => void
+  onOpenAgent: (host: FleetHost, agent: WearAgentSession) => void
   onRefresh: () => void
 }) {
-  const status = dashboard?.status
-  const statusLabel = error
-    ? 'Runtime unavailable'
-    : status
-      ? refreshing
-        ? 'Refreshing…'
-        : 'Connected'
-      : 'Checking runtime…'
+  const attention = hosts.flatMap((host) =>
+    (host.dashboard?.agents ?? [])
+      .filter((agent) => agent.state === 'blocked' || agent.state === 'waiting')
+      .map((agent) => ({ host, agent }))
+  )
+  attention.sort(
+    (left, right) =>
+      Number(left.agent.state !== 'blocked') - Number(right.agent.state !== 'blocked') ||
+      (right.agent.updatedAt ?? 0) - (left.agent.updatedAt ?? 0)
+  )
+  const unavailableHosts = hosts.filter((host) => host.error || !host.dashboard).length
   return (
     <>
       <View style={styles.header}>
@@ -40,65 +40,109 @@ export function RuntimeDashboard({
           ORCA
         </Text>
         <Text accessibilityRole="header" style={styles.title}>
-          Agents
+          Attention
         </Text>
-        <View style={styles.runtimeStatus}>
-          <View style={[styles.statusDot, error && styles.statusDotError]} />
-          <Text accessibilityLiveRegion="polite" style={styles.statusText}>
-            {statusLabel}
-          </Text>
-        </View>
+        <Text style={styles.meta}>
+          {hosts.length} paired {hosts.length === 1 ? 'host' : 'hosts'} ·{' '}
+          {hosts.filter((host) => host.dashboard).length} with data
+        </Text>
       </View>
-      {error ? (
-        <Text accessibilityLiveRegion="assertive" style={styles.error}>
-          {error}
+      {hosts.length === 0 ? <Text style={styles.empty}>Checking paired hosts…</Text> : null}
+      {attention.length ? (
+        attention.map(({ host, agent }) => (
+          <AgentCard
+            agent={agent}
+            host={host}
+            key={`${host.pairing.endpoint}:${agent.id}`}
+            onPress={() => onOpenAgent(host, agent)}
+          />
+        ))
+      ) : hosts.length ? (
+        <Text style={styles.empty}>
+          {unavailableHosts
+            ? `No known agent needs attention; ${unavailableHosts} host ${unavailableHosts === 1 ? 'inventory is' : 'inventories are'} unavailable.`
+            : 'No published agents need attention.'}
         </Text>
       ) : null}
-      {dashboard?.warnings.map((warning) => (
-        <Text key={warning} style={styles.warning}>
-          {warning}
-        </Text>
+      <SectionTitle label="Hosts" />
+      {hosts.map((host) => (
+        <HostStatus host={host} key={host.pairing.endpoint} />
       ))}
-      {dashboard ? (
-        dashboard.agents.length ? (
-          dashboard.agents
-            .slice(0, 24)
-            .map((agent) => (
-              <AgentCard agent={agent} key={agent.id} onPress={() => onOpenAgent(agent)} />
+      <SectionTitle label="Agents" />
+      {hosts.map((host) => (
+        <View key={host.pairing.endpoint} style={styles.group}>
+          <Text style={styles.hostLabel}>{pairingEndpointLabel(host.pairing.endpoint)}</Text>
+          {host.dashboard?.agents.length ? (
+            host.dashboard.agents.map((agent) => (
+              <AgentCard
+                agent={agent}
+                host={host}
+                key={agent.id}
+                onPress={() => onOpenAgent(host, agent)}
+              />
             ))
-        ) : (
-          <Text style={styles.empty}>No published agent sessions</Text>
-        )
-      ) : (
-        <Text style={styles.empty}>Loading agents…</Text>
-      )}
+          ) : (
+            <Text style={styles.empty}>
+              {host.error ? 'Agent inventory unavailable' : 'No published agent sessions'}
+            </Text>
+          )}
+        </View>
+      ))}
       <SectionTitle label="Usage" />
-      {dashboard ? (
-        dashboard.usage.length ? (
-          dashboard.usage.map((usage) => <UsageCard key={usage.provider} usage={usage} />)
-        ) : (
-          <Text style={styles.empty}>Usage unavailable</Text>
-        )
-      ) : (
-        <Text style={styles.empty}>Loading usage…</Text>
-      )}
-      <SectionTitle label="Connection" />
-      <Text style={styles.endpoint}>{endpoint}</Text>
-      {status ? (
-        <Text style={styles.detail}>
-          {[status.hostPlatform, status.appVersion ? `Orca ${status.appVersion}` : null]
-            .filter(Boolean)
-            .join(' · ')}
-        </Text>
-      ) : null}
+      {hosts.map((host) => (
+        <View key={host.pairing.endpoint} style={styles.group}>
+          <Text style={styles.hostLabel}>{pairingEndpointLabel(host.pairing.endpoint)}</Text>
+          {host.dashboard?.usage.length ? (
+            host.dashboard.usage.map((usage) => (
+              <UsageCard key={usage.provider} stale={Boolean(host.error)} usage={usage} />
+            ))
+          ) : (
+            <Text style={styles.empty}>
+              {host.error ? 'Usage unavailable' : 'No usage data published'}
+            </Text>
+          )}
+        </View>
+      ))}
       <WearButton
         disabled={refreshing}
-        label={refreshing ? 'Refreshing…' : 'Refresh dashboard'}
+        label={refreshing ? 'Refreshing…' : 'Refresh all hosts'}
         quiet
         onPress={onRefresh}
       />
-      <WearButton label="Forget runtime" quiet onPress={onForget} />
+      <SectionTitle label="Connections" />
+      {hosts.map((host) => (
+        <WearButton
+          key={host.pairing.endpoint}
+          label={`Forget ${pairingEndpointLabel(host.pairing.endpoint)}`}
+          quiet
+          onPress={() => onForget(host)}
+        />
+      ))}
     </>
+  )
+}
+
+function HostStatus({ host }: { host: FleetHost }) {
+  const label = pairingEndpointLabel(host.pairing.endpoint)
+  return (
+    <View style={styles.hostStatus}>
+      <Text style={styles.hostLabel}>{label}</Text>
+      <Text accessibilityLiveRegion="polite" style={[styles.status, host.error && styles.error]}>
+        {host.error
+          ? `Unavailable · ${host.error} · checked ${formatAge(host.checkedAt)}`
+          : host.dashboard
+            ? `Last read ${formatAge(host.observedAt!)}`
+            : 'Checking…'}
+      </Text>
+      {host.error && host.observedAt ? (
+        <Text style={styles.status}>Last successful read {formatAge(host.observedAt)}</Text>
+      ) : null}
+      {host.dashboard?.warnings.map((warning) => (
+        <Text key={warning} style={styles.status}>
+          {warning}
+        </Text>
+      ))}
+    </View>
   )
 }
 
@@ -110,12 +154,15 @@ function SectionTitle({ label }: { label: string }) {
   )
 }
 
-function UsageCard({ usage }: { usage: WearProviderUsage }) {
+function UsageCard({ usage, stale }: { usage: WearProviderUsage; stale: boolean }) {
   return (
-    <View accessibilityLabel={`${usage.label} usage`} style={styles.card}>
+    <View accessibilityLabel={`${usage.label} usage${stale ? ', stale' : ''}`} style={styles.card}>
       <View style={styles.usageHeader}>
         <Text style={styles.cardTitle}>{usage.label}</Text>
-        <Text style={styles.meta}>{formatAge(usage.updatedAt)}</Text>
+        <Text style={styles.meta}>
+          {stale ? 'Stale · ' : ''}
+          {formatAge(usage.updatedAt)}
+        </Text>
       </View>
       <UsageLine label="Session" window={usage.session} />
       <UsageLine label="Weekly" window={usage.weekly} />
@@ -132,12 +179,20 @@ function UsageLine({ label, window }: { label: string; window: WearUsageWindow |
   )
 }
 
-function AgentCard({ agent, onPress }: { agent: WearAgentSession; onPress: () => void }) {
-  const execution = agent.execution === 'local' ? '' : `, ${agent.execution}`
+function AgentCard({
+  agent,
+  host,
+  onPress
+}: {
+  agent: WearAgentSession
+  host: FleetHost
+  onPress: () => void
+}) {
+  const source = pairingEndpointLabel(host.pairing.endpoint)
   return (
     <Pressable
-      accessibilityHint="Opens recent conversation and message controls when available"
-      accessibilityLabel={`${agent.title}, ${agent.agent}, ${agent.state}${execution}, ${agent.worktreeLabel}`}
+      accessibilityHint="Opens the exact host and agent conversation"
+      accessibilityLabel={`${agent.title}, ${agent.agent}, ${agent.state}, ${source}${host.error ? ', stale' : ''}`}
       accessibilityRole="button"
       onPress={onPress}
       style={({ pressed }) => [styles.agentCard, pressed && styles.pressed]}
@@ -147,11 +202,10 @@ function AgentCard({ agent, onPress }: { agent: WearAgentSession; onPress: () =>
       </Text>
       <View style={styles.agentMeta}>
         <Text numberOfLines={1} style={styles.meta}>
-          {agent.agent}
-          {agent.execution === 'remote' ? ' · remote' : ''}
+          {source} · {agent.agent}
         </Text>
-        <Text style={[styles.agentState, agent.state === 'blocked' && styles.blocked]}>
-          {agent.state}
+        <Text style={[styles.agentState, agent.state === 'blocked' && styles.error]}>
+          {host.error ? 'stale' : agent.state}
         </Text>
       </View>
     </Pressable>
@@ -159,46 +213,24 @@ function AgentCard({ agent, onPress }: { agent: WearAgentSession; onPress: () =>
 }
 
 function formatAge(timestamp: number): string {
-  const elapsedMinutes = Math.max(0, Math.round((Date.now() - timestamp) / 60_000))
-  if (elapsedMinutes < 1) {
-    return 'now'
-  }
-  if (elapsedMinutes < 60) {
-    return `${elapsedMinutes}m ago`
-  }
-  return `${Math.round(elapsedMinutes / 60)}h ago`
+  const minutes = Math.max(0, Math.round((Date.now() - timestamp) / 60_000))
+  return minutes < 1 ? 'now' : minutes < 60 ? `${minutes}m ago` : `${Math.round(minutes / 60)}h ago`
 }
 
 const styles = StyleSheet.create({
   header: { width: '100%', alignItems: 'center', marginBottom: 10 },
   eyebrow: { color: wearColors.muted, fontSize: 10, fontWeight: '600', letterSpacing: 1.4 },
   title: { marginTop: 2, color: wearColors.text, fontSize: 20, fontWeight: '600' },
-  runtimeStatus: { minHeight: 24, flexDirection: 'row', alignItems: 'center' },
-  statusDot: {
-    width: 6,
-    height: 6,
-    marginRight: 6,
-    borderRadius: 3,
-    backgroundColor: wearColors.primary
-  },
-  statusDotError: { backgroundColor: wearColors.danger },
-  statusText: { color: wearColors.secondary, fontSize: 11 },
-  endpoint: {
+  hostStatus: {
     width: '100%',
-    color: wearColors.secondary,
-    fontSize: 11,
-    lineHeight: 15,
-    textAlign: 'left'
+    marginTop: 8,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: wearColors.raised
   },
-  detail: { width: '100%', marginTop: 3, color: wearColors.muted, fontSize: 11 },
-  error: {
-    marginTop: 10,
-    color: wearColors.danger,
-    fontSize: 12,
-    lineHeight: 16,
-    textAlign: 'left'
-  },
-  warning: { width: '100%', marginBottom: 8, color: wearColors.secondary, fontSize: 11 },
+  hostLabel: { color: wearColors.text, fontSize: 11, fontWeight: '600' },
+  status: { marginTop: 4, color: wearColors.secondary, fontSize: 10, lineHeight: 14 },
+  error: { color: wearColors.danger },
   sectionTitle: {
     width: '100%',
     marginBottom: 4,
@@ -207,6 +239,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600'
   },
+  group: { width: '100%', marginTop: 8 },
   card: {
     width: '100%',
     marginTop: 6,
@@ -227,15 +260,10 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.82 },
   cardTitle: { color: wearColors.text, fontSize: 13, fontWeight: '600' },
   cardText: { marginTop: 5, color: wearColors.secondary, fontSize: 11, lineHeight: 15 },
-  usageHeader: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between'
-  },
+  usageHeader: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
   agentTitle: { color: wearColors.text, fontSize: 13, fontWeight: '600' },
   agentMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   agentState: { color: wearColors.secondary, fontSize: 10, textTransform: 'uppercase' },
-  blocked: { color: wearColors.danger },
   meta: { marginTop: 4, color: wearColors.muted, fontSize: 10 },
-  empty: { width: '100%', color: wearColors.muted, fontSize: 12, textAlign: 'left' }
+  empty: { width: '100%', marginTop: 6, color: wearColors.muted, fontSize: 12, textAlign: 'left' }
 })
