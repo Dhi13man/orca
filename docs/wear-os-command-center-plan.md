@@ -2154,3 +2154,11 @@ The same source also built as a four-ABI release APK with ARM64 support,
 package `com.stably.orca.mobile`, the existing test certificate, and SHA-256
 `DBA9091A4AA7EC28F15DCE6AFE9AB61181CFEC2BD372CA6EDB76D536D279FB1F`.
 That multi-ABI artifact has not been installed on the physical watch.
+
+The same multi-ABI APK updated the same-signed 192-dp Wear emulator `5560`
+in place without clearing data. Its [unbound startup](../spikes/wear-companion/evidence/2026-09-25-small-start.png)
+and [scrolled phone-selection view](../spikes/wear-companion/evidence/2026-09-25-small-scroll.png)
+show the peer button fully visible after scrolling; its UI bounds were 272 by
+96 px at 320 dpi, meeting the 48-dp height floor. This checks only unbound
+onboarding at 192 dp, not bound product pages, TalkBack, rotary, enlarged
+fonts, or the physical watch.
