@@ -92,4 +92,31 @@ describe('Wear push registrations', () => {
     await vi.waitFor(() => expect(sender).toHaveBeenCalledTimes(3))
     expect(delivered[2]).toEqual({ token, kind: 'agent-task-complete', eventId: 'epoch-a:3' })
   })
+
+  it('drops a queued wake if its grant is revoked or token rotated before send starts', async () => {
+    const path = directory()
+    const paired = new Set(['watch-a'])
+    const sender = vi.fn(async () => {})
+    const registrations = new WearPushRegistrations(path, (id) => paired.has(id), sender)
+    registrations.load()
+    registrations.register('watch-a', token)
+    const event = {
+      type: 'notification' as const,
+      source: 'terminal-bell' as const,
+      title: 'secret',
+      body: 'secret',
+      notificationEpoch: 'epoch-a',
+      notificationSeq: 1
+    }
+    registrations.dispatch(event)
+    paired.delete('watch-a')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(sender).not.toHaveBeenCalled()
+
+    paired.add('watch-a')
+    registrations.dispatch({ ...event, notificationSeq: 2 })
+    registrations.register('watch-a', `${token}-rotated`)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(sender).not.toHaveBeenCalled()
+  })
 })

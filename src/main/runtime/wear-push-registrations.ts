@@ -139,7 +139,12 @@ export class WearPushRegistrations {
       }
       this.sending++
       void Promise.resolve()
-        .then(() => this.sendWake!(next.wake))
+        .then(() => {
+          if (!this.isPaired(next.deviceId) || this.tokens.get(next.deviceId) !== next.wake.token) {
+            return
+          }
+          return this.sendWake!(next.wake)
+        })
         .catch(() => console.warn('[runtime] Wear push wake failed'))
         .finally(() => {
           this.sending--
