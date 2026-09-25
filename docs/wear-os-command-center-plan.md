@@ -2238,3 +2238,18 @@ package `com.stably.orca.mobile` versionCode 15, only `arm64-v8a` native code,
 and signing certificate
 `fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c`.
 It remains uninstalled on the physical phone; ADB lists only emulators.
+
+On the paired phone `emulator-5556` and watch `emulator-5562`, a cold-process
+background `readNotificationsPage` request succeeded. `adb shell am kill
+com.stably.orca.mobile` left no phone app PID; no phone UI launch was issued.
+Tapping **Next machine** on the watch Inbox then started PID 11521 for
+`WearCompanionListenerService` at 08:52:22 device time. That PID's
+`ReactNativeJS` log recorded E2EE authentication to the selected host endpoint
+at 08:52:27, and
+the watch rendered Host 2's page checked at 08:52:27 with no retained events.
+The service list also showed `WearActionHeadlessService` with
+`dev.orca.wear.DRAIN_ACTIONS`. This tests one phone-process-cold read and
+page delivery on the emulator; it does not prove a task-name log, actual
+Headless JS send execution, Doze, recovery, or physical-device acceptance.
+The physical phone's advertised ADB endpoint again refused a connection;
+only emulators are listed, so installed-device acceptance remains open.
