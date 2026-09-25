@@ -82,8 +82,8 @@ it(
           ]
         }) as never
     )
-    vi.spyOn(runtime, 'refreshWearUsageIfStale').mockResolvedValue()
-    vi.spyOn(runtime, 'getAccountsSnapshot').mockReturnValue({
+    const refreshUsage = vi.spyOn(runtime, 'refreshAllWearUsageIfStale').mockResolvedValue()
+    const accountsSnapshot = vi.spyOn(runtime, 'getAccountsSnapshot').mockReturnValue({
       rateLimits: { claude: null }
     } as never)
     runtime.dispatchMobileNotification({
@@ -152,6 +152,19 @@ it(
         ok: true,
         result: { kind: 'terminal', terminal: 'term-a', ptyId: 'pty-a' }
       })
+      accountsSnapshot.mockReturnValueOnce({
+        rateLimits: { claude: { status: 'fetching', updatedAt: Date.now() } }
+      } as never)
+      const fetchingUsage = await fetchRuntimeDashboard(parsed!, {
+        createSocket: (endpoint) => new WebSocket(endpoint) as unknown as OrcaSocket
+      })
+      expect(fetchingUsage.usageRefreshPending).toBe(true)
+      refreshUsage.mockImplementationOnce(() => new Promise<void>(() => {}))
+      const pendingUsage = await fetchRuntimeDashboard(parsed!, {
+        createSocket: (endpoint) => new WebSocket(endpoint) as unknown as OrcaSocket
+      })
+      expect(pendingUsage.usageRefreshPending).toBe(true)
+      expect(pendingUsage.warnings).toContain('Usage is refreshing; shown values may be stale')
       const serial = process.env.ORCA_WEAR_EMULATOR_SERIAL
       if (serial) {
         expect(serial).toMatch(/^emulator-\d+$/)

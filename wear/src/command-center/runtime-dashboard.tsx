@@ -116,11 +116,19 @@ export function RuntimeDashboard({
           <Text style={styles.hostLabel}>{pairingEndpointLabel(host.pairing.endpoint)}</Text>
           {host.dashboard?.usage.length ? (
             host.dashboard.usage.map((usage) => (
-              <UsageCard key={usage.provider} stale={Boolean(host.error)} usage={usage} />
+              <UsageCard
+                key={usage.provider}
+                stale={Boolean(host.error || host.dashboard?.usageRefreshPending)}
+                usage={usage}
+              />
             ))
           ) : (
             <Text style={styles.empty}>
-              {host.error ? 'Usage unavailable' : 'No usage data published'}
+              {host.error
+                ? 'Usage unavailable'
+                : host.dashboard?.usageRefreshPending
+                  ? 'Usage is refreshing…'
+                  : 'No usage data published'}
             </Text>
           )}
         </View>
@@ -177,12 +185,23 @@ function SectionTitle({ label }: { label: string }) {
 }
 
 function UsageCard({ usage, stale }: { usage: WearProviderUsage; stale: boolean }) {
+  const freshness =
+    stale || usage.status === 'error'
+      ? 'Stale'
+      : usage.status === 'fetching'
+        ? 'Refreshing'
+        : usage.status === 'unavailable'
+          ? 'Unavailable'
+          : null
   return (
-    <View accessibilityLabel={`${usage.label} usage${stale ? ', stale' : ''}`} style={styles.card}>
+    <View
+      accessibilityLabel={`${usage.label} usage${freshness ? `, ${freshness.toLowerCase()}` : ''}`}
+      style={styles.card}
+    >
       <View style={styles.usageHeader}>
         <Text style={styles.cardTitle}>{usage.label}</Text>
         <Text style={styles.meta}>
-          {stale ? 'Stale · ' : ''}
+          {freshness ? `${freshness} · ` : ''}
           {formatAge(usage.updatedAt)}
         </Text>
       </View>

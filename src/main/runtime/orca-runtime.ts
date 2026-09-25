@@ -16948,6 +16948,10 @@ export class OrcaRuntimeService {
     await this.requireAccountServices().rateLimits.refreshWearUsageIfStale()
   }
 
+  async refreshAllWearUsageIfStale(): Promise<void> {
+    await this.requireAccountServices().rateLimits.refreshIfStale()
+  }
+
   selectClaudeAccount(accountId: string | null): Promise<ClaudeRateLimitAccountsState> {
     return this.requireAccountServices().claudeAccounts.selectAccount(accountId)
   }

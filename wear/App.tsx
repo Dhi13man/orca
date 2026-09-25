@@ -27,6 +27,7 @@ export default function App() {
   const [hosts, setHosts] = useState<FleetHost[]>([])
   const hostsRef = useRef<FleetHost[]>([])
   const refreshGeneration = useRef(0)
+  const usageFollowups = useRef(0)
   const [selectedAgent, setSelectedAgent] = useState<{
     host: FleetHost
     agent: WearAgentSession
@@ -75,6 +76,7 @@ export default function App() {
         await savePairing(offer)
         const saved = await loadPairings()
         setPairings(saved)
+        usageFollowups.current = 0
         setShowEnroll(false)
         setPairingInput('')
         void refresh(saved)
@@ -137,11 +139,25 @@ export default function App() {
     }
   }, [pairings, refresh])
 
+  useEffect(() => {
+    if (!hosts.some((host) => host.dashboard?.usageRefreshPending) || usageFollowups.current >= 2) {
+      return
+    }
+    const timer = setTimeout(() => {
+      if (AppState.currentState === 'active') {
+        usageFollowups.current += 1
+        void refresh(pairings)
+      }
+    }, 10_000)
+    return () => clearTimeout(timer)
+  }, [hosts, pairings, refresh])
+
   const forget = async (host: FleetHost) => {
     try {
       await removePairing(host.pairing)
       const remaining = await loadPairings()
       setPairings(remaining)
+      usageFollowups.current = 0
       setShowEnroll(remaining.length === 0)
       setSelectedAgent(null)
       setError('')

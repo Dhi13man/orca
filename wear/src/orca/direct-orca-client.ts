@@ -54,6 +54,8 @@ export async function fetchRuntimeDashboard(
   )
   const status = requireRuntimeStatus(replies.status)
   const warnings: string[] = []
+  const usageRefreshPending =
+    replies.dashboard?.ok && asRecord(replies.dashboard.result)?.usageRefreshPending === true
   const usage = replies.dashboard?.ok ? parseProviderUsage(replies.dashboard.result) : []
   const agents = replies.dashboard?.ok ? parseAgentInventory(replies.dashboard.result) : []
   const { events, omitted: eventsOmitted } = parseAttentionEvents(
@@ -64,7 +66,10 @@ export async function fetchRuntimeDashboard(
   } else if (asRecord(replies.dashboard.result)?.usageAvailable === false) {
     warnings.push('Account usage is unavailable')
   }
-  return { status, usage, agents, events, eventsOmitted, warnings }
+  if (usageRefreshPending) {
+    warnings.push('Usage is refreshing; shown values may be stale')
+  }
+  return { status, usage, usageRefreshPending, agents, events, eventsOmitted, warnings }
 }
 
 export async function fetchAgentConversation(

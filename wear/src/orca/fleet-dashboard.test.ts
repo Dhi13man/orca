@@ -22,6 +22,7 @@ function dashboard(id: string): OrcaDashboard {
   return {
     status: { runtimeId: id },
     usage: [],
+    usageRefreshPending: false,
     agents: [],
     events: [],
     eventsOmitted: 0,

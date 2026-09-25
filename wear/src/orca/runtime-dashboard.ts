@@ -53,6 +53,7 @@ export type WearAttentionEvent = {
 export type OrcaDashboard = {
   status: RuntimeStatus
   usage: WearProviderUsage[]
+  usageRefreshPending: boolean
   agents: WearAgentSession[]
   events: WearAttentionEvent[]
   eventsOmitted: number

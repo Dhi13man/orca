@@ -13,24 +13,36 @@ export const WEAR_DASHBOARD_METHODS: RpcAnyMethod[] = [
       await restoreStructuredTabsIfSupported(context.runtime, context.clientCapabilities)
       const inventory = await listSessionTabsInventory(context)
       let rateLimits: Record<string, unknown> | null = null
+      let usageRefreshPending = false
       try {
-        const usage = context.runtime.getAccountsSnapshot().rateLimits
-        void context.runtime.refreshWearUsageIfStale().catch(() => {
-          console.warn('[runtime] Wear usage refresh failed')
+        let timeout: ReturnType<typeof setTimeout> | undefined
+        const refresh = context.runtime.refreshAllWearUsageIfStale().then(
+          () => 'complete' as const,
+          () => {
+            console.warn('[runtime] Wear usage refresh failed')
+            return 'failed' as const
+          }
+        )
+        const deadline = new Promise<'pending'>((resolve) => {
+          timeout = setTimeout(() => resolve('pending'), 1_500)
         })
+        const result = await Promise.race([refresh, deadline])
+        clearTimeout(timeout)
+        usageRefreshPending = result === 'pending'
+        const usage = context.runtime.getAccountsSnapshot().rateLimits
+        const providers = [
+          'claude',
+          'codex',
+          'gemini',
+          'opencodeGo',
+          'kimi',
+          'antigravity',
+          'minimax',
+          'grok'
+        ] as const
+        usageRefreshPending ||= providers.some((provider) => usage[provider]?.status === 'fetching')
         rateLimits = Object.fromEntries(
-          (
-            [
-              'claude',
-              'codex',
-              'gemini',
-              'opencodeGo',
-              'kimi',
-              'antigravity',
-              'minimax',
-              'grok'
-            ] as const
-          ).map((provider) => {
+          providers.map((provider) => {
             const value = usage[provider]
             return [
               provider,
@@ -118,6 +130,7 @@ export const WEAR_DASHBOARD_METHODS: RpcAnyMethod[] = [
         })),
         rateLimits,
         usageAvailable: rateLimits !== null,
+        usageRefreshPending,
         events: recentEvents.slice(0, 12),
         eventsOmitted: Math.max(0, recentEvents.length - 12)
       }
