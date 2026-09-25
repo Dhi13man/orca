@@ -2162,3 +2162,12 @@ show the peer button fully visible after scrolling; its UI bounds were 272 by
 96 px at 320 dpi, meeting the 48-dp height floor. This checks only unbound
 onboarding at 192 dp, not bound product pages, TalkBack, rotary, enlarged
 fonts, or the physical watch.
+
+At 1.3× system font scale, the [192-dp onboarding](../spikes/wear-companion/evidence/2026-09-25-small-font-13-onboarding.png)
+still exposes its peer and Find phone buttons after scrolling. On the paired
+227-dp emulator, [Agents](../spikes/wear-companion/evidence/2026-09-25-large-font-13-agents.png)
+and [Usage](../spikes/wear-companion/evidence/2026-09-25-large-font-13-usage.png)
+render after navigating from Attention; Usage correctly says unavailable for
+the unauthenticated emulator host. Both emulators were restored to 1.0× font
+scale. This is rendered evidence for one enlarged scale, not an all-scales,
+live-data, TalkBack, rotary, or physical-watch pass.
