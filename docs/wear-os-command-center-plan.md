@@ -2171,3 +2171,13 @@ render after navigating from Attention; Usage correctly says unavailable for
 the unauthenticated emulator host. Both emulators were restored to 1.0× font
 scale. This is rendered evidence for one enlarged scale, not an all-scales,
 live-data, TalkBack, rotary, or physical-watch pass.
+
+The Wear Expo config now blocks `android.permission.INTERNET`; the watch's
+committed product path uses the [Google Play services Data Layer](https://developer.android.com/training/wearables/data/overview),
+not direct sockets. A fresh release build's merged APK manifest has no Internet
+permission (SHA-256 `75FEC12690BF4AD1A252F9A9EB7C6F854A38731F89B39F9FF8A95955E871E29E`).
+It updated the paired 227-dp emulator in place, and a watch-initiated refresh
+advanced the phone snapshot from 7:51 to 8:01 AM in the
+[rendered evidence](../spikes/wear-companion/evidence/2026-09-25-no-internet-refresh.png).
+This proves that emulator Data Layer refresh survived the permission removal;
+it does not establish physical-device operation or authenticated host data.
