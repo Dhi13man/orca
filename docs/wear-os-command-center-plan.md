@@ -2085,3 +2085,18 @@ and the same test certificate; SHA-256 is
 `EBCE9815B0A86CD8905784A0FFEE8095D3870A607078684B9252F20E0E02DB60`.
 Physical installation, live usage, and the other acceptance gaps above remain
 open.
+
+The updated paired x86_64 phone emulator was rebooted without reopening Orca.
+After boot, Android retained periodic Wear job `1464156499`; the phone screen
+was asleep when the unforced job ran for about 36 seconds and reported
+`app called jobFinished`. The watch's Attention page then displayed "Phone
+snapshot sent Sep 25, 2026, 6:21 AM", matching the job window; [the rendered
+watch evidence](../spikes/wear-companion/evidence/2026-09-25-reboot-screen-off-attention.png)
+has SHA-256 `D582DA0DC8EF7473809D921B834504082F8D662F27E926075F1A7D39F1688648`.
+No watch interaction preceded the job; navigation to expose the timestamp came
+after it finished. The phone process had already started at 6:17 AM for an
+Expo NotificationsService boot broadcast, so this run proves autonomous
+screen-off dashboard delivery after reboot, not a job-caused cold-process
+wake. The host still rejected authentication, so the new snapshot contains no
+verified live usage or conversation data. Physical-device and host-originated
+notification acceptance remain open.
