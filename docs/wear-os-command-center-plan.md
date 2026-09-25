@@ -2197,3 +2197,19 @@ tap. Validation continues with existing authenticated agents and paired
 machines. No disposable profile or sign-in is required. A reply test must use
 one reverified, exactly identified idle session through the watch path and
 only a harmless bounded acknowledgement; busy sessions remain untouched.
+
+The rebuilt release APK after `e344ffee9` (SHA-256
+`75F05DD9BFD8628B5705660628CE7F45C8011644850509D2A27735E1AE71E867`)
+installed on the existing paired Wear emulator `5562` without clearing data.
+It launched Attention, navigated to Inbox, and fetched both machine pages:
+Host 1 reported unavailable; Host 2 reported no retained events. Agents showed
+Host 2 connected with zero agents. This is a rendered emulator check of current
+source and host paging, not an event-card tap, live conversation, reply, or
+physical-watch acceptance. Read-only host inventory found Crowley OMP terminal
+`term_6c3db94b-e565-461a-be0a-2b55960ec30e` with incarnation
+`8d331a88-d280-4da0-b84d-a3953c7612f0` satisfying `tui-idle` at the
+check; Choisoonsil's OMP terminal did not satisfy that gate, and Rasputin had
+no terminals. No prompt was sent, because the emulator phone's host path still
+returns `e2ee_error: unauthorized`. ADB still lists only emulators and the
+advertised physical phone endpoint refused a connection; no physical APK was
+installed.
