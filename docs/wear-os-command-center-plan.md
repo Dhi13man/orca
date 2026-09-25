@@ -6,6 +6,32 @@
 
 **Current ARM64 artifact:** `wear/android/app/build/outputs/apk/release/app-release.apk`, SHA-256 `F0849936A9C39CF88E296FEF11BF0878172C093120E5426C369DC8D85B5AC9CE`, signed with the existing debug certificate (`fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c`). The APK contains only `arm64-v8a` native libraries, direct background refresh, on-watch manual enrollment, and the compiled FCM intake, but no Firebase project configuration; it is an internal test APK, not a Play/release-signed artifact. This ARM64 artifact has not been installed on the physical Watch8.
 
+**2026-09-25 bounded handoff:** The completed branch through `713cd9544` was
+pushed to `origin/Dhi13man/ship-orca-wearos` (`f8812f7a2..713cd9544`). In an
+isolated current-source Orca runtime (`8b5472c8-3d8d-49c5-94b3-acaf1fba24ed`),
+an existing-authenticated disposable Codex terminal
+(`term_43da5ad7-b355-46da-be51-e707bce3e145`, tab/pane
+`556d572a-d3e7-4b8c-8ddb-10ae8e11c716::8972dc7e-45a1-4524-9dc8-a61a501c2e11`)
+answered a harmless seed. The direct Wear client listed that exact terminal,
+read its real conversation, sent two bounded acknowledgements, received accepted
+host ledger receipts, retried the second request ID with an accepted replay, and
+read its accepted receipt on a new socket. Conversation inspection found exactly
+one matching user prompt for the second request and the requested assistant
+acknowledgement; the disposable repo stayed clean. A wrong-publication-epoch
+target was rejected without a prompt. A prior attempt using
+`snapshotVersion + 1` returned `unknown`; that value was not a reliable stale
+target while the live snapshot could advance, so it is not rejection evidence.
+The live acceptance test is opt-in via `ORCA_WEAR_LIVE_READY`,
+`ORCA_WEAR_LIVE_TAB`, and `ORCA_WEAR_LIVE_REQUEST_ID`; it reads the isolated
+readiness log without printing the pairing credential. No existing user work was
+targeted. Offline `:app:assembleRelease -PreactNativeArchitectures=arm64-v8a`
+passed at `713cd9544` with all packaging tasks up-to-date. The 39,457,087-byte
+APK above was reverified with `aapt2` and `apksigner`: package
+`com.stably.orca.mobile`, versionCode 1/versionName 0.1.0, minSdk 33, only
+`arm64-v8a`, bundled `assets/index.android.bundle`, and the certificate above.
+Physical Watch8 installation/pairing and all-fleet acceptance remain open; stop
+here until Dhiman makes the Watch8 visible.
+
 **Pairing review gate:** Independent read-only review found and the source now fixes malformed encrypted auth token handling and advertised WebSocket endpoint paths. Human `orca serve --wear-pairing` output now prints only the endpoint and five-minute code; it omits the reusable bearer pairing URL. Explicit JSON output retains its pairing object for existing machine consumers. Wear 159/159 and focused runtime auth/socket 49/49 tests passed; the affected readiness/auth tests, Node typecheck, lint and format passed after the output fix. Independent read-only review found no concrete blocker in the native on-watch text entry. Emulator manual keyboard redemption passed; installed Watch8 acceptance remains unverified.
 
 **Direct reply wire checkpoint:** An isolated live runtime accepted the watch client's encrypted `wear.terminal.send` request, replayed the same receipt for an identical request without a second write, returned that receipt through `wear.command.receipt`, and rejected a changed snapshot without writing. The terminal writer was stubbed, so this proves client/server routing and ledger behavior across the real WebSocket, not a real agent reply or process-crash recovery. The Wear suite passed 159/159 afterward, with typecheck, lint, and format checks passing.
