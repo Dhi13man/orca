@@ -2253,3 +2253,13 @@ page delivery on the emulator; it does not prove a task-name log, actual
 Headless JS send execution, Doze, recovery, or physical-device acceptance.
 The physical phone's advertised ADB endpoint again refused a connection;
 only emulators are listed, so installed-device acceptance remains open.
+
+A separate cold-process **Refresh from phone** action also succeeded on the
+same emulator pair. Killing only the background phone app process left no PID;
+the watch Attention button started PID 11703 for
+`WearCompanionListenerService` at 08:58:42 device time, and the watch's
+snapshot timestamp advanced from 08:50 to 08:58. The new PID emitted
+`ReactNativeJS` startup logs, and Android listed the Wear drain service.
+This verifies a watch-initiated refresh after phone-process death on API 36,
+without launching the phone UI. It does not establish periodic background
+refresh, host-originated notifications, Doze, or physical-device behavior.
