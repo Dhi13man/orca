@@ -43700,8 +43700,8 @@ function classifyAgentTitle(title: string | null): 'agent' | 'management' | 'neu
 
 function isTerminalSendSettlementAgent(
   agent: TuiAgent | null | undefined
-): agent is 'claude' | 'codex' {
-  return agent === 'claude' || agent === 'codex'
+): agent is 'claude' | 'codex' | 'omp' {
+  return agent === 'claude' || agent === 'codex' || agent === 'omp'
 }
 
 function findLastCompleteOscTitleRange(data: string): { start: number; end: number } | null {
