@@ -2263,3 +2263,27 @@ snapshot timestamp advanced from 08:50 to 08:58. The new PID emitted
 This verifies a watch-initiated refresh after phone-process death on API 36,
 without launching the phone UI. It does not establish periodic background
 refresh, host-originated notifications, Doze, or physical-device behavior.
+
+On September 25, the physical SM-L500 Watch8 and SM-S928B phone briefly became
+reachable through wireless ADB. The watch had no Orca package. Installing the
+multi-ABI watch APK (SHA-256
+`75F05DD9BFD8628B5705660628CE7F45C8011644850509D2A27735E1AE71E867`)
+returned `Success`; its ADB link then went offline before a launch or Data Layer
+roundtrip could be checked. The phone has Orca versionCode 16/versionName
+0.0.48. A read-only pull of its installed APK confirmed signing certificate
+`fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c`,
+matching this branch. The branch now builds an ARM64 phone APK with versionCode
+17/versionName 0.0.49 and that certificate, SHA-256
+`EE0AA906ADB0D64F9DFDBEA003597BCE19547DE47834D57A6B233BFE8817B5CB`.
+Both devices left ADB before the phone update; no phone install occurred and
+physical pairing remains unverified. The next physical step is an in-place phone
+update after reconnect, followed by a watch launch and actual Data Layer
+roundtrip. Do not infer pairing from the watch install result.
+
+Commit `40165fcdb` adds a source-only Wear dashboard refresh trigger for
+observed host attention events and orders background notification replay before
+its dashboard refresh. Five focused mobile test files pass (68 tests), mobile
+typecheck and scoped lint/format pass, and read-only review found no blocker.
+This still does not emit a watch-local alert or prove an Inbox event reload on
+the physical watch. Prioritize the physical phone/watch integration and a real
+host-data roundtrip before adding further relay or notification machinery.
