@@ -165,9 +165,13 @@ export function startWearHostFeed(args: {
           continue
         }
         const acquisition = {}
-        const entry: ActiveHost = { acquisition, client: null, closeObservation: null }
-        active.set(host.id, entry)
-        entry.client = owner.acquire(host.id, acquisition, host.profile!)
+        try {
+          const client = owner.acquire(host.id, acquisition, host.profile!)
+          active.set(host.id, { acquisition, client, closeObservation: null })
+        } catch (error) {
+          owner.release(host.id, acquisition)
+          onError(error)
+        }
       }
       wireClients()
       return true

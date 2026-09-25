@@ -65,6 +65,7 @@ function harness() {
     }),
     getAllClients: () => [...clients].map(([hostId, client]) => ({ hostId, client })),
     getKnownState: (id: string) => states.get(id) ?? null,
+    release: vi.fn(),
     releaseAndCloseIfUnused: vi.fn((id: string) => {
       released.push(id)
       clients.delete(id)
@@ -277,6 +278,35 @@ describe('Wear host feed', () => {
     stop()
     expect(h.released.slice(-3)).toEqual(['a', 'b', 'c'])
     expect(vi.mocked(h.owner.retainLifetime).mock.results[0].value).toHaveBeenCalledOnce()
+  })
+
+  it('keeps healthy hosts live and retries a failed acquisition', async () => {
+    const h = harness()
+    const onError = vi.fn()
+    const acquire = vi.mocked(h.owner.acquire)
+    const originalAcquire = acquire.getMockImplementation()!
+    acquire.mockImplementationOnce(() => {
+      throw new Error('host a failed')
+    })
+    let refresh!: () => Promise<boolean>
+    const stop = startWearHostFeed({
+      owner: h.owner,
+      coordinator: h.coordinator,
+      loadCatalog: async () => [host('a'), host('b'), host('c')],
+      onUpdate: (snapshot) => h.snapshots.push(snapshot),
+      onError,
+      onRefreshReady: (control) => {
+        refresh = control
+      }
+    })
+    await vi.waitFor(() => expect(h.acquired).toEqual(['b', 'c']))
+    expect(onError).toHaveBeenCalledWith(new Error('host a failed'))
+    expect(h.owner.release).toHaveBeenCalledOnce()
+    expect(h.snapshots.at(-1)?.catalog).toHaveLength(3)
+    acquire.mockImplementation(originalAcquire)
+    expect(await refresh()).toBe(true)
+    expect(h.acquired).toEqual(['b', 'c', 'a'])
+    stop()
   })
 
   it('continues rotation after a background publisher restarts', async () => {

@@ -2213,3 +2213,12 @@ no terminals. No prompt was sent, because the emulator phone's host path still
 returns `e2ee_error: unauthorized`. ADB still lists only emulators and the
 advertised physical phone endpoint refused a connection; no physical APK was
 installed.
+
+The phone's Wear host feed no longer leaves a failed synchronous host
+acquisition in its active set or aborts the selected batch. It releases only
+that acquisition token, reports the error, continues healthy hosts, and
+retries the failed host on the next refresh. The focused 13-test host-feed
+suite, mobile typecheck/lint/scoped formatting, and independent read-only
+ownership review pass. This fixes one all-host starvation path in source; the
+ordinary asynchronous connection failure path and physical fleet timing still
+require live acceptance evidence.
