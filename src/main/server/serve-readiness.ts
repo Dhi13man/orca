@@ -114,7 +114,7 @@ function renderHumanReadiness(readiness: ServeReadiness): string {
     )
   }
   if (readiness.pairing.available) {
-    if (readiness.pairing.webClientUrl) {
+    if (readiness.pairing.scope !== 'wear' && readiness.pairing.webClientUrl) {
       lines.push(`Web client URL: ${readiness.pairing.webClientUrl}`)
     }
     if (readiness.pairing.scope === 'mobile' && readiness.pairing.qr) {
@@ -124,7 +124,9 @@ function renderHumanReadiness(readiness: ServeReadiness): string {
       lines.push(`Watch endpoint: ${readiness.pairing.endpoint}`)
       lines.push(`Watch code (5 minutes): ${readiness.pairing.manualCode}`)
     }
-    lines.push(`Pairing URL: ${readiness.pairing.url}`)
+    if (readiness.pairing.scope !== 'wear') {
+      lines.push(`Pairing URL: ${readiness.pairing.url}`)
+    }
   } else {
     lines.push(`Pairing unavailable: ${readiness.pairing.reason}`)
     lines.push(`Pairing guidance: ${readiness.pairing.guidance}`)

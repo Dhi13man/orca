@@ -77,10 +77,11 @@ describe('ServeReadinessPublisher', () => {
     const human = renderServeReadiness(wearReady, { mode: 'human' })
     expect(human).toContain('Watch code (5 minutes): ABCDE-F0123-45678-9ABCD')
     expect(human).toContain('Watch endpoint: wss://orca.example.test/runtime')
-    expect(JSON.parse(renderServeReadiness(wearReady, { mode: 'json' })).pairing).toMatchObject({
-      manualCode: 'ABCDE-F0123-45678-9ABCD',
-      manualCodeExpiresAt: 12345
-    })
+    expect(human).not.toContain('orca://pair?code=secret')
+    expect(human).not.toContain('secret')
+    expect(JSON.parse(renderServeReadiness(wearReady, { mode: 'json' })).pairing).toEqual(
+      wearReady.pairing
+    )
   })
 
   it('publishes a versioned JSON contract with explicit endpoints and pairing availability', () => {
