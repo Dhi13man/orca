@@ -102,6 +102,25 @@ describe('E2EEChannel', () => {
       expect(JSON.parse(ctx.ws.sent[0]!)).toEqual({ type: 'e2ee_ready' })
     })
 
+    it('rejects a non-string auth token before resolving a device', () => {
+      const resolveAuthenticatedDevice = vi.fn(() => null)
+      const ctx = setup({ resolveAuthenticatedDevice })
+      ctx.channel.handleRawMessage(
+        JSON.stringify({
+          type: 'e2ee_hello',
+          publicKeyB64: publicKeyToBase64(ctx.clientKeys.publicKey)
+        })
+      )
+      const key = deriveSharedKey(ctx.clientKeys.secretKey, ctx.serverKeys.publicKey)
+      expect(() =>
+        ctx.channel.handleRawMessage(
+          encrypt(JSON.stringify({ type: 'e2ee_auth', deviceToken: {} }), key)
+        )
+      ).not.toThrow()
+      expect(resolveAuthenticatedDevice).not.toHaveBeenCalled()
+      expect(ctx.onError).toHaveBeenCalledWith(4001, 'Invalid e2ee_auth')
+    })
+
     it('binds runtime capabilities to encrypted authenticated metadata', () => {
       const ctx = setup({
         resolveAuthenticatedDevice: (token) =>

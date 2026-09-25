@@ -41,6 +41,7 @@ export function authenticateMobileE2EE<TDevice extends { deviceToken: string }>(
   }
   if (
     auth.type !== 'e2ee_auth' ||
+    typeof auth.deviceToken !== 'string' ||
     !auth.deviceToken ||
     !isValidMobileE2EEAuthVersion(auth, args.v2Session)
   ) {

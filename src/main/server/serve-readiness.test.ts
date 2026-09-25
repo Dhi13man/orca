@@ -63,8 +63,13 @@ describe('ServeReadinessPublisher', () => {
     const wearReady: ServeReadiness = {
       ...ready,
       pairing: {
-        ...ready.pairing,
+        available: true,
+        url: 'orca://pair?code=secret',
+        endpoint: 'wss://orca.example.test/runtime',
+        deviceId: 'device-1',
+        webClientUrl: null,
         scope: 'wear',
+        qr: null,
         manualCode: 'ABCDE-F0123-45678-9ABCD',
         manualCodeExpiresAt: 12345
       }

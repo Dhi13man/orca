@@ -21,16 +21,17 @@ export function normalizeManualCode(value: string): string | null {
 export function normalizeManualEndpoint(value: string): string | null {
   try {
     const url = new URL(/^wss?:\/\//i.test(value.trim()) ? value.trim() : `ws://${value.trim()}`)
-    return (url.protocol === 'ws:' || url.protocol === 'wss:') &&
-      url.hostname &&
-      url.port &&
-      !url.username &&
-      !url.password &&
-      url.pathname === '/' &&
-      !url.search &&
-      !url.hash
-      ? url.origin
-      : null
+    if (
+      (url.protocol !== 'ws:' && url.protocol !== 'wss:') ||
+      !url.hostname ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    ) {
+      return null
+    }
+    return url.pathname === '/' ? url.origin : url.href
   } catch {
     return null
   }
