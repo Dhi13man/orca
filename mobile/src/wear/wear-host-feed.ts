@@ -27,6 +27,7 @@ export function startWearHostFeed(args: {
   coordinator: HostObservationCoordinator
   loadCatalog: () => Promise<HostCatalogEntry[]>
   onUpdate: (snapshot: WearHostFeedSnapshot) => void
+  onAttentionEvent?: (hostId: string) => void
   onError: (error: unknown) => void
   onRefreshReady?: (refresh: () => Promise<boolean>, refreshUsage: () => Promise<void>) => void
 }): () => void {
@@ -97,6 +98,16 @@ export function startWearHostFeed(args: {
           if (!stopped && active.get(hostId) === entry && entry.client === client) {
             inventories.set(hostId, summary)
             publish()
+          }
+        },
+        onNotificationObserved(source) {
+          if (
+            !stopped &&
+            active.get(hostId) === entry &&
+            entry.client === client &&
+            (source === 'agent-task-complete' || source === 'terminal-bell')
+          ) {
+            args.onAttentionEvent?.(hostId)
           }
         }
       })

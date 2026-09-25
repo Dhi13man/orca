@@ -66,13 +66,19 @@ export async function refreshBoundWearDashboards(runId: number): Promise<void> {
     if (!state.bindings?.length) {
       return
     }
-    await Promise.all(
-      state.bindings.map((binding) =>
-        refreshWearDashboardOnce(binding.bindingId, 30_000, cancellation.signal)
-      )
-    )
     if (!cancellation.signal.aborted) {
-      await replayWearNotifications(cancellation.signal)
+      try {
+        await replayWearNotifications(cancellation.signal)
+      } catch (error) {
+        console.warn('Wear notification replay unavailable', error)
+      }
+    }
+    if (!cancellation.signal.aborted) {
+      await Promise.all(
+        state.bindings.map((binding) =>
+          refreshWearDashboardOnce(binding.bindingId, 30_000, cancellation.signal)
+        )
+      )
     }
   } finally {
     clearInterval(monitor)

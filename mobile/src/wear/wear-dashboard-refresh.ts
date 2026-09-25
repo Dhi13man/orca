@@ -1,5 +1,5 @@
 import { wearDataLayer } from '@orca/expo-wear-data-layer'
-import { retainPublisher } from './wear-dashboard-publisher'
+import { retainPublisher } from './wear-dashboard-publisher-owner'
 
 export function refreshWearDashboardOnce(
   bindingId: string,

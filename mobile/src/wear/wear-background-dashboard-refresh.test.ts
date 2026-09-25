@@ -27,6 +27,7 @@ import { refreshBoundWearDashboards } from './wear-background-dashboard-refresh'
 
 afterEach(() => {
   vi.useRealTimers()
+  vi.restoreAllMocks()
   vi.clearAllMocks()
   mocks.replay.mockResolvedValue(undefined)
   mocks.isActive.mockReturnValue(true)
@@ -62,6 +63,24 @@ describe('background Wear dashboard refresh', () => {
     await refreshBoundWearDashboards(1)
     expect(mocks.refresh).not.toHaveBeenCalled()
     expect(mocks.replay).not.toHaveBeenCalled()
+  })
+
+  it('still refreshes watch snapshots when notification replay cannot start', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    mocks.getState.mockReturnValue({
+      role: 'phone',
+      phase: 'bound',
+      bindings: [{ bindingId: 'watch-a', nodeId: 'node-a' }]
+    })
+    mocks.replay.mockRejectedValueOnce(new Error('catalog unavailable'))
+    mocks.refresh.mockResolvedValue(true)
+    await refreshBoundWearDashboards(1)
+    expect(mocks.refresh).toHaveBeenCalledExactlyOnceWith(
+      'watch-a',
+      30_000,
+      expect.any(AbortSignal)
+    )
+    expect(warning).toHaveBeenCalledOnce()
   })
 
   it('does not miss binding initialization between state read and subscription', async () => {
@@ -103,9 +122,11 @@ describe('background Wear dashboard refresh', () => {
     )
     const task = refreshBoundWearDashboards(5)
     await vi.waitFor(() => expect(mocks.replay).toHaveBeenCalledOnce())
+    expect(mocks.refresh).not.toHaveBeenCalled()
     expect(mocks.complete).not.toHaveBeenCalled()
     finishReplay()
     await task
+    expect(mocks.refresh).toHaveBeenCalledOnce()
     expect(mocks.complete).toHaveBeenCalledWith(5)
   })
 

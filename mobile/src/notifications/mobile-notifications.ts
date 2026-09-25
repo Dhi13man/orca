@@ -1,4 +1,5 @@
 import type { RpcClient } from '../transport/rpc-client'
+import type { DesktopNotificationSource } from './notification-routing'
 // Re-exported so the existing importers (and their vi.mock paths) keep working.
 export {
   ensureNotificationPermissions,
@@ -39,7 +40,8 @@ type SubscribeResult = {
 export function subscribeToDesktopNotifications(
   client: RpcClient,
   hostId: string,
-  onCatchUpSettled?: (complete: boolean) => void
+  onCatchUpSettled?: (complete: boolean) => void,
+  onNotificationObserved?: (source: DesktopNotificationSource) => void
 ): () => void {
   configureNotificationChannel()
 
@@ -89,6 +91,11 @@ export function subscribeToDesktopNotifications(
     adoptNotificationEpoch(session, hostId, event.notificationEpoch)
     const epochAtDelivery = session.lastDeliveredEpoch
     if (type === 'notification') {
+      try {
+        onNotificationObserved?.((event as NotificationEvent).source)
+      } catch (error) {
+        console.warn('Wear attention observation failed', error)
+      }
       await showLocalNotification(event as NotificationEvent, hostId)
     } else {
       await dismissLocalNotification(event as DismissNotificationEvent, hostId)
@@ -107,18 +114,17 @@ export function subscribeToDesktopNotifications(
     // means a process death in between silently drops it — the next launch asks the
     // desktop for seq greater than one the user never saw.
     if (event.notificationSeq != null && event.notificationSeq > session.lastDeliveredSeq) {
-      if (!session.watermarkKnown) {
-        return
+      if (session.watermarkKnown) {
+        session.lastDeliveredSeq = event.notificationSeq
+        session.hasSafeBaseline = true
+        // Why clamped: while a failed catch-up's range is still unrecovered, persisting
+        // the live seq would let the next catch-up ask from above the gap and the desktop
+        // would cut it. resolveCatchUpQuarantine writes the held-back value on success.
+        void saveWatermark(hostId, {
+          seq: catchUpWatermarkSeq(session),
+          epoch: session.lastDeliveredEpoch
+        })
       }
-      session.lastDeliveredSeq = event.notificationSeq
-      session.hasSafeBaseline = true
-      // Why clamped: while a failed catch-up's range is still unrecovered, persisting
-      // the live seq would let the next catch-up ask from above the gap and the desktop
-      // would cut it. resolveCatchUpQuarantine writes the held-back value on success.
-      void saveWatermark(hostId, {
-        seq: catchUpWatermarkSeq(session),
-        epoch: session.lastDeliveredEpoch
-      })
     }
   }
 

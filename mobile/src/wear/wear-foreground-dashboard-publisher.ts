@@ -1,5 +1,5 @@
 import { AppState, type AppStateStatus } from 'react-native'
-import { retainPublisher } from './wear-dashboard-publisher'
+import { retainPublisher } from './wear-dashboard-publisher-owner'
 
 export function startForegroundWearDashboardPublisher(
   onError: (error: unknown) => void

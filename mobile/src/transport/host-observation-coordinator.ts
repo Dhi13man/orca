@@ -1,5 +1,6 @@
 import { decodeAccountsSnapshot, type AccountsSnapshot } from '../components/accounts-snapshot'
 import { subscribeToDesktopNotifications } from '../notifications/mobile-notifications'
+import type { DesktopNotificationSource } from '../notifications/notification-routing'
 import { startWearSessionInventoryObserver } from '../wear/wear-session-inventory-observer'
 import type { WearSessionInventorySummary } from '../wear/wear-session-inventory'
 import type { RpcClient } from './rpc-client'
@@ -8,6 +9,7 @@ type Observer = {
   onAccounts?: (snapshot: AccountsSnapshot) => void
   onInventory?: (summary: WearSessionInventorySummary) => void
   onNotificationsReady?: (complete: boolean) => void
+  onNotificationObserved?: (source: DesktopNotificationSource) => void
 }
 
 type HostEntry = {
@@ -68,6 +70,14 @@ export function createHostObservationCoordinator(): HostObservationCoordinator {
             entry.notificationsReady = complete
             for (const observer of entry.observers) {
               observer.onNotificationsReady?.(complete)
+            }
+          },
+          (source) => {
+            if (entry.notificationsGeneration !== generation || hosts.get(hostId) !== entry) {
+              return
+            }
+            for (const observer of entry.observers) {
+              observer.onNotificationObserved?.(source)
             }
           }
         )

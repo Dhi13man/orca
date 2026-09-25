@@ -126,7 +126,8 @@ describe('subscribeToDesktopNotifications', () => {
       sendRequest: vi.fn()
     } as unknown as RpcClient
 
-    subscribeToDesktopNotifications(client, 'host-1')
+    const observed = vi.fn()
+    subscribeToDesktopNotifications(client, 'host-1', undefined, observed)
     onEvent?.({
       type: 'notification',
       source: 'agent-task-complete',
@@ -149,6 +150,18 @@ describe('subscribeToDesktopNotifications', () => {
     await flushAsync()
 
     expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(2)
+    expect(observed).toHaveBeenCalledTimes(2)
+    expect(observed).toHaveBeenCalledWith('agent-task-complete')
+    vi.mocked(loadPushNotificationsEnabled).mockResolvedValue(false)
+    onEvent?.({ type: 'notification', source: 'terminal-bell', title: 't', body: 'b' })
+    await flushAsync()
+    expect(observed).toHaveBeenCalledWith('terminal-bell')
+    expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledTimes(2)
+    vi.mocked(loadPushNotificationsEnabled).mockResolvedValue(true)
+    vi.mocked(Notifications.scheduleNotificationAsync).mockRejectedValueOnce(new Error('OS failed'))
+    onEvent?.({ type: 'notification', source: 'terminal-bell', title: 't', body: 'b' })
+    await flushAsync()
+    expect(observed).toHaveBeenCalledTimes(4)
     expect(Notifications.scheduleNotificationAsync).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({

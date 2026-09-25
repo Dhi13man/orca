@@ -10,6 +10,7 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
   }
 }))
 import type { AccountsSnapshot } from '../components/accounts-snapshot'
+import type { DesktopNotificationSource } from '../notifications/notification-routing'
 import type { HostObservationCoordinator } from '../transport/host-observation-coordinator'
 import type { HostClientProcessOwner } from '../transport/host-client-process-owner'
 import type { RpcClient } from '../transport/rpc-client'
@@ -40,7 +41,11 @@ function harness() {
   const released: string[] = []
   const observed = new Map<
     string,
-    { onAccounts?: (snapshot: AccountsSnapshot) => void; onInventory?: (summary: never) => void }
+    {
+      onAccounts?: (snapshot: AccountsSnapshot) => void
+      onInventory?: (summary: never) => void
+      onNotificationObserved?: (source: DesktopNotificationSource) => void
+    }
   >()
   const snapshots: WearHostFeedSnapshot[] = []
   const owner = {
@@ -83,6 +88,7 @@ function harness() {
         callbacks: {
           onAccounts?: (snapshot: AccountsSnapshot) => void
           onInventory?: (summary: never) => void
+          onNotificationObserved?: (source: DesktopNotificationSource) => void
         }
       ) => {
         observed.set(id, callbacks)
@@ -106,6 +112,29 @@ afterEach(() => {
 })
 
 describe('Wear host feed', () => {
+  it('signals real attention events from the selected live host only', async () => {
+    const h = harness()
+    const onAttentionEvent = vi.fn()
+    const stop = startWearHostFeed({
+      owner: h.owner,
+      coordinator: h.coordinator,
+      loadCatalog: async () => [host('a')],
+      onUpdate: vi.fn(),
+      onAttentionEvent,
+      onError: vi.fn()
+    })
+    await flush()
+    const observer = h.observed.get('a')
+    expect(observer).toBeDefined()
+    observer?.onNotificationObserved?.('terminal-bell')
+    expect(onAttentionEvent).toHaveBeenCalledExactlyOnceWith('a')
+    observer?.onNotificationObserved?.('test')
+    expect(onAttentionEvent).toHaveBeenCalledOnce()
+    stop()
+    observer?.onNotificationObserved?.('terminal-bell')
+    expect(onAttentionEvent).toHaveBeenCalledOnce()
+  })
+
   it('refreshes paired host usage without forcing old hosts or losing the cached catalog', async () => {
     const h = harness()
     const account = {

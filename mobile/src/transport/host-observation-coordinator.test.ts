@@ -63,6 +63,21 @@ beforeEach(() => {
 })
 
 describe('process-owned host observation coordinator', () => {
+  it('delivers normalized events only to current host observers', () => {
+    const coordinator = createHostObservationCoordinator()
+    const host = fakeClient()
+    const observed = vi.fn()
+    const release = coordinator.observeHost('host-a', host.client, {
+      onNotificationObserved: observed
+    })
+    vi.mocked(subscribeToDesktopNotifications).mock.calls[0][3]?.('terminal-bell')
+    expect(observed).toHaveBeenCalledExactlyOnceWith('terminal-bell')
+    host.publishState('disconnected')
+    vi.mocked(subscribeToDesktopNotifications).mock.calls[0][3]?.('terminal-bell')
+    expect(observed).toHaveBeenCalledOnce()
+    release()
+  })
+
   it('shares one account, notification and Wear inventory stream across overlapping consumers', () => {
     const coordinator = createHostObservationCoordinator()
     const host = fakeClient()

@@ -103,6 +103,21 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers())
 
 describe('Wear dashboard publisher', () => {
+  it('publishes an unchanged snapshot when a host delivers an attention event', async () => {
+    mocks.getState.mockReturnValue(state([bindingA]))
+    const stop = startWearDashboardPublisher(vi.fn())
+    feedUpdate()
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(mocks.publish).toHaveBeenCalledOnce()
+    const first = mocks.publish.mock.calls[0][0]
+    const feed = mocks.startFeed.mock.calls[0][0] as { onAttentionEvent: () => void }
+    feed.onAttentionEvent()
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(mocks.publish).toHaveBeenCalledTimes(2)
+    expect(mocks.publish.mock.calls[1][0].hosts).toEqual(first.hosts)
+    stop()
+  })
+
   it('starts only for active phone bindings and publishes an encrypted dashboard per binding', async () => {
     const onError = vi.fn()
     const stop = startWearDashboardPublisher(onError)
