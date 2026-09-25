@@ -16,7 +16,11 @@ describe('optional relay artifacts', () => {
 
   it('never offers it to a non-Windows host', () => {
     expect(relayOptionalArtifactFilenames(false)).not.toContain(RELAY_WINDOWS_PROCESS_TREE_FILENAME)
-    expect(relayOptionalArtifactFilenames(false)).toEqual([])
+    expect(relayOptionalArtifactFilenames(false)).toEqual([
+      'wear-sqlite-v108.node',
+      'wear-sqlite-v115.node',
+      'wear-sqlite-v127.node'
+    ])
   })
 
   it('keeps required and optional sets disjoint', () => {

@@ -1,6 +1,13 @@
 import { chmodSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import Database from '../sqlite/sync-database'
+import {
+  WEAR_COMMAND_REJECT_REASONS,
+  createWearReceiptLinkTables,
+  getSshReceiptLink,
+  getStructuredReceiptLink,
+  linkSshReceipt as persistSshReceiptLink
+} from './wear-command-receipt-links'
 
 export type WearCommandOutcome = 'accepted' | 'rejected' | 'unknown'
 export type WearCommandRejectReason =
@@ -32,6 +39,14 @@ export type WearStructuredReceiptLink = {
   sendFingerprint: string
 }
 
+export type WearSshReceiptLink = {
+  connectionId: string
+  relayPtyId: string
+  incarnationId: string
+  terminalHandle: string
+  workspaceId: string
+}
+
 export type WearCommandReservation =
   | { disposition: 'started'; record: WearCommandRecord }
   | { disposition: 'replay'; record: WearCommandRecord }
@@ -42,14 +57,19 @@ const MAX_UNRESOLVED_PER_BINDING = 16
 const UNKNOWN_RETENTION_MS = 24 * 60 * 60 * 1_000
 const TERMINAL_RETENTION_MS = 30 * UNKNOWN_RETENTION_MS
 
-export class WearCommandLedger {
-  private readonly db: Database.Database
+export type WearLedgerDatabase = Pick<Database.Database, 'exec' | 'prepare' | 'pragma' | 'close'>
 
-  constructor(path: string) {
+export class WearCommandLedger {
+  private readonly db: WearLedgerDatabase
+
+  constructor(
+    path: string,
+    openDatabase: (path: string) => WearLedgerDatabase = (dbPath) => new Database(dbPath)
+  ) {
     if (path !== ':memory:') {
       mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
     }
-    this.db = new Database(path)
+    this.db = openDatabase(path)
     try {
       this.db.pragma('journal_mode = WAL')
       this.db.pragma('synchronous = FULL')
@@ -71,15 +91,7 @@ export class WearCommandLedger {
       this.db.exec(`CREATE TABLE IF NOT EXISTS wear_command_clock (
       id INTEGER PRIMARY KEY CHECK(id=1), max_seen_now INTEGER NOT NULL
     )`)
-      this.db.exec(`CREATE TABLE IF NOT EXISTS wear_structured_receipt_links (
-      binding_id TEXT NOT NULL,
-      request_id TEXT NOT NULL,
-      action_fingerprint TEXT NOT NULL,
-      session_id TEXT NOT NULL,
-      client_operation_id TEXT NOT NULL,
-      send_fingerprint TEXT NOT NULL,
-      PRIMARY KEY(binding_id,request_id)
-    )`)
+      createWearReceiptLinkTables(this.db)
       this.db
         .prepare('INSERT OR IGNORE INTO wear_command_clock(id,max_seen_now) VALUES (1,0)')
         .run()
@@ -112,18 +124,20 @@ export class WearCommandLedger {
   }
 
   getStructuredLink(bindingId: string, requestId: string): WearStructuredReceiptLink | null {
-    return (
-      (this.db
-        .prepare(`SELECT link.session_id AS sessionId,
-      link.client_operation_id AS clientOperationId,
-      link.send_fingerprint AS sendFingerprint
-      FROM wear_structured_receipt_links AS link
-      JOIN wear_command_receipts AS receipt
-      ON receipt.binding_id=link.binding_id AND receipt.request_id=link.request_id
-      AND receipt.fingerprint=link.action_fingerprint
-      WHERE link.binding_id=? AND link.request_id=?`)
-        .get(bindingId, requestId) as WearStructuredReceiptLink | undefined) ?? null
-    )
+    return getStructuredReceiptLink(this.db, bindingId, requestId)
+  }
+
+  getSshLink(bindingId: string, requestId: string): WearSshReceiptLink | null {
+    return getSshReceiptLink(this.db, bindingId, requestId)
+  }
+
+  linkSshReceipt(args: {
+    bindingId: string
+    requestId: string
+    fingerprint: string
+    link: WearSshReceiptLink
+  }): void {
+    persistSshReceiptLink(this.db, (bindingId, requestId) => this.get(bindingId, requestId), args)
   }
 
   reserve(args: {
@@ -186,6 +200,10 @@ export class WearCommandLedger {
         WHERE NOT EXISTS (SELECT 1 FROM wear_command_receipts AS receipt
         WHERE receipt.binding_id=wear_structured_receipt_links.binding_id
         AND receipt.request_id=wear_structured_receipt_links.request_id)`)
+      this.db.exec(`DELETE FROM wear_ssh_receipt_links
+        WHERE NOT EXISTS (SELECT 1 FROM wear_command_receipts AS receipt
+        WHERE receipt.binding_id=wear_ssh_receipt_links.binding_id
+        AND receipt.request_id=wear_ssh_receipt_links.request_id)`)
       const count = this.db
         .prepare('SELECT COUNT(*) AS count FROM wear_command_receipts')
         .get() as { count: number }
@@ -244,7 +262,7 @@ export class WearCommandLedger {
       !Number.isSafeInteger(args.now) ||
       args.now < 0 ||
       (args.outcome === 'rejected') !== (args.reason !== null) ||
-      (args.reason !== null && !REJECT_REASONS.has(args.reason))
+      (args.reason !== null && !WEAR_COMMAND_REJECT_REASONS.has(args.reason))
     ) {
       throw new Error('wear_command_receipt_invalid')
     }
@@ -291,18 +309,6 @@ export class WearCommandLedger {
     }
   }
 }
-
-const REJECT_REASONS = new Set<WearCommandRejectReason>([
-  'invalid-action',
-  'expired',
-  'stale',
-  'rate-limited',
-  'busy',
-  'conflict',
-  'unsupported',
-  'unavailable',
-  'target-changed'
-])
 
 function validId(value: string): boolean {
   return value.length > 0 && Buffer.byteLength(value, 'utf8') <= 256

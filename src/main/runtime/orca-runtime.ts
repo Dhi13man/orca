@@ -622,7 +622,7 @@ import {
   parseLegacyNumericPaneKey,
   parsePaneKey
 } from '../../shared/stable-pane-id'
-import { parseAppSshPtyId } from '../../shared/ssh-pty-id'
+import { parseAppSshPtyId, toRelaySshPtyId } from '../../shared/ssh-pty-id'
 import { getPtyExecutionHost } from '../../shared/terminal-execution-host'
 import { isValidHostTerminalTabId, isValidTerminalTabId } from '../../shared/terminal-tab-id'
 import { isWslHookRelayConnectionId } from '../../shared/wsl-hook-relay-contract'
@@ -4746,6 +4746,8 @@ export class OrcaRuntimeService {
     workspaceId: string
   ): {
     connectionId: string
+    relayPtyId: string
+    incarnationId: string | null
     provider: IPtyProvider
     requestHostRpc: NonNullable<IPtyProvider['requestAuthenticatedWearHostRpc']>
   } | null {
@@ -4762,6 +4764,8 @@ export class OrcaRuntimeService {
     return requestHostRpc
       ? {
           connectionId: pty.connectionId,
+          relayPtyId: toRelaySshPtyId(pty.connectionId, ptyId),
+          incarnationId: pty.incarnationId ?? null,
           provider,
           requestHostRpc
         }
@@ -20901,6 +20905,7 @@ export class OrcaRuntimeService {
     options: {
       beforeWrite?: (ptyId: string) => void | Promise<void>
       beforeWriteNow?: (ptyId: string) => void
+      writeChunk?: (ptyId: string, data: string) => Promise<boolean>
       suffixFailureError?: string
       signal?: AbortSignal
     } = {}
@@ -21681,6 +21686,7 @@ export class OrcaRuntimeService {
     options: {
       beforeWrite?: (ptyId: string) => void | Promise<void>
       beforeWriteNow?: (ptyId: string) => void
+      writeChunk?: (ptyId: string, data: string) => Promise<boolean>
       suffixFailureError?: string
       signal?: AbortSignal
     } = {}
@@ -21724,7 +21730,9 @@ export class OrcaRuntimeService {
           renderGate?.arm()
         }
         options.beforeWriteNow?.(ptyId)
-        const wrote = this.ptyController?.write(ptyId, chunk.value) ?? false
+        const wrote = options.writeChunk
+          ? await options.writeChunk(ptyId, chunk.value)
+          : (this.ptyController?.write(ptyId, chunk.value) ?? false)
         if (!wrote) {
           throw new Error('terminal_not_writable')
         }
@@ -21746,7 +21754,11 @@ export class OrcaRuntimeService {
         // is the worse outcome.
         try {
           agentSessionPtyWriteGate.assertReadmitted(ptyId, admitted)
-          this.ptyController?.write(ptyId, AGENT_PROMPT_BRACKETED_PASTE_END)
+          if (options.writeChunk) {
+            await options.writeChunk(ptyId, AGENT_PROMPT_BRACKETED_PASTE_END)
+          } else {
+            this.ptyController?.write(ptyId, AGENT_PROMPT_BRACKETED_PASTE_END)
+          }
         } catch {
           // The original refusal is the actionable error.
         }
@@ -21785,7 +21797,9 @@ export class OrcaRuntimeService {
     this.assertAgentPromptPermissionSafe(permissionBaseline, baseline)
     agentSessionPtyWriteGate.assertReadmitted(ptyId, admitted)
     options.beforeWriteNow?.(ptyId)
-    const suffixWrote = this.ptyController?.write(ptyId, AGENT_PROMPT_SUBMIT) ?? false
+    const suffixWrote = options.writeChunk
+      ? await options.writeChunk(ptyId, AGENT_PROMPT_SUBMIT)
+      : (this.ptyController?.write(ptyId, AGENT_PROMPT_SUBMIT) ?? false)
     if (!suffixWrote) {
       throw new Error(options.suffixFailureError ?? 'terminal_not_writable')
     }

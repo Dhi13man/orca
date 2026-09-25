@@ -13,7 +13,8 @@ import {
   RELAY_BUILD_PLATFORMS,
   RELAY_VERSION_FILENAME,
   isWindowsRelayPlatform,
-  relayArtifactFilenames
+  relayArtifactFilenames,
+  relayOptionalArtifactFilenames
 } from '../../src/shared/relay-artifacts.ts'
 
 const projectDir = resolve(import.meta.dirname, '../..')
@@ -46,13 +47,20 @@ describe('packaged relay artifact manifest', () => {
     const emitted = readdirSync(outDir)
       .filter((name) => name !== RELAY_VERSION_FILENAME)
       .sort()
-    expect(emitted).toEqual([...expected].sort())
+    const optional = relayOptionalArtifactFilenames(isWindowsRelayPlatform(platform))
+      .filter((name) => existsSync(join(outDir, name)))
+    expect(emitted).toEqual([...expected, ...optional].sort())
   })
 
   it.each([...RELAY_BUILD_PLATFORMS])('hashes every declared artifact for %s', (platform) => {
     const outDir = join(relayOutDir, platform)
     const hash = createHash('sha256')
-    for (const filename of relayArtifactFilenames(isWindowsRelayPlatform(platform))) {
+    const files = [
+      ...relayArtifactFilenames(isWindowsRelayPlatform(platform)),
+      ...relayOptionalArtifactFilenames(isWindowsRelayPlatform(platform))
+        .filter((name) => existsSync(join(outDir, name)))
+    ]
+    for (const filename of files) {
       hash.update(readFileSync(join(outDir, filename)))
     }
     const version = readFileSync(join(outDir, RELAY_VERSION_FILENAME), 'utf8')

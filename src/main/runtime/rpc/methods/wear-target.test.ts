@@ -6,6 +6,7 @@ import type { OrcaRuntimeService } from '../../orca-runtime'
 import { WearCommandLedger } from '../../wear-command-ledger'
 import type { RpcContext, RpcMethod } from '../core'
 import { WEAR_TARGET_METHODS } from './wear-target'
+import { toAppSshPtyId } from '../../../../shared/ssh-pty-id'
 
 const method = WEAR_TARGET_METHODS[0] as RpcMethod
 const sendMethod = WEAR_TARGET_METHODS[1] as RpcMethod
@@ -135,11 +136,13 @@ describe('wear.terminal.send', () => {
     const getWearWslTerminalDistro = vi.fn().mockReturnValue(null)
     const isCurrentLocalWearTerminalTarget = vi.fn().mockReturnValue(true)
     const isTerminalRunningSettledPromptAgent = vi.fn().mockResolvedValue(true)
+    const getWearSshTerminalRoute = vi.fn().mockReturnValue(null)
     const runtime = {
       getWearCommandLedger: () => ledger,
       listMobileSessionTabs,
       listFolderWorkspaces: () => [],
       sendTerminalAgentPrompt,
+      getWearSshTerminalRoute,
       isLocalOrWslWearTerminalTarget,
       getWearWslTerminalDistro,
       isCurrentLocalWearTerminalTarget,
@@ -159,7 +162,8 @@ describe('wear.terminal.send', () => {
       isLocalOrWslWearTerminalTarget,
       getWearWslTerminalDistro,
       isCurrentLocalWearTerminalTarget,
-      isTerminalRunningSettledPromptAgent
+      isTerminalRunningSettledPromptAgent,
+      getWearSshTerminalRoute
     }
   }
 
@@ -348,6 +352,86 @@ describe('wear.terminal.send', () => {
     expect(sendMethod.params?.safeParse({ ...action, rpcMethod: 'terminal.send' }).success).toBe(
       false
     )
+    current.ledger.close()
+  })
+
+  it('reserves SSH host receipt, writes exact incarnation, and recovers accepted after client uncertainty', async () => {
+    const current = setup()
+    const sshPtyId = toAppSshPtyId('host-ssh', 'pty-remote')
+    current.listMobileSessionTabs.mockResolvedValue({
+      ...snapshot,
+      tabs: [{ ...snapshot.tabs[0], ptyId: sshPtyId }]
+    })
+    const requestHostRpc = vi.fn(async (method: string, _params: unknown) => {
+      if (method === 'pty.getCapabilities') {
+        return { wearDurableReplyVersion: 1 }
+      }
+      if (method === 'wear.reply.reserve') {
+        return { disposition: 'started' }
+      }
+      if (method === 'pty.writeIfIncarnation') {
+        return { written: true }
+      }
+      if (method === 'wear.reply.complete') {
+        throw new Error('lost completion reply')
+      }
+      if (method === 'wear.reply.receipt') {
+        return {
+          fingerprint: actionHash(action),
+          state: 'accepted'
+        }
+      }
+      throw new Error(`unexpected ${method}`)
+    })
+    const route = {
+      connectionId: 'host-ssh',
+      relayPtyId: 'pty-remote',
+      incarnationId: 'incarnation-a',
+      provider: {},
+      requestHostRpc
+    }
+    current.getWearSshTerminalRoute.mockReturnValue(route)
+    current.sendTerminalAgentPrompt.mockImplementationOnce(async (_handle, _text, options) => {
+      await options.beforeWrite(sshPtyId)
+      options.beforeWriteNow(sshPtyId)
+      expect(await options.writeChunk(sshPtyId, 'bounded')).toBe(true)
+    })
+    expect(await sendMethod.handler(action, current.rpc)).toMatchObject({ outcome: 'unknown' })
+    expect(requestHostRpc.mock.calls.map(([name]) => name)).toEqual([
+      'pty.getCapabilities',
+      'wear.reply.reserve',
+      'pty.writeIfIncarnation',
+      'wear.reply.complete'
+    ])
+    expect(requestHostRpc.mock.calls[2][1]).toEqual({
+      id: 'pty-remote',
+      incarnationId: 'incarnation-a',
+      data: 'bounded'
+    })
+    expect(
+      await receiptMethod.handler(
+        { bindingId: action.bindingId, requestId: action.requestId },
+        current.rpc
+      )
+    ).toMatchObject({ outcome: 'accepted' })
+    expect(current.sendTerminalAgentPrompt).toHaveBeenCalledOnce()
+    current.ledger.close()
+  })
+
+  it('does not write SSH replies when the host lacks a durable ledger', async () => {
+    const current = setup()
+    current.getWearSshTerminalRoute.mockReturnValue({
+      connectionId: 'host-ssh',
+      relayPtyId: 'pty-remote',
+      incarnationId: 'incarnation-a',
+      provider: {},
+      requestHostRpc: vi.fn().mockResolvedValue({})
+    })
+    expect(await sendMethod.handler(action, current.rpc)).toMatchObject({
+      outcome: 'rejected',
+      reason: 'unsupported'
+    })
+    expect(current.sendTerminalAgentPrompt).not.toHaveBeenCalled()
     current.ledger.close()
   })
 })

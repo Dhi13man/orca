@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockPtySpawn, mockPtyInstance, mockCreateShellPromptReadinessProbe } = vi.hoisted(() => ({
+const { mockPtySpawn, mockPtyInstance, mockCreateShellPromptReadinessProbe, mockOpenWearLedger } = vi.hoisted(() => ({
   mockPtySpawn: vi.fn(),
+  mockOpenWearLedger: vi.fn(),
   mockCreateShellPromptReadinessProbe: vi.fn(),
   mockPtyInstance: {
     pid: process.pid,
@@ -23,11 +24,13 @@ vi.mock('../main/pty/posix-pty-process-groups', () => ({
 vi.mock('../main/shell-prompt-readiness-probe', () => ({
   createShellPromptReadinessProbe: mockCreateShellPromptReadinessProbe
 }))
+vi.mock('./wear-sqlite-ledger', () => ({ openRelayWearSqliteLedger: mockOpenWearLedger }))
 
 import { beginPtyHandlerTest, endPtyHandlerTest } from './pty-handler-test-harness'
 import type { MockDispatcher } from './pty-handler-test-harness'
 import type { PtyHandler } from './pty-handler'
 import { relayPrimaryOwnerPrincipal } from './relay-primary-channel-proof'
+import { WearCommandLedger } from '../main/runtime/wear-command-ledger'
 
 const proved = {
   clientId: 1,
@@ -44,8 +47,12 @@ describe('relay exact-incarnation prompt write', () => {
   let dispatcher: MockDispatcher
   let handler: PtyHandler
   let originalPlatform: PropertyDescriptor | undefined
+  let ledger: WearCommandLedger
 
   beforeEach(() => {
+    ledger = new WearCommandLedger(':memory:')
+    mockOpenWearLedger.mockClear()
+    mockOpenWearLedger.mockReturnValue(ledger)
     ;({ dispatcher, handler, originalPlatform } = beginPtyHandlerTest({
       mockPtySpawn,
       mockPtyInstance,
@@ -55,6 +62,9 @@ describe('relay exact-incarnation prompt write', () => {
 
   afterEach(async () => {
     await endPtyHandlerTest(handler, originalPlatform)
+    if (mockOpenWearLedger.mock.calls.length === 0) {
+      ledger.close()
+    }
   })
 
   const guard = (dispatcher: MockDispatcher, params: Record<string, unknown>) =>
@@ -133,6 +143,57 @@ describe('relay exact-incarnation prompt write', () => {
         isStale: () => true
       })
     ).rejects.toThrow('wear_relay_primary_unproved')
+    expect(mockPtyInstance.write).not.toHaveBeenCalled()
+  })
+
+  it('reserves a host receipt before effects and replays it after an owner reconnect', async () => {
+    const capabilities = (await dispatcher.callRequest('pty.getCapabilities')) as Record<string, unknown>
+    expect(capabilities.wearDurableReplyVersion).toBe(1)
+    const { id, incarnationId } = (await dispatcher.callRequest('pty.spawn', {
+      worktreeId: 'workspace-a'
+    })) as { id: string; incarnationId: string }
+    const input = {
+      id,
+      incarnationId,
+      worktreeId: 'workspace-a',
+      bindingId: 'watch-a',
+      requestId: 'reply-a',
+      fingerprint: 'a'.repeat(64),
+      expiresAt: Date.now() + 60_000
+    }
+    await expect(dispatcher.callRequest('wear.reply.reserve', input, proved)).resolves.toMatchObject({
+      disposition: 'started',
+      record: { state: 'pending' }
+    })
+    await expect(dispatcher.callRequest('wear.reply.reserve', input, proved)).resolves.toMatchObject({
+      disposition: 'replay',
+      record: { state: 'pending' }
+    })
+    await expect(
+      dispatcher.callRequest('wear.reply.reserve', { ...input, incarnationId: 'old' }, proved)
+    ).resolves.toEqual({ disposition: 'target-changed' })
+    await expect(
+      dispatcher.callRequest('wear.reply.reserve', { ...input, fingerprint: 'b'.repeat(64) }, proved)
+    ).resolves.toEqual({ disposition: 'conflict' })
+    await expect(
+      dispatcher.callRequest('wear.reply.complete', {
+        bindingId: input.bindingId,
+        requestId: input.requestId,
+        fingerprint: input.fingerprint,
+        outcome: 'accepted',
+        reason: null
+      }, proved)
+    ).resolves.toMatchObject({ state: 'accepted' })
+    await expect(
+      dispatcher.callRequest('wear.reply.receipt', {
+        bindingId: input.bindingId,
+        requestId: input.requestId
+      }, proved)
+    ).resolves.toMatchObject({ state: 'accepted', fingerprint: input.fingerprint })
+    await expect(dispatcher.callRequest('wear.reply.reserve', input, {
+      ...proved,
+      isStale: () => true
+    })).rejects.toThrow('wear_relay_primary_unproved')
     expect(mockPtyInstance.write).not.toHaveBeenCalled()
   })
 })

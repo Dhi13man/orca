@@ -20,6 +20,7 @@ import {
   writeFileSync
 } from 'node:fs'
 import { join } from 'node:path'
+import { stageWearSqliteRelayAddon } from './wear-sqlite-relay-addon.mjs'
 import {
   RELAY_BUILD_PLATFORMS,
   RELAY_VERSION_FILENAME,
@@ -127,6 +128,7 @@ for (const platform of RELAY_BUILD_PLATFORMS) {
     )
   }
   stageWindowsProcessTreeAddon(platform, outDir)
+  await stageWearSqliteRelayAddon(platform, ROOT, outDir)
 
   await build({
     entryPoints: [WATCHER_ENTRY],

@@ -41,6 +41,41 @@ afterEach(() => {
 })
 
 describe('Wear command ledger', () => {
+  it('recovers the exact SSH receipt route without changing an earlier reservation', () => {
+    const dbPath = path()
+    const first = open(dbPath)
+    const link = {
+      connectionId: 'ssh-a',
+      relayPtyId: 'pty-a',
+      incarnationId: 'incarnation-a',
+      terminalHandle: 'term-a',
+      workspaceId: 'workspace-a'
+    }
+    expect(first.reserve(command('ssh-reply')).disposition).toBe('started')
+    first.linkSshReceipt({
+      bindingId: 'binding-a',
+      requestId: 'ssh-reply',
+      fingerprint: hash,
+      link
+    })
+    expect(() => first.linkSshReceipt({
+      bindingId: 'binding-a',
+      requestId: 'ssh-reply',
+      fingerprint: hash,
+      link: { ...link, incarnationId: 'new-process' }
+    })).toThrow('wear_command_receipt_conflict')
+    first.close()
+    stores.splice(stores.indexOf(first), 1)
+    const recovered = open(dbPath)
+    expect(recovered.getSshLink('binding-a', 'ssh-reply')).toEqual(link)
+    expect(recovered.reserve(command('ssh-reply'))).toMatchObject({
+      disposition: 'replay',
+      record: { state: 'pending' }
+    })
+    expect(recovered.reserve(command('later', 1_000 + 24 * 60 * 60 * 1_000 + 1)).disposition).toBe('started')
+    expect(recovered.getSshLink('binding-a', 'ssh-reply')).toBeNull()
+  })
+
   it('atomically keeps a structured journal link across restart and retention', () => {
     const dbPath = path()
     const first = open(dbPath)

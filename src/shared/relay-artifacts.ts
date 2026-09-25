@@ -41,6 +41,8 @@ export type RelayArtifact = {
 
 /** The bare Windows process-table addon; see docs/reference/windows-process-enumeration.md. */
 export const RELAY_WINDOWS_PROCESS_TREE_FILENAME = 'windows-process-tree.node'
+export const RELAY_WEAR_SQLITE_ABIS = ['v108', 'v115', 'v127'] as const
+export const relayWearSqliteFilename = (abi: string): string => `wear-sqlite-${abi}.node`
 
 export const RELAY_ARTIFACTS: readonly RelayArtifact[] = [
   { filename: 'relay.js' },
@@ -54,7 +56,11 @@ export const RELAY_ARTIFACTS: readonly RelayArtifact[] = [
   // Optional because only a Windows build machine can compile it. Without it the
   // relay reads the process table through a PowerShell scan instead -- slower,
   // but correct, so a relay built anywhere else is still shippable.
-  { filename: RELAY_WINDOWS_PROCESS_TREE_FILENAME, windowsOnly: true, optional: true }
+  { filename: RELAY_WINDOWS_PROCESS_TREE_FILENAME, windowsOnly: true, optional: true },
+  ...RELAY_WEAR_SQLITE_ABIS.map((abi) => ({
+    filename: relayWearSqliteFilename(abi),
+    optional: true
+  }))
 ]
 
 /** Written after the artifacts, so it is never an input to its own hash. */

@@ -8,6 +8,8 @@ import { resolveWindowsGitBashShellPath } from '../main/git-bash'
 import { WINDOWS_GIT_BASH_SHELL } from '../shared/windows-terminal-shell'
 import type { RelayDispatcher, RequestContext } from './dispatcher'
 import { relayPrimaryOwnerPrincipal } from './relay-primary-channel-proof'
+import { openRelayWearSqliteLedger } from './wear-sqlite-ledger'
+import type { WearCommandLedger } from '../main/runtime/wear-command-ledger'
 import {
   resolveDefaultShell,
   resolveDefaultCwd,
@@ -470,6 +472,7 @@ export class PtyHandler {
     string,
     Promise<RelayAgentSessionCreateResult>
   >()
+  private wearLedger: WearCommandLedger | null | undefined
 
   constructor(
     dispatcher: RelayDispatcher,
@@ -962,10 +965,20 @@ export class PtyHandler {
       startupIngressVersion: PTY_STARTUP_INGRESS_VERSION,
       agentSessionClaimVersion: AGENT_SESSION_EXECUTION_OWNER_PROTOCOL_VERSION,
       agentSessionCreateOperationVersion: AGENT_SESSION_CREATE_OPERATION_PROTOCOL_VERSION,
-      wearPromptWriteVersion: 1
+      wearPromptWriteVersion: 1,
+      ...(this.getWearLedger() ? { wearDurableReplyVersion: 1 } : {})
     }))
     this.dispatcher.onRequest('pty.writeIfIncarnation', (p, context) =>
       this.writeIfIncarnation(p, context)
+    )
+    this.dispatcher.onRequest('wear.reply.reserve', (p, context) =>
+      this.reserveWearReply(p, context)
+    )
+    this.dispatcher.onRequest('wear.reply.complete', (p, context) =>
+      this.completeWearReply(p, context)
+    )
+    this.dispatcher.onRequest('wear.reply.receipt', (p, context) =>
+      this.getWearReplyReceipt(p, context)
     )
     this.dispatcher.onRequest('pty.listProcesses', () => this.listProcesses())
     this.dispatcher.onRequest('pty.getDefaultShell', async () => resolveDefaultShell())
@@ -1944,16 +1957,7 @@ export class PtyHandler {
     params: Record<string, unknown>,
     context: RequestContext
   ): Promise<{ written: boolean }> {
-    const identity = context.sessionIdentity
-    if (
-      context.isStale() ||
-      !this.launchVersion ||
-      !identity?.authenticated ||
-      !identity.allowSessionOwner ||
-      identity.principal !== relayPrimaryOwnerPrincipal(this.launchVersion)
-    ) {
-      throw new Error('wear_relay_primary_unproved')
-    }
+    this.assertWearPrimaryOwner(context)
     const { id, incarnationId, data } = params
     if (
       typeof id !== 'string' ||
@@ -1976,6 +1980,119 @@ export class PtyHandler {
       throw new Error('wear_relay_primary_unproved')
     }
     return { written: this.writeToManagedPty(managed, data) }
+  }
+
+  private assertWearPrimaryOwner(context: RequestContext): void {
+    const identity = context.sessionIdentity
+    if (
+      context.isStale() ||
+      !this.launchVersion ||
+      !identity?.authenticated ||
+      !identity.allowSessionOwner ||
+      identity.principal !== relayPrimaryOwnerPrincipal(this.launchVersion)
+    ) {
+      throw new Error('wear_relay_primary_unproved')
+    }
+  }
+
+  private getWearLedger(): WearCommandLedger | null {
+    if (this.wearLedger === undefined) {
+      try {
+        this.wearLedger = openRelayWearSqliteLedger()
+      } catch (error) {
+        process.stderr.write(
+          `[pty-handler] Wear reply ledger unavailable: ${error instanceof Error ? error.message : String(error)}\n`
+        )
+        this.wearLedger = null
+      }
+    }
+    return this.wearLedger
+  }
+
+  private async reserveWearReply(params: Record<string, unknown>, context: RequestContext) {
+    this.assertWearPrimaryOwner(context)
+    const { id, incarnationId, worktreeId, bindingId, requestId, fingerprint, expiresAt } = params
+    if (
+      typeof id !== 'string' ||
+      id.length === 0 ||
+      id.length > 256 ||
+      typeof incarnationId !== 'string' ||
+      incarnationId.length === 0 ||
+      incarnationId.length > 256 ||
+      typeof worktreeId !== 'string' ||
+      typeof bindingId !== 'string' ||
+      typeof requestId !== 'string' ||
+      typeof fingerprint !== 'string' ||
+      typeof expiresAt !== 'number'
+    ) {
+      throw new Error('wear_reply_invalid')
+    }
+    const managed = this.ptys.get(id)
+    if (
+      !managed ||
+      managed.disposed ||
+      managed.incarnationId !== incarnationId ||
+      managed.worktreeId !== worktreeId
+    ) {
+      return { disposition: 'target-changed' as const }
+    }
+    const ledger = this.getWearLedger()
+    if (!ledger) {
+      return { disposition: 'unavailable' as const }
+    }
+    return ledger.reserve({
+      bindingId,
+      requestId,
+      fingerprint,
+      actionExpiresAt: expiresAt,
+      now: Date.now()
+    })
+  }
+
+  private async completeWearReply(params: Record<string, unknown>, context: RequestContext) {
+    this.assertWearPrimaryOwner(context)
+    const { bindingId, requestId, fingerprint, outcome, reason } = params
+    if (
+      typeof bindingId !== 'string' ||
+      typeof requestId !== 'string' ||
+      typeof fingerprint !== 'string' ||
+      (outcome !== 'accepted' && outcome !== 'unknown' && outcome !== 'rejected') ||
+      (reason !== null && typeof reason !== 'string')
+    ) {
+      throw new Error('wear_reply_invalid')
+    }
+    const ledger = this.getWearLedger()
+    if (!ledger) {
+      throw new Error('wear_reply_unavailable')
+    }
+    return ledger.complete({
+      bindingId,
+      requestId,
+      fingerprint,
+      outcome,
+      reason: reason as Parameters<WearCommandLedger['complete']>[0]['reason'],
+      now: Date.now()
+    })
+  }
+
+  private async getWearReplyReceipt(params: Record<string, unknown>, context: RequestContext) {
+    this.assertWearPrimaryOwner(context)
+    const { bindingId, requestId } = params
+    if (
+      typeof bindingId !== 'string' ||
+      typeof requestId !== 'string' ||
+      bindingId.length === 0 ||
+      requestId.length === 0 ||
+      Buffer.byteLength(bindingId, 'utf8') > 256 ||
+      Buffer.byteLength(requestId, 'utf8') > 256
+    ) {
+      throw new Error('wear_reply_invalid')
+    }
+    const ledger = this.getWearLedger()
+    if (!ledger) {
+      throw new Error('wear_reply_unavailable')
+    }
+    return ledger.get(bindingId, requestId)
   }
 
   private resize(params: Record<string, unknown>): void {
@@ -2568,6 +2685,8 @@ export class PtyHandler {
         this.disposePtyForRelayShutdown(managed, waitForPhysicalExit)
       )
     )
+    this.wearLedger?.close()
+    this.wearLedger = null
     const rejected = results.find(
       (result): result is PromiseRejectedResult => result.status === 'rejected'
     )

@@ -10,9 +10,10 @@ import { projectSessionTabsForClient } from './session-tabs-inventory'
 import { encodeWearAction } from '../../../../../wear/packages/wear-companion-contract/src/action'
 import { wearSendAction } from './wear-send-action'
 import { wearLedgerBindingId } from './wear-command-identity'
+import { sendWearSshTerminalReply } from './wear-ssh-terminal-send'
+import { getWearCommandReceipt } from './wear-command-receipt'
 import { folderWorkspaceKey } from '../../../../shared/workspace-scope'
-import { WEAR_STRUCTURED_SEND_RUNTIME_CAPABILITY } from '../../../../shared/protocol-version'
-import { getStructuredAgentSessionHost } from '../../../native-chat/agent-session-wire/structured-agent-session-registry'
+import { parseAppSshPtyId } from '../../../../shared/ssh-pty-id'
 
 const id = z.string().min(1).max(256)
 const target = z
@@ -114,7 +115,7 @@ export const WEAR_TARGET_METHODS: RpcAnyMethod[] = [
       }
       const finish = (
         outcome: 'accepted' | 'rejected' | 'unknown',
-        reason: 'target-changed' | 'unsupported' | null
+        reason: 'target-changed' | 'unsupported' | 'unavailable' | null
       ) => {
         const record = ledger.complete({
           bindingId: ledgerBindingId,
@@ -155,15 +156,38 @@ export const WEAR_TARGET_METHODS: RpcAnyMethod[] = [
         if (!resolved) {
           return finish('rejected', 'target-changed')
         }
+        if (resolved.kind !== 'terminal') {
+          return finish('rejected', 'unsupported')
+        }
+        const remoteRoute = context.runtime.getWearSshTerminalRoute(
+          resolved.terminal,
+          resolved.ptyId,
+          params.target.workspaceId
+        )
+        if (remoteRoute) {
+          const result = await sendWearSshTerminalReply({
+            context,
+            params,
+            resolved,
+            route: remoteRoute,
+            currentTarget,
+            ledger,
+            ledgerBindingId,
+            fingerprint
+          })
+          return finish(result.outcome, result.reason)
+        }
         if (
-          resolved.kind !== 'terminal' ||
           !context.runtime.isLocalOrWslWearTerminalTarget(
             resolved.terminal,
             resolved.ptyId,
             params.target.workspaceId
           )
         ) {
-          return finish('rejected', 'unsupported')
+          return finish(
+            'rejected',
+            parseAppSshPtyId(resolved.ptyId) ? 'unavailable' : 'unsupported'
+          )
         }
         const wslDistro = context.runtime.getWearWslTerminalDistro(
           resolved.terminal,
@@ -229,60 +253,6 @@ export const WEAR_TARGET_METHODS: RpcAnyMethod[] = [
   defineMethod({
     name: 'wear.command.receipt',
     params: z.object({ bindingId: id, requestId: id }).strict(),
-    handler: async (params, context) => {
-      const pairedDeviceId = context.pairedDeviceId
-      if (
-        context.clientKind !== 'mobile' ||
-        !pairedDeviceId ||
-        !context.clientCapabilities?.some(
-          (capability) =>
-            capability === WEAR_TERMINAL_SEND_RUNTIME_CAPABILITY ||
-            capability === WEAR_STRUCTURED_SEND_RUNTIME_CAPABILITY
-        )
-      ) {
-        throw new Error('wear_terminal_send_unsupported')
-      }
-      const bindingId = wearLedgerBindingId(pairedDeviceId, params.bindingId)
-      const ledger = context.runtime.getWearCommandLedger()
-      let record = ledger.get(bindingId, params.requestId)
-      const link =
-        record && (record.state === 'pending' || record.state === 'unknown')
-          ? ledger.getStructuredLink(bindingId, params.requestId)
-          : null
-      if (link) {
-        try {
-          await context.runtime.restoreStructuredAgentSessionTabs()
-          const verdict = getStructuredAgentSessionHost()?.wearSubmissionOutcome(
-            link.sessionId,
-            link.clientOperationId,
-            link.sendFingerprint
-          )
-          if (verdict?.state === 'accepted' || verdict?.state === 'rejected') {
-            record = ledger.complete({
-              bindingId,
-              requestId: params.requestId,
-              fingerprint: record!.fingerprint,
-              outcome: verdict.state,
-              reason:
-                verdict.state === 'rejected'
-                  ? verdict.reason === 'wear_target_changed'
-                    ? 'target-changed'
-                    : 'unavailable'
-                  : null,
-              now: Date.now()
-            })
-          }
-        } catch {
-          // Missing host evidence leaves the durable outcome unknown.
-        }
-      }
-      return record
-        ? {
-            outcome: record.state === 'pending' ? 'unknown' : record.state,
-            reason: record.reason,
-            actionHash: record.fingerprint
-          }
-        : null
-    }
+    handler: getWearCommandReceipt
   })
 ]

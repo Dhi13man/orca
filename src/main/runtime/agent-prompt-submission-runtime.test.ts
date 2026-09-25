@@ -73,6 +73,26 @@ describe('agent prompt submission runtime', () => {
     expect(writes.filter((data) => data === '\r')).toHaveLength(1)
   })
 
+  it('routes both paste and Enter through the guarded asynchronous host writer', async () => {
+    vi.useFakeTimers()
+    const { runtime, handle, writes } = await createPromptRuntime(() => undefined)
+    const hostWrites: string[] = []
+    const submission = runtime.sendTerminalAgentPrompt(handle, 'review this', {
+      writeChunk: async (_ptyId, data) => {
+        hostWrites.push(data)
+        if (data === '\r') {
+          runtime.onPtyData('pty-prompt', '\x1b]0;Codex working\x07', Date.now())
+        }
+        return true
+      }
+    })
+    await vi.runAllTimersAsync()
+    await expect(submission).resolves.toMatchObject({ accepted: true })
+    expect(writes).toEqual([])
+    expect(hostWrites.some((data) => data.includes('review this'))).toBe(true)
+    expect(hostWrites.filter((data) => data === '\r')).toHaveLength(1)
+  })
+
   it('accepts a working-to-idle cycle completed before the first poll', async () => {
     vi.useFakeTimers()
     const { runtime, handle, writes } = await createPromptRuntime((runtime, data) => {

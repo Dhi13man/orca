@@ -24,6 +24,9 @@ const REPO_ROOT = resolve(import.meta.dirname, '..', '..', '..')
  * anything not listed must appear in RELAY_NATIVE_DEPS.
  */
 const DEGRADES_WITHOUT_INSTALL: Record<string, string> = {
+  'better-sqlite3':
+    'The JS adapter is bundled; build-relay stages hash-verified ABI-specific native addons. ' +
+    'Without a matching addon, Wear reply capability is omitted and remote sends fail closed.',
   '@vscode/windows-process-tree':
     'Windows-only, and both ways of installing it fail. A normal install rebuilds ' +
     'from source because the tarball carries a binding.gyp, and that build fails ' +
