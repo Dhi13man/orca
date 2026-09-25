@@ -192,13 +192,13 @@ export function startWearHostFeed(args: {
     await Promise.all(
       [...active].map(async ([hostId, entry]) => {
         const client = entry.client
-        if (!client || client.getState() !== 'connected') {
+        if (!client) {
           return
         }
         try {
           const response = await client.sendRequest('accounts.refreshIfStale', null, {
             timeoutMs: 15_000,
-            failWhenDisconnected: true
+            budgetSpansConnect: true
           })
           if (response.ok && !stopped && active.get(hostId) === entry && entry.client === client) {
             accounts.set(hostId, decodeAccountsSnapshot(response.result))

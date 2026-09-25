@@ -2071,3 +2071,17 @@ agents remain the validation targets; no disposable profile or sign-in is
 required. Remaining acceptance is real conversation and usage values, one
 exact idle-session reply, host-originated notification delivery, SSH durable
 reply support, and physical phone/watch installation and use.
+
+The next Usage refresh checkpoint lets an already-acquired paired host finish
+connecting inside the existing 15-second RPC budget before returning a fresh
+reading. The prior connected-only gate skipped that attempt during handshake.
+Focused mobile tests (29), mobile typecheck, scoped lint/format, and independent
+source review pass. The updated x86_64 phone release built offline, matched
+the emulator's installed signing certificate, installed in place, and launched.
+That emulator's host still rejects authentication, so it cannot prove a real
+usage value. The restored ARM64 phone release built offline with bundled JS,
+only `arm64-v8a` native code, package `com.stably.orca.mobile` versionCode 15,
+and the same test certificate; SHA-256 is
+`EBCE9815B0A86CD8905784A0FFEE8095D3870A607078684B9252F20E0E02DB60`.
+Physical installation, live usage, and the other acceptance gaps above remain
+open.

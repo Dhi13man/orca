@@ -105,7 +105,7 @@ afterEach(() => {
 })
 
 describe('Wear host feed', () => {
-  it('refreshes connected host usage without forcing old hosts or losing the cached catalog', async () => {
+  it('refreshes paired host usage without forcing old hosts or losing the cached catalog', async () => {
     const h = harness()
     const account = {
       claude: { accounts: [], activeAccountId: null },
@@ -142,7 +142,7 @@ describe('Wear host feed', () => {
     await refreshUsage()
     expect(sendRequest).toHaveBeenCalledExactlyOnceWith('accounts.refreshIfStale', null, {
       timeoutMs: 15_000,
-      failWhenDisconnected: true
+      budgetSpansConnect: true
     })
     expect(h.snapshots.at(-1)?.accounts.get('a')?.rateLimits.claude).toBeNull()
     expect(h.snapshots.at(-1)?.accounts.has('b')).toBe(false)
@@ -152,6 +152,43 @@ describe('Wear host feed', () => {
     await refreshUsage()
     expect(onError).toHaveBeenCalledWith(new Error('Wear usage refresh failed: forbidden'))
     expect(h.snapshots.at(-1)?.accounts.has('b')).toBe(false)
+    stop()
+  })
+
+  it('attempts a bounded usage read while a paired host is connecting', async () => {
+    const h = harness()
+    const sendRequest = vi.fn().mockResolvedValue({
+      ok: true,
+      result: {
+        claude: { accounts: [], activeAccountId: null },
+        codex: { accounts: [], activeAccountId: null },
+        rateLimits: {
+          claude: null,
+          codex: null,
+          inactiveClaudeAccounts: [],
+          inactiveCodexAccounts: []
+        }
+      }
+    })
+    h.clients.set('a', { getState: () => 'connecting', sendRequest } as unknown as RpcClient)
+    let refreshUsage!: () => Promise<void>
+    const stop = startWearHostFeed({
+      owner: h.owner,
+      coordinator: h.coordinator,
+      loadCatalog: async () => [host('a')],
+      onUpdate: (snapshot) => h.snapshots.push(snapshot),
+      onError: vi.fn(),
+      onRefreshReady: (_refresh, usage) => {
+        refreshUsage = usage
+      }
+    })
+    await flush()
+    await refreshUsage()
+    expect(sendRequest).toHaveBeenCalledExactlyOnceWith('accounts.refreshIfStale', null, {
+      timeoutMs: 15_000,
+      budgetSpansConnect: true
+    })
+    expect(h.snapshots.at(-1)?.accounts.has('a')).toBe(true)
     stop()
   })
 
