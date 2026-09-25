@@ -25145,19 +25145,24 @@ describe('OrcaRuntimeService', () => {
     }
   )
 
-  it('keeps a recognized non-target agent on legacy CLI prompt delivery', async () => {
-    const runtime = new OrcaRuntimeService(store)
-    runtime.setPtyController({
-      write: () => true,
-      kill: () => true,
-      getForegroundProcess: async () => 'gemini'
-    })
-    syncSinglePty(runtime, 'pty-1', { paneTitle: 'bash' })
-    const [terminal] = (await runtime.listTerminals()).terminals
+  it.each(['gemini', 'grok', 'openclaude'] as const)(
+    'keeps %s outside settled prompt delivery without a safe composer contract',
+    async (agent) => {
+      const runtime = new OrcaRuntimeService(store)
+      runtime.setPtyController({
+        write: () => true,
+        kill: () => true,
+        getForegroundProcess: async () => agent
+      })
+      syncSinglePty(runtime, 'pty-1', { paneTitle: 'bash' })
+      const [terminal] = (await runtime.listTerminals()).terminals
 
-    await expect(runtime.isTerminalRunningAgent(terminal.handle)).resolves.toBe(true)
-    await expect(runtime.isTerminalRunningSettledPromptAgent(terminal.handle)).resolves.toBe(false)
-  })
+      await expect(runtime.isTerminalRunningAgent(terminal.handle)).resolves.toBe(true)
+      await expect(runtime.isTerminalRunningSettledPromptAgent(terminal.handle)).resolves.toBe(
+        false
+      )
+    }
+  )
 
   it('keeps stale Codex launch identity on legacy delivery after the shell returns', async () => {
     const runtime = new OrcaRuntimeService(store)

@@ -2123,7 +2123,15 @@ render wait, single Enter, and working-effect acknowledgement. Those tests
 simulate terminal output, so a real OMP reply still requires an exactly
 identified idle session and a harmless bounded acknowledgement. Busy sessions
 remain untouched. Grok and OpenClaude replies remain read-only until their
-settled-prompt behavior is proved.
+exact composer, target, and submitted-text semantics are proved. Grok 1.0.41
+is installed locally; its bundled keyboard guide and the [upstream guide](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/03-keyboard-shortcuts.md)
+show Enter changes in multiline or active-turn modes. [Upstream paste code](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/src/app/agent_view/paste.rs)
+can treat an empty-composer `! ` paste as Bash input.
+[OpenClaude's current upstream paste path](https://github.com/Gitlawb/openclaude/blob/5cd11336caeaf2023ca1e02e5975c761cfc585fe/src/components/PromptInput/PromptInput.tsx#L1249-L1277)
+also switches `!` text to Bash, while its [submit path can route to a teammate or accept a suggestion](https://github.com/Gitlawb/openclaude/blob/5cd11336caeaf2023ca1e02e5975c761cfc585fe/src/components/PromptInput/PromptInput.tsx#L1017-L1152).
+No OpenClaude binary is installed in the checked local PATH, so its deployed
+version remains unknown. Foreground identity and a working hook cannot prove
+an exact conversational reply for either provider; no live prompt was sent.
 Structured sessions are implemented only for native local Codex. SSH terminal
 send still lacks a host-owned durable receipt store; the Node 18 relay cannot
 use the current `node:sqlite` ledger, and the existing Windows file writer does
