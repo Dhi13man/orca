@@ -23,6 +23,167 @@ import { parsePairingCode } from './pairing'
 import { requestRuntime } from './runtime-rpc-transport'
 import { redeemWearManualCode } from './manual-enrollment'
 
+function createWearEmulatorDriver(androidHome: string, serial: string) {
+  const adb = join(androidHome, 'platform-tools', process.platform === 'win32' ? 'adb.exe' : 'adb')
+  const shell = async (...args: string[]): Promise<string> => {
+    const result = await runProcess({
+      program: adb,
+      args: ['-s', serial, 'shell', ...args],
+      timeoutMs: 10_000
+    })
+    if (result.code !== 0) {
+      throw new Error(`Wear emulator command failed: ${args.slice(0, 2).join(' ')}`)
+    }
+    return result.stdout
+  }
+  const readScreen = async (): Promise<string> => {
+    await shell('uiautomator', 'dump', '/sdcard/orca-direct-ui.xml')
+    return shell('cat', '/sdcard/orca-direct-ui.xml')
+  }
+  const swipeUp = async (): Promise<void> => {
+    await shell('input', 'swipe', '228', '396', '220', '250', '180')
+  }
+  const tap = async (label: string): Promise<void> => {
+    const screen = await readScreen()
+    const node = screen.split('<node').find((part) => part.includes(`content-desc="${label}"`))
+    const bounds = node?.match(/bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/)
+    if (!bounds) {
+      throw new Error(`Wear emulator control missing: ${label}`)
+    }
+    if (node?.includes('enabled="false"')) {
+      throw new Error(`Wear emulator control disabled: ${label}`)
+    }
+    await shell(
+      'input',
+      'tap',
+      String(Math.floor((Number(bounds[1]) + Number(bounds[3])) / 2)),
+      String(Math.floor((Number(bounds[2]) + Number(bounds[4])) / 2))
+    )
+  }
+  const reach = async (label: string): Promise<void> => {
+    for (let attempt = 0; attempt < 25; attempt++) {
+      const node = (await readScreen())
+        .split('<node')
+        .find((part) => part.includes(`content-desc="${label}"`))
+      const bounds = node?.match(/bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/)
+      if (bounds && Number(bounds[4]) - Number(bounds[2]) >= 48 && Number(bounds[2]) < 400) {
+        return
+      }
+      await swipeUp()
+    }
+    throw new Error(`Wear emulator control unreachable: ${label}`)
+  }
+  const reachAddHost = async (): Promise<void> => {
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const screen = await readScreen()
+      const node = screen
+        .split('<node')
+        .find((part) => part.includes('content-desc="Add Orca host"'))
+      const bounds = node?.match(/bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/)
+      if (bounds && Number(bounds[4]) - Number(bounds[2]) >= 48) {
+        return
+      }
+      await shell('input', 'swipe', '228', '396', '220', '80', '180')
+    }
+    throw new Error('Wear emulator Add Orca host control unreachable')
+  }
+  const typeOnKeyboard = async (value: string): Promise<void> => {
+    const switchMode = async (x: string, y: string): Promise<void> => {
+      await shell('input', 'tap', x, y)
+      await new Promise((resolve) => setTimeout(resolve, 120))
+    }
+    const alpha: Record<string, [number, number]> = {
+      a: [45, 282],
+      b: [270, 350],
+      c: [177, 350],
+      d: [135, 282],
+      e: [125, 217],
+      f: [179, 282]
+    }
+    const digits: Record<string, [number, number]> = {
+      '1': [60, 200],
+      '2': [145, 200],
+      '3': [228, 200],
+      '4': [310, 200],
+      '5': [397, 200],
+      '6': [60, 270],
+      '7': [145, 270],
+      '8': [228, 270],
+      '9': [310, 270],
+      '0': [397, 270],
+      '.': [365, 338]
+    }
+    let mode: 'alpha' | 'numeric' | 'symbols' = 'alpha'
+    for (const character of value.toLowerCase()) {
+      if (character === ':') {
+        if (mode === 'alpha') {
+          await switchMode('220', '132')
+        }
+        if (mode !== 'symbols') {
+          await switchMode('100', '338')
+        }
+        await shell('input', 'tap', '205', '270')
+        mode = 'symbols'
+        continue
+      }
+      const position = alpha[character] ?? digits[character]
+      if (!position) {
+        throw new Error('Wear emulator keyboard character unsupported')
+      }
+      const nextMode = alpha[character] ? 'alpha' : 'numeric'
+      if (mode !== nextMode) {
+        if (mode === 'symbols') {
+          await switchMode('100', '338')
+          mode = 'numeric'
+        }
+        if (mode !== nextMode) {
+          await switchMode('220', '132')
+          mode = nextMode
+        }
+      }
+      await shell('input', 'tap', String(position[0]), String(position[1]))
+    }
+  }
+  const enter = async (label: string, value: string): Promise<void> => {
+    await reach(label)
+    await tap(label)
+    await reach('Wear text value')
+    await tap('Wear text value')
+    await new Promise((resolve) => setTimeout(resolve, 800))
+    await typeOnKeyboard(value)
+    await shell('input', 'tap', '375', '132')
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    if ((await readScreen()).includes('content-desc="Use text"')) {
+      await tap('Use text')
+    }
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const screen = await readScreen()
+      if (
+        (label === 'Enter Orca endpoint' && screen.includes(`text="${value}"`)) ||
+        (label === 'Enter watch code' && screen.includes('Code entered'))
+      ) {
+        return
+      }
+      await swipeUp()
+    }
+    throw new Error(`Wear keyboard did not commit ${label}`)
+  }
+  return {
+    shell,
+    readScreen,
+    async pair(endpoint: string, code: string): Promise<void> {
+      await shell('am', 'force-stop', 'com.stably.orca.mobile')
+      await shell('am', 'start', '-n', 'com.stably.orca.mobile/.MainActivity')
+      await reachAddHost()
+      await tap('Add Orca host')
+      await enter('Enter Orca endpoint', endpoint.replace(/^ws:\/\//, ''))
+      await enter('Enter watch code', code.replace(/-/g, ''))
+      await reach('Connect')
+      await tap('Connect')
+    }
+  }
+}
+
 it(
   'pairs a Watch client to a real runtime WebSocket and reads its dashboard',
   async () => {
@@ -188,6 +349,7 @@ it(
       })
       expect(pendingUsage.usageRefreshPending).toBe(true)
       expect(pendingUsage.warnings).toContain('Usage is refreshing; shown values may be stale')
+      let verifyEmulatorRevocation: (() => Promise<void>) | undefined
       const serial = process.env.ORCA_WEAR_EMULATOR_SERIAL
       if (serial) {
         expect(serial).toMatch(/^emulator-\d+$/)
@@ -195,57 +357,26 @@ it(
         if (!androidHome) {
           throw new Error('ANDROID_HOME is required for emulator acceptance')
         }
-        const adb = join(
-          androidHome,
-          'platform-tools',
-          process.platform === 'win32' ? 'adb.exe' : 'adb'
-        )
+        const emulator = createWearEmulatorDriver(androidHome, serial)
         const emulatorOffer = server.createPairingOffer({
           address: '10.0.2.2',
           scope: 'wear',
-          name: 'Watch emulator'
+          name: 'Watch emulator',
+          rotate: true
         })
         if (!emulatorOffer.available) {
           throw new Error('No emulator Wear pairing offer')
         }
-        const start = await runProcess({
-          program: adb,
-          args: [
-            '-s',
-            serial,
-            'shell',
-            'am',
-            'start',
-            '-a',
-            'android.intent.action.VIEW',
-            '-d',
-            emulatorOffer.pairingUrl,
-            '-p',
-            'com.stably.orca.mobile'
-          ],
-          timeoutMs: 10_000
-        })
-        expect(start.code).toBe(0)
-        const readScreen = async (): Promise<string> => {
-          const dumped = await runProcess({
-            program: adb,
-            args: ['-s', serial, 'shell', 'uiautomator', 'dump', '/sdcard/orca-direct-ui.xml'],
-            timeoutMs: 10_000
-          })
-          expect(dumped.code).toBe(0)
-          const xml = await runProcess({
-            program: adb,
-            args: ['-s', serial, 'shell', 'cat', '/sdcard/orca-direct-ui.xml'],
-            timeoutMs: 10_000
-          })
-          return xml.stdout
-        }
+        const manual = server.beginWearManualEnrollment()
+        expect(manual).not.toBeNull()
+        await emulator.pair(emulatorOffer.endpoint, manual!.code)
+        const expectedHost = `10.0.2.2:${new URL(emulatorOffer.endpoint).port}`
         const waitForFleet = async (): Promise<string> => {
           let screen = ''
           for (let attempt = 0; attempt < 8; attempt++) {
             await new Promise((resolve) => setTimeout(resolve, 1_000))
-            screen = await readScreen()
-            if (screen.includes('Attention') && screen.includes('10.0.2.2:')) {
+            screen = await emulator.readScreen()
+            if (screen.includes('Attention') && screen.includes(expectedHost)) {
               break
             }
           }
@@ -253,24 +384,38 @@ it(
         }
         const screen = await waitForFleet()
         expect(screen).toContain('Attention')
-        expect(screen).toContain('10.0.2.2:')
-        const stopped = await runProcess({
-          program: adb,
-          args: ['-s', serial, 'shell', 'am', 'force-stop', 'com.stably.orca.mobile'],
-          timeoutMs: 10_000
-        })
-        expect(stopped.code).toBe(0)
-        const relaunched = await runProcess({
-          program: adb,
-          args: ['-s', serial, 'shell', 'monkey', '-p', 'com.stably.orca.mobile', '1'],
-          timeoutMs: 10_000
-        })
-        expect(relaunched.code).toBe(0)
+        expect(screen).toContain(expectedHost)
+        console.info('wear-ui: manual enrollment reached exact host')
+        await emulator.shell('am', 'force-stop', 'com.stably.orca.mobile')
+        await emulator.shell('am', 'start', '-n', 'com.stably.orca.mobile/.MainActivity')
         const restored = await waitForFleet()
         expect(restored).toContain('Attention')
-        expect(restored).toContain('10.0.2.2:')
+        expect(restored).toContain(expectedHost)
         expect(restored).toContain('Agent task complete')
         expect(restored).not.toContain('secret-body')
+        console.info('wear-ui: process restart restored host and redacted event')
+        verifyEmulatorRevocation = async () => {
+          expect(server.revokeRuntimeAccess(emulatorOffer.deviceId)).toBe(true)
+          const revokedOffer = parsePairingCode(emulatorOffer.pairingUrl)
+          await expect(
+            fetchRuntimeDashboard(revokedOffer!, {
+              createSocket: (endpoint) => new WebSocket(endpoint) as unknown as OrcaSocket
+            })
+          ).rejects.toThrow()
+          await emulator.shell('am', 'force-stop', 'com.stably.orca.mobile')
+          await emulator.shell('am', 'start', '-n', 'com.stably.orca.mobile/.MainActivity')
+          let revokedScreen = ''
+          for (let attempt = 0; attempt < 15; attempt++) {
+            revokedScreen = await emulator.readScreen()
+            if (revokedScreen.includes(expectedHost) && revokedScreen.includes('Unavailable')) {
+              break
+            }
+            await emulator.shell('input', 'swipe', '228', '396', '220', '80', '180')
+          }
+          expect(revokedScreen).toContain(expectedHost)
+          expect(revokedScreen).toContain('Unavailable')
+          console.info('wear-ui: revoked host shown unavailable')
+        }
       }
       runtime.dispatchMobileNotification({ type: 'dismiss', notificationId: 'event-a' })
       const afterDismissal = await requestRuntime(
@@ -282,9 +427,10 @@ it(
         ok: true,
         result: { events: [] }
       })
+      await verifyEmulatorRevocation?.()
     } finally {
       await server.stop()
     }
   },
-  process.env.ORCA_WEAR_EMULATOR_SERIAL ? 90_000 : 15_000
+  process.env.ORCA_WEAR_EMULATOR_SERIAL ? 300_000 : 15_000
 )

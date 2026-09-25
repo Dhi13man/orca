@@ -17,6 +17,7 @@ import { refreshFleet, type FleetHost } from './src/orca/fleet-dashboard'
 import { loadPairings, removePairing, savePairing } from './src/orca/pairing-store'
 import { parsePairingCode, type PairingOffer } from './src/orca/pairing'
 import { redeemWearManualCode } from './src/orca/manual-enrollment'
+import { wearDataLayer } from '@orca/expo-wear-data-layer'
 import type { WearAgentSession } from './src/orca/runtime-dashboard'
 import { WearButton } from './src/wear-button'
 import { wearColors } from './src/wear-theme'
@@ -118,6 +119,22 @@ export default function App() {
       setBusy(false)
     }
   }, [acceptOffer, manualEndpoint, manualCode])
+
+  const enterManualText = async (label: string, save: (value: string) => void) => {
+    if (!wearDataLayer) {
+      setError('Watch text input is unavailable')
+      return
+    }
+    try {
+      const value = await wearDataLayer.requestText(label)
+      if (value !== null) {
+        save(value.trim())
+        setError('')
+      }
+    } catch {
+      setError('Watch text input is unavailable')
+    }
+  }
 
   useEffect(() => {
     let active = true
@@ -259,27 +276,18 @@ export default function App() {
               />
             ) : (
               <>
-                <TextInput
-                  accessibilityLabel="Orca endpoint"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  onChangeText={setManualEndpoint}
-                  placeholder="192.168.1.2:6768"
-                  placeholderTextColor={wearColors.muted}
-                  style={[styles.input, styles.shortInput]}
-                  value={manualEndpoint}
+                <WearButton
+                  label="Enter Orca endpoint"
+                  onPress={() => void enterManualText('Orca endpoint', setManualEndpoint)}
                 />
-                <TextInput
-                  accessibilityLabel="Watch pairing code"
-                  autoCapitalize="characters"
-                  autoCorrect={false}
-                  maxLength={32}
-                  onChangeText={setManualCode}
-                  placeholder="XXXXX-XXXXX-XXXXX-XXXXX"
-                  placeholderTextColor={wearColors.muted}
-                  style={[styles.input, styles.shortInput]}
-                  value={manualCode}
+                <Text style={styles.description} accessibilityLabel="Orca endpoint value">
+                  {manualEndpoint || '192.168.1.2:6768'}
+                </Text>
+                <WearButton
+                  label="Enter watch code"
+                  onPress={() => void enterManualText('Watch pairing code', setManualCode)}
                 />
+                {manualCode ? <Text style={styles.description}>Code entered</Text> : null}
               </>
             )}
             {error ? (
@@ -346,6 +354,5 @@ const styles = StyleSheet.create({
     backgroundColor: wearColors.raised,
     fontSize: 12
   },
-  shortInput: { minHeight: 48 },
   error: { marginTop: 10, color: wearColors.danger, fontSize: 12, textAlign: 'center' }
 })

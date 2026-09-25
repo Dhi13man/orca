@@ -1,13 +1,17 @@
 package expo.modules.orcawear
 
+import android.app.Activity
+import android.content.Intent
 import com.google.android.gms.wearable.Wearable
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
 import expo.modules.kotlin.Promise
+import expo.modules.kotlin.functions.Queues
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
 class ExpoWearDataLayerModule : Module() {
+    private var pendingTextPromise: Promise? = null
     private val observer: (Map<String, Any>) -> Unit = { sendEvent("onState", it) }
     private val dashboardObserver: (String) -> Unit = { sendEvent("onDashboardChanged", mapOf("bindingId" to it)) }
     private val actionObserver: (String, String) -> Unit = { bindingId, requestId ->
@@ -36,6 +40,8 @@ class ExpoWearDataLayerModule : Module() {
             observedOwner = null
         }
         OnDestroy {
+            pendingTextPromise?.resolve(null)
+            pendingTextPromise = null
             observedOwner?.stopObserving(observer)
             observedOwner?.stopObservingDashboard(dashboardObserver)
             observedOwner?.stopObservingAction(actionObserver)
@@ -51,6 +57,32 @@ class ExpoWearDataLayerModule : Module() {
                 FirebaseMessaging.getInstance().token
                     .addOnSuccessListener { token -> promise.resolve(token) }
                     .addOnFailureListener { promise.reject("E_WEAR_PUSH", "Push token unavailable", null) }
+            }
+        }
+        AsyncFunction("requestText") { label: String, promise: Promise ->
+            val activity = appContext.currentActivity
+            if (activity == null || pendingTextPromise != null) {
+                promise.reject("E_WEAR_TEXT", "Watch text input is unavailable", null)
+                return@AsyncFunction
+            }
+            val intent = Intent(activity, WearTextEntryActivity::class.java)
+                .putExtra("label", label)
+            pendingTextPromise = promise
+            try {
+                activity.startActivityForResult(intent, 7251)
+            } catch (_: Exception) {
+                pendingTextPromise = null
+                promise.reject("E_WEAR_TEXT", "Watch text input is unavailable", null)
+            }
+        }.runOnQueue(Queues.MAIN)
+        OnActivityResult { _, payload ->
+            if (payload.requestCode == 7251) {
+                val promise = pendingTextPromise
+                pendingTextPromise = null
+                val value = if (payload.resultCode == Activity.RESULT_OK)
+                    payload.data?.getStringExtra("text")
+                else null
+                promise?.resolve(value)
             }
         }
         Function("isBackgroundRefreshActive") { runId: Int ->
