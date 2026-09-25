@@ -12,6 +12,8 @@ export type ServePairingReadiness =
       webClientUrl: string | null
       scope: 'runtime' | 'mobile' | 'wear'
       qr: string | null
+      manualCode?: string
+      manualCodeExpiresAt?: number
     }
   | {
       available: false
@@ -117,6 +119,10 @@ function renderHumanReadiness(readiness: ServeReadiness): string {
     }
     if (readiness.pairing.scope === 'mobile' && readiness.pairing.qr) {
       lines.push(`Mobile pairing QR:\n${readiness.pairing.qr}`)
+    }
+    if (readiness.pairing.scope === 'wear' && readiness.pairing.manualCode) {
+      lines.push(`Watch endpoint: ${readiness.pairing.endpoint}`)
+      lines.push(`Watch code (5 minutes): ${readiness.pairing.manualCode}`)
     }
     lines.push(`Pairing URL: ${readiness.pairing.url}`)
   } else {

@@ -59,6 +59,11 @@ type MobileSocketWiringOptions = {
   onReady?: (socket: AuthenticatedMobileSocket) => void
   // Why: stale keys and missing registry entries both fail before RPC can explain the re-pair action.
   onUnpairedDeviceAuthFailure?: (metadata: MobileSocketTransportMetadata) => void
+  wearEnrollmentProof?: (clientPublicKeyB64: string) => {
+    serverPublicKeyB64: string
+    proofB64: string
+  } | null
+  consumeWearEnrollment?: (code: string) => string | null
 }
 
 function toAuthenticatedDevice(device: DeviceEntry): E2EEAuthenticatedDevice {
@@ -78,6 +83,8 @@ export class MobileSocketWiring {
   private readonly onClose: MobileSocketWiringOptions['onClose']
   private readonly onReady: MobileSocketWiringOptions['onReady']
   private readonly onUnpairedDeviceAuthFailure: MobileSocketWiringOptions['onUnpairedDeviceAuthFailure']
+  private readonly wearEnrollmentProof: MobileSocketWiringOptions['wearEnrollmentProof']
+  private readonly consumeWearEnrollment: MobileSocketWiringOptions['consumeWearEnrollment']
   private readonly channels = new Map<WebSocket, E2EEChannel>()
   private readonly connectionIds = new Map<WebSocket, string>()
   private readonly authenticatedSockets = new Map<WebSocket, AuthenticatedMobileSocket>()
@@ -93,6 +100,8 @@ export class MobileSocketWiring {
     this.onClose = options.onClose
     this.onReady = options.onReady
     this.onUnpairedDeviceAuthFailure = options.onUnpairedDeviceAuthFailure
+    this.wearEnrollmentProof = options.wearEnrollmentProof
+    this.consumeWearEnrollment = options.consumeWearEnrollment
   }
 
   attachTransport(
@@ -154,9 +163,15 @@ export class MobileSocketWiring {
             : { transport: 'direct' },
         requireV2: metadata.transport === 'relay',
         outboundMemoryBudget: this.outboundMemoryBudget,
+        wearEnrollmentProof: metadata.transport === 'direct' ? this.wearEnrollmentProof : undefined,
         resolveAuthenticatedDevice: (token) => {
+          const enrolledToken =
+            metadata.transport === 'direct' && token.startsWith('wear-code:')
+              ? this.consumeWearEnrollment?.(token.slice('wear-code:'.length))
+              : null
           const device =
-            this.deviceRegistry.validateToken(token) ?? this.wearDeviceRegistry?.validateToken(token)
+            this.deviceRegistry.validateToken(token) ??
+            this.wearDeviceRegistry?.validateToken(enrolledToken ?? token)
           if (!device) {
             return null
           }
@@ -198,9 +213,10 @@ export class MobileSocketWiring {
           this.authenticatedSockets.set(ws, socket)
           transport.setClientId(ws, device.deviceToken)
           // Why: deferred — the client's e2ee_authenticated must not wait on a secure-file rewrite.
-          ;(device.scope === 'wear' ? this.wearDeviceRegistry : this.deviceRegistry)?.updateLastSeenDeferred(
-            device.deviceId
-          )
+          ;(device.scope === 'wear'
+            ? this.wearDeviceRegistry
+            : this.deviceRegistry
+          )?.updateLastSeenDeferred(device.deviceId)
           this.onReady?.(socket)
         },
         onError: (code, reason) => {

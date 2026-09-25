@@ -21,6 +21,7 @@ import { OrcaRuntimeRpcServer } from '../../../src/main/runtime/runtime-rpc'
 import { fetchRuntimeDashboard, type OrcaSocket } from './direct-orca-client'
 import { parsePairingCode } from './pairing'
 import { requestRuntime } from './runtime-rpc-transport'
+import { redeemWearManualCode } from './manual-enrollment'
 
 it(
   'pairs a Watch client to a real runtime WebSocket and reads its dashboard',
@@ -118,6 +119,28 @@ it(
       }
       const parsed = parsePairingCode(offer.pairingUrl)
       expect(parsed).not.toBeNull()
+      const manual = server.beginWearManualEnrollment()
+      expect(manual).not.toBeNull()
+      await expect(
+        redeemWearManualCode(
+          offer.endpoint,
+          '00000-00000-00000-00000',
+          (endpoint) => new WebSocket(endpoint) as unknown as OrcaSocket
+        )
+      ).rejects.toThrow('Watch code does not match this Orca host')
+      const manualOffer = await redeemWearManualCode(
+        offer.endpoint,
+        manual!.code,
+        (endpoint) => new WebSocket(endpoint) as unknown as OrcaSocket
+      )
+      expect(manualOffer).toEqual(parsed)
+      await expect(
+        redeemWearManualCode(
+          offer.endpoint,
+          manual!.code,
+          (endpoint) => new WebSocket(endpoint) as unknown as OrcaSocket
+        )
+      ).rejects.toThrow('Orca closed watch pairing')
       const dashboard = await fetchRuntimeDashboard(parsed!, {
         createSocket: (endpoint) => new WebSocket(endpoint) as unknown as OrcaSocket
       })

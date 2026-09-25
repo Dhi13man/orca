@@ -29,6 +29,7 @@ export function authenticateMobileE2EE<TDevice extends { deviceToken: string }>(
   plaintext: string
   v2Session: DesktopMobileE2EEV2Session | null
   resolveDevice: (token: string) => TDevice | null
+  acceptEnrollmentCode?: (token: string, device: TDevice) => boolean
 }):
   | { ok: true; device: TDevice; auth: MobileE2EEAuth }
   | { ok: false; code: 'bad_auth' | 'unauthorized' } {
@@ -46,7 +47,9 @@ export function authenticateMobileE2EE<TDevice extends { deviceToken: string }>(
     return { ok: false, code: 'bad_auth' }
   }
   const device = args.resolveDevice(auth.deviceToken)
-  return device?.deviceToken === auth.deviceToken
+  return device &&
+    (device.deviceToken === auth.deviceToken ||
+      args.acceptEnrollmentCode?.(auth.deviceToken, device))
     ? { ok: true, device, auth }
     : { ok: false, code: 'unauthorized' }
 }
@@ -57,4 +60,22 @@ export function decodeMobileE2EEPublicKey(value: string): Uint8Array | null {
   } catch {
     return null
   }
+}
+
+export function authenticatedE2EEControl(
+  v2Session: DesktopMobileE2EEV2Session | null,
+  wearEnrollmentRequested: boolean,
+  device: { deviceId: string; deviceToken: string; scope: string }
+): Record<string, unknown> {
+  if (v2Session) {
+    return { type: 'e2ee_authenticated', v: 2, transcriptHashB64: v2Session.transcriptHashB64 }
+  }
+  return wearEnrollmentRequested
+    ? {
+        type: 'e2ee_authenticated',
+        deviceToken: device.deviceToken,
+        pairedDeviceId: device.deviceId,
+        scope: device.scope
+      }
+    : { type: 'e2ee_authenticated' }
 }

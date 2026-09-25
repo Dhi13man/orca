@@ -50,6 +50,7 @@ import type {
 } from '../../shared/mobile-relay-credential-contract'
 import { encodePairingOffer, PAIRING_OFFER_VERSION } from '../../shared/pairing'
 import { resolveAdvertisedPairingEndpoint } from './pairing-endpoint'
+import { WearManualEnrollment } from './wear-manual-enrollment'
 import type { TerminalStreamFrame } from '../../shared/terminal-stream-protocol'
 import { RuntimeBinaryMessageRouter } from './runtime-binary-message-router'
 
@@ -574,6 +575,7 @@ export class OrcaRuntimeRpcServer {
   private readonly relayRevokeOutbox: RelayRevokeOutbox
   private deviceRegistry: DeviceRegistry | null = null
   private wearDeviceRegistry: DeviceRegistry | null = null
+  private readonly wearManualEnrollment = new WearManualEnrollment()
   private e2eeKeypair: E2EEKeypair | null = null
   private pairingInitializationFailure: PairingOfferUnavailable | null = null
   private tlsFingerprint: string | null = null
@@ -819,6 +821,14 @@ export class OrcaRuntimeRpcServer {
       webClientUrl:
         this.webClientRoot && scope === 'runtime' ? createWebClientUrl(endpoint, pairingUrl) : null
     }
+  }
+
+  beginWearManualEnrollment(): { code: string; expiresAt: number } | null {
+    const pending = this.wearDeviceRegistry?.getPendingDevice('wear')
+    const publicKeyB64 = this.e2eeKeypair?.publicKeyB64
+    return pending && publicKeyB64
+      ? this.wearManualEnrollment.begin(pending.token, publicKeyB64)
+      : null
   }
 
   async createMobilePairingOffer(args: {
@@ -1394,6 +1404,9 @@ export class OrcaRuntimeRpcServer {
       deviceRegistry,
       wearDeviceRegistry: this.wearDeviceRegistry ?? undefined,
       e2eeKeypair,
+      wearEnrollmentProof: (clientPublicKeyB64) =>
+        this.wearManualEnrollment.proof(clientPublicKeyB64),
+      consumeWearEnrollment: (code) => this.wearManualEnrollment.consume(code),
       onText: (socket, plaintext, reply, sendBinary) => {
         void this.handleWebSocketMessage(
           plaintext,
@@ -1579,6 +1592,7 @@ export class OrcaRuntimeRpcServer {
   }
 
   async stop(): Promise<void> {
+    this.wearManualEnrollment.clear()
     // Why: STA-2370 — refuse new widens, then let any in-flight pairing widen settle into the live
     // transport arrays before snapshotting them, so a racing rebind can't strand a wide 0.0.0.0 listener
     // by writing it back into a cleared array after shutdown (see widenWebSocketBind).

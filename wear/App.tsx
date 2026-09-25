@@ -16,6 +16,7 @@ import { fetchRuntimeStatus } from './src/orca/direct-orca-client'
 import { refreshFleet, type FleetHost } from './src/orca/fleet-dashboard'
 import { loadPairings, removePairing, savePairing } from './src/orca/pairing-store'
 import { parsePairingCode, type PairingOffer } from './src/orca/pairing'
+import { redeemWearManualCode } from './src/orca/manual-enrollment'
 import type { WearAgentSession } from './src/orca/runtime-dashboard'
 import { WearButton } from './src/wear-button'
 import { wearColors } from './src/wear-theme'
@@ -24,6 +25,9 @@ export default function App() {
   const [pairings, setPairings] = useState<PairingOffer[]>([])
   const [showEnroll, setShowEnroll] = useState(false)
   const [pairingInput, setPairingInput] = useState('')
+  const [manualEndpoint, setManualEndpoint] = useState('')
+  const [manualCode, setManualCode] = useState('')
+  const [usePairingLink, setUsePairingLink] = useState(false)
   const [hosts, setHosts] = useState<FleetHost[]>([])
   const hostsRef = useRef<FleetHost[]>([])
   const refreshGeneration = useRef(0)
@@ -62,13 +66,8 @@ export default function App() {
     }
   }, [])
 
-  const enroll = useCallback(
-    async (input: string) => {
-      const offer = parsePairingCode(input)
-      if (!offer) {
-        setError('Enter a Wear pairing link from Orca')
-        return
-      }
+  const acceptOffer = useCallback(
+    async (offer: PairingOffer) => {
       setBusy(true)
       setError('')
       try {
@@ -79,6 +78,7 @@ export default function App() {
         usageFollowups.current = 0
         setShowEnroll(false)
         setPairingInput('')
+        setManualCode('')
         void refresh(saved)
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : 'Could not pair with Orca')
@@ -88,6 +88,31 @@ export default function App() {
     },
     [refresh]
   )
+
+  const enroll = useCallback(
+    async (input: string) => {
+      const offer = parsePairingCode(input)
+      if (!offer) {
+        setError('Enter a Wear pairing link from Orca')
+        return
+      }
+      await acceptOffer(offer)
+    },
+    [acceptOffer]
+  )
+
+  const enrollManual = useCallback(async () => {
+    setBusy(true)
+    setError('')
+    try {
+      const offer = await redeemWearManualCode(manualEndpoint, manualCode)
+      await acceptOffer(offer)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not pair with Orca')
+    } finally {
+      setBusy(false)
+    }
+  }, [acceptOffer, manualEndpoint, manualCode])
 
   useEffect(() => {
     let active = true
@@ -207,20 +232,47 @@ export default function App() {
               Pair this watch
             </Text>
             <Text style={styles.description}>
-              Open Wear pairing in Orca on your computer. Enter its link here or open the link on
-              this watch.
+              {usePairingLink
+                ? 'Open a Wear pairing link on this watch, or paste it below.'
+                : 'Run orca serve --wear-pairing on your computer. Enter the endpoint and 5-minute watch code shown there.'}
             </Text>
-            <TextInput
-              accessibilityLabel="Wear pairing link"
-              autoCapitalize="none"
-              autoCorrect={false}
-              multiline
-              onChangeText={setPairingInput}
-              placeholder="orca://pair?code=…"
-              placeholderTextColor={wearColors.muted}
-              style={styles.input}
-              value={pairingInput}
-            />
+            {usePairingLink ? (
+              <TextInput
+                accessibilityLabel="Wear pairing link"
+                autoCapitalize="none"
+                autoCorrect={false}
+                multiline
+                onChangeText={setPairingInput}
+                placeholder="orca://pair?code=…"
+                placeholderTextColor={wearColors.muted}
+                style={styles.input}
+                value={pairingInput}
+              />
+            ) : (
+              <>
+                <TextInput
+                  accessibilityLabel="Orca endpoint"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  onChangeText={setManualEndpoint}
+                  placeholder="192.168.1.2:6768"
+                  placeholderTextColor={wearColors.muted}
+                  style={[styles.input, styles.shortInput]}
+                  value={manualEndpoint}
+                />
+                <TextInput
+                  accessibilityLabel="Watch pairing code"
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  maxLength={32}
+                  onChangeText={setManualCode}
+                  placeholder="XXXXX-XXXXX-XXXXX-XXXXX"
+                  placeholderTextColor={wearColors.muted}
+                  style={[styles.input, styles.shortInput]}
+                  value={manualCode}
+                />
+              </>
+            )}
             {error ? (
               <Text accessibilityLiveRegion="assertive" style={styles.error}>
                 {error}
@@ -228,9 +280,22 @@ export default function App() {
             ) : null}
             {busy ? <ActivityIndicator color={wearColors.text} /> : null}
             <WearButton
-              disabled={busy || !pairingInput.trim()}
+              disabled={
+                busy ||
+                (usePairingLink
+                  ? !pairingInput.trim()
+                  : !manualEndpoint.trim() || !manualCode.trim())
+              }
               label="Connect"
-              onPress={() => void enroll(pairingInput)}
+              onPress={() => void (usePairingLink ? enroll(pairingInput) : enrollManual())}
+            />
+            <WearButton
+              label={usePairingLink ? 'Use short code' : 'Use pairing link'}
+              quiet
+              onPress={() => {
+                setError('')
+                setUsePairingLink(!usePairingLink)
+              }}
             />
             {pairings.length ? (
               <WearButton label="Back" quiet onPress={() => setShowEnroll(false)} />
@@ -272,5 +337,6 @@ const styles = StyleSheet.create({
     backgroundColor: wearColors.raised,
     fontSize: 12
   },
+  shortInput: { minHeight: 48 },
   error: { marginTop: 10, color: wearColors.danger, fontSize: 12, textAlign: 'center' }
 })

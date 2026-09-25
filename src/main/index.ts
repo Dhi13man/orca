@@ -2178,6 +2178,8 @@ async function printServeReady(options: ServeOptions): Promise<void> {
     pairing.available && options.mobilePairing
       ? await renderTerminalPairingQr(pairing.pairingUrl)
       : null
+  const wearManual =
+    pairing.available && options.wearPairing ? runtimeRpc.beginWearManualEnrollment() : null
   await serveReadinessPublisher.publish(
     {
       runtimeId: runtime.getRuntimeId(),
@@ -2193,7 +2195,10 @@ async function printServeReady(options: ServeOptions): Promise<void> {
             deviceId: pairing.deviceId,
             webClientUrl: pairing.webClientUrl,
             scope: options.mobilePairing ? 'mobile' : options.wearPairing ? 'wear' : 'runtime',
-            qr: pairingQr
+            qr: pairingQr,
+            ...(wearManual
+              ? { manualCode: wearManual.code, manualCodeExpiresAt: wearManual.expiresAt }
+              : {})
           }
         : pairing
     },

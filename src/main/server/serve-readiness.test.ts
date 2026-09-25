@@ -59,6 +59,25 @@ describe('ServeReadinessPublisher', () => {
     )
   })
 
+  it('prints a short Wear code and expiry only for watch pairing', () => {
+    const wearReady: ServeReadiness = {
+      ...ready,
+      pairing: {
+        ...ready.pairing,
+        scope: 'wear',
+        manualCode: 'ABCDE-F0123-45678-9ABCD',
+        manualCodeExpiresAt: 12345
+      }
+    }
+    const human = renderServeReadiness(wearReady, { mode: 'human' })
+    expect(human).toContain('Watch code (5 minutes): ABCDE-F0123-45678-9ABCD')
+    expect(human).toContain('Watch endpoint: wss://orca.example.test/runtime')
+    expect(JSON.parse(renderServeReadiness(wearReady, { mode: 'json' })).pairing).toMatchObject({
+      manualCode: 'ABCDE-F0123-45678-9ABCD',
+      manualCodeExpiresAt: 12345
+    })
+  })
+
   it('publishes a versioned JSON contract with explicit endpoints and pairing availability', () => {
     expect(JSON.parse(renderServeReadiness(ready, { mode: 'json' }))).toEqual({
       type: 'orca_server_ready',

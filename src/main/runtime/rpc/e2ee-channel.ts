@@ -1,13 +1,13 @@
-// Why: this channel keeps E2EE framing out of RPC handlers, which consume plaintext across transports.
 import type { WebSocket } from 'ws'
-import { deriveSharedKey, encrypt, decrypt, encryptBytes, decryptBytes } from './e2ee-crypto'
+import { encrypt, decrypt, encryptBytes, decryptBytes } from './e2ee-crypto'
 import {
   DesktopMobileE2EEV2Session,
   type DesktopMobileE2EEV2Context
 } from './mobile-e2ee-v2-desktop-session'
 import type { DesktopMobileE2EEV2OutboundItem as V2OutboundItem } from './mobile-e2ee-v2-desktop-outbound'
 import { handleDesktopMobileE2EEV2Inbound } from './mobile-e2ee-v2-desktop-inbound'
-import { authenticateMobileE2EE, decodeMobileE2EEPublicKey } from './mobile-e2ee-auth-validation'
+import { authenticateMobileE2EE, authenticatedE2EEControl } from './mobile-e2ee-auth-validation'
+import { prepareE2EEV1Hello, type WearEnrollmentProof } from './e2ee-v1-hello'
 import {
   isMobileE2EEBinaryPayloadWithinLimit,
   isMobileE2EEOutboundItemWithinLimit,
@@ -34,6 +34,7 @@ export type E2EEChannelOptions = {
   transportContext?: DesktopMobileE2EEV2Context
   requireV2?: boolean
   outboundMemoryBudget?: MobileE2EEOutboundMemoryBudget
+  wearEnrollmentProof?: WearEnrollmentProof
 }
 
 export type E2EEAuthenticatedDevice = {
@@ -55,6 +56,8 @@ export class E2EEChannel {
   private readonly transportContext: DesktopMobileE2EEV2Context
   private readonly requireV2: boolean
   private readonly outbound: MobileE2EEDesktopOutboundOwner
+  private readonly wearEnrollmentProof: E2EEChannelOptions['wearEnrollmentProof']
+  private wearEnrollmentRequested = false
   private v2Session: DesktopMobileE2EEV2Session | null = null
   // Why: the handler is set after readiness because its reply closure needs this channel's encryption state.
   private messageHandler:
@@ -79,6 +82,7 @@ export class E2EEChannel {
     this.transportContext = options.transportContext ?? { transport: 'direct' }
     this.requireV2 = options.requireV2 ?? false
     this.outbound = new MobileE2EEDesktopOutboundOwner(ws, options.outboundMemoryBudget)
+    this.wearEnrollmentProof = options.wearEnrollmentProof
 
     this.handshakeTimer = setTimeout(() => {
       this.onError(4002, 'E2EE handshake timeout')
@@ -217,26 +221,16 @@ export class E2EEChannel {
       this.onError(4001, 'E2EE v2 required')
       return
     }
-    if (hello.type !== 'e2ee_hello' || typeof hello.publicKeyB64 !== 'string') {
-      this.onError(4001, 'Invalid e2ee_hello')
+    const prepared = prepareE2EEV1Hello(hello, this.serverSecretKey, this.wearEnrollmentProof)
+    if (!prepared.ok) {
+      this.onError(4001, prepared.error)
       return
     }
-
-    // Why: derive the shared key from our secret + client's public key.
-    // Both sides compute the same shared secret via ECDH.
-    const clientPublicKey = decodeMobileE2EEPublicKey(hello.publicKeyB64)
-    if (!clientPublicKey) {
-      this.onError(4001, 'Invalid public key')
-      return
-    }
-
-    this.sharedKey = deriveSharedKey(this.serverSecretKey, clientPublicKey)
+    this.sharedKey = prepared.sharedKey
+    this.wearEnrollmentRequested = prepared.wearEnrollmentRequested
     this.state = 'awaiting_auth'
-
-    // Why: send e2ee_ready as plaintext — the client needs it to know the
-    // key exchange succeeded before it can send encrypted authentication.
     if (this.ws.readyState === this.ws.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'e2ee_ready' }))
+      this.ws.send(JSON.stringify(prepared.ready))
     }
   }
 
@@ -244,7 +238,12 @@ export class E2EEChannel {
     const authentication = authenticateMobileE2EE({
       plaintext,
       v2Session: this.v2Session,
-      resolveDevice: this.resolveAuthenticatedDevice
+      resolveDevice: (token) =>
+        token.startsWith('wear-code:') && !this.wearEnrollmentRequested
+          ? null
+          : this.resolveAuthenticatedDevice(token),
+      acceptEnrollmentCode: (token, device) =>
+        this.wearEnrollmentRequested && token.startsWith('wear-code:') && device.scope === 'wear'
     })
     if (!authentication.ok) {
       this.sendEncryptedControl({ type: 'e2ee_error', error: { code: authentication.code } })
@@ -252,7 +251,6 @@ export class E2EEChannel {
       return
     }
     const authenticatedDevice = authentication.device
-
     this.clientCapabilities = parseRuntimeClientCapabilities(authentication.auth.clientCapabilities)
     this.deviceToken = authenticatedDevice.deviceToken
     this.authenticatedDevice = authenticatedDevice
@@ -263,18 +261,10 @@ export class E2EEChannel {
       this.handshakeTimer = null
     }
 
-    // Why: transport-bound identity checks must complete before the peer sees
-    // authentication success; relay sockets additionally bind this context to
-    // their immutable relayDeviceId in the resolver.
+    // Why: bind transport identity before success; relay also binds immutable relayDeviceId.
     this.onReady(this, authenticatedDevice)
     this.sendEncryptedControl(
-      this.v2Session
-        ? {
-            type: 'e2ee_authenticated',
-            v: 2,
-            transcriptHashB64: this.v2Session.transcriptHashB64
-          }
-        : { type: 'e2ee_authenticated' }
+      authenticatedE2EEControl(this.v2Session, this.wearEnrollmentRequested, authenticatedDevice)
     )
   }
 
