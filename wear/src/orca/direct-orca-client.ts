@@ -1,5 +1,6 @@
 import type { PairingOffer } from './pairing'
 import {
+  parseAttentionEvents,
   parseAgentInventory,
   parseProviderUsage,
   type OrcaDashboard,
@@ -55,12 +56,15 @@ export async function fetchRuntimeDashboard(
   const warnings: string[] = []
   const usage = replies.dashboard?.ok ? parseProviderUsage(replies.dashboard.result) : []
   const agents = replies.dashboard?.ok ? parseAgentInventory(replies.dashboard.result) : []
+  const { events, omitted: eventsOmitted } = parseAttentionEvents(
+    replies.dashboard?.ok ? replies.dashboard.result : null
+  )
   if (!replies.dashboard?.ok) {
     warnings.push(replies.dashboard?.error ?? 'Dashboard is unavailable')
   } else if (asRecord(replies.dashboard.result)?.usageAvailable === false) {
     warnings.push('Account usage is unavailable')
   }
-  return { status, usage, agents, warnings }
+  return { status, usage, agents, events, eventsOmitted, warnings }
 }
 
 export async function fetchAgentConversation(

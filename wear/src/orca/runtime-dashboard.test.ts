@@ -1,11 +1,27 @@
 import { describe, expect, it } from 'vitest'
 import {
+  parseAttentionEvents,
   parseAgentInventory,
   parseNativeChatMessages,
   parseProviderUsage
 } from './runtime-dashboard'
 
 describe('runtime dashboard projections', () => {
+  it('keeps only bounded redacted host events', () => {
+    expect(
+      parseAttentionEvents({
+        events: [
+          { key: 'epoch:1', kind: 'agent-task-complete', at: 10, body: 'secret' },
+          { key: 'epoch:2', kind: 'plugin', at: 11 }
+        ],
+        eventsOmitted: 3
+      })
+    ).toEqual({
+      events: [{ key: 'epoch:1', kind: 'agent-task-complete', at: 10 }],
+      omitted: 3
+    })
+  })
+
   it('decodes bounded provider usage', () => {
     expect(
       parseProviderUsage({

@@ -86,6 +86,19 @@ it(
     vi.spyOn(runtime, 'getAccountsSnapshot').mockReturnValue({
       rateLimits: { claude: null }
     } as never)
+    runtime.dispatchMobileNotification({
+      type: 'notification',
+      source: 'agent-task-complete',
+      notificationId: 'event-a',
+      title: 'secret-title',
+      body: 'secret-body'
+    })
+    runtime.dispatchMobileNotification({
+      type: 'notification',
+      source: 'plugin',
+      title: 'plugin-secret',
+      body: 'plugin-secret-body'
+    })
     const server = new OrcaRuntimeRpcServer({
       runtime,
       userDataPath: mkdtempSync(join(tmpdir(), 'orca-wear-wire-')),
@@ -111,6 +124,7 @@ it(
       expect(dashboard.status.pairedDeviceId).toBe(offer.deviceId)
       expect(dashboard.status.runtimeId).toBeTruthy()
       expect(dashboard.agents).toMatchObject([{ sessionTabId: 'tab-a', agent: 'codex' }])
+      expect(dashboard.events).toMatchObject([{ kind: 'agent-task-complete' }])
       expect(restoreStructuredTabs).toHaveBeenCalled()
       const raw = await requestRuntime(
         parsed!,
@@ -131,6 +145,9 @@ it(
       )
       expect(JSON.stringify(raw.dashboard)).not.toContain('secret-prompt')
       expect(JSON.stringify(raw.dashboard)).not.toContain('secret.example')
+      expect(JSON.stringify(raw.dashboard)).not.toContain('secret-title')
+      expect(JSON.stringify(raw.dashboard)).not.toContain('secret-body')
+      expect(JSON.stringify(raw.dashboard)).not.toContain('plugin-secret')
       expect(raw.target).toEqual({
         ok: true,
         result: { kind: 'terminal', terminal: 'term-a', ptyId: 'pty-a' }
@@ -173,9 +190,7 @@ it(
           timeoutMs: 10_000
         })
         expect(start.code).toBe(0)
-        let screen = ''
-        for (let attempt = 0; attempt < 8; attempt++) {
-          await new Promise((resolve) => setTimeout(resolve, 1_000))
+        const readScreen = async (): Promise<string> => {
           const dumped = await runProcess({
             program: adb,
             args: ['-s', serial, 'shell', 'uiautomator', 'dump', '/sdcard/orca-direct-ui.xml'],
@@ -187,14 +202,50 @@ it(
             args: ['-s', serial, 'shell', 'cat', '/sdcard/orca-direct-ui.xml'],
             timeoutMs: 10_000
           })
-          screen = xml.stdout
-          if (screen.includes('Attention') && screen.includes('10.0.2.2:')) {
-            break
-          }
+          return xml.stdout
         }
+        const waitForFleet = async (): Promise<string> => {
+          let screen = ''
+          for (let attempt = 0; attempt < 8; attempt++) {
+            await new Promise((resolve) => setTimeout(resolve, 1_000))
+            screen = await readScreen()
+            if (screen.includes('Attention') && screen.includes('10.0.2.2:')) {
+              break
+            }
+          }
+          return screen
+        }
+        const screen = await waitForFleet()
         expect(screen).toContain('Attention')
         expect(screen).toContain('10.0.2.2:')
+        const stopped = await runProcess({
+          program: adb,
+          args: ['-s', serial, 'shell', 'am', 'force-stop', 'com.stably.orca.mobile'],
+          timeoutMs: 10_000
+        })
+        expect(stopped.code).toBe(0)
+        const relaunched = await runProcess({
+          program: adb,
+          args: ['-s', serial, 'shell', 'monkey', '-p', 'com.stably.orca.mobile', '1'],
+          timeoutMs: 10_000
+        })
+        expect(relaunched.code).toBe(0)
+        const restored = await waitForFleet()
+        expect(restored).toContain('Attention')
+        expect(restored).toContain('10.0.2.2:')
+        expect(restored).toContain('Agent task complete')
+        expect(restored).not.toContain('secret-body')
       }
+      runtime.dispatchMobileNotification({ type: 'dismiss', notificationId: 'event-a' })
+      const afterDismissal = await requestRuntime(
+        parsed!,
+        { dashboard: { method: 'wear.dashboard.get' } },
+        { createSocket: (endpoint) => new WebSocket(endpoint) as unknown as OrcaSocket }
+      )
+      expect(afterDismissal.dashboard).toMatchObject({
+        ok: true,
+        result: { events: [] }
+      })
     } finally {
       await server.stop()
     }

@@ -44,11 +44,45 @@ export type WearConversationMessage = {
   timestamp: number | null
 }
 
+export type WearAttentionEvent = {
+  key: string
+  kind: 'agent-task-complete' | 'terminal-bell'
+  at: number
+}
+
 export type OrcaDashboard = {
   status: RuntimeStatus
   usage: WearProviderUsage[]
   agents: WearAgentSession[]
+  events: WearAttentionEvent[]
+  eventsOmitted: number
   warnings: string[]
+}
+
+export function parseAttentionEvents(value: unknown): {
+  events: WearAttentionEvent[]
+  omitted: number
+} {
+  const snapshot = asRecord(value)
+  const raw = Array.isArray(snapshot?.events) ? snapshot.events : []
+  const events = raw.slice(0, 12).flatMap((item): WearAttentionEvent[] => {
+    const event = asRecord(item)
+    return event &&
+      typeof event.key === 'string' &&
+      (event.kind === 'agent-task-complete' || event.kind === 'terminal-bell') &&
+      finiteNumber(event.at) !== null
+      ? [{ key: event.key, kind: event.kind, at: event.at as number }]
+      : []
+  })
+  return {
+    events,
+    omitted:
+      typeof snapshot?.eventsOmitted === 'number' &&
+      Number.isSafeInteger(snapshot.eventsOmitted) &&
+      snapshot.eventsOmitted >= 0
+        ? snapshot.eventsOmitted
+        : 0
+  }
 }
 
 export function parseProviderUsage(value: unknown): WearProviderUsage[] {

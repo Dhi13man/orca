@@ -33,6 +33,9 @@ export function RuntimeDashboard({
       (right.agent.updatedAt ?? 0) - (left.agent.updatedAt ?? 0)
   )
   const unavailableHosts = hosts.filter((host) => host.error || !host.dashboard).length
+  const recentEvents = hosts
+    .flatMap((host) => (host.dashboard?.events ?? []).map((event) => ({ host, event })))
+    .sort((left, right) => right.event.at - left.event.at)
   return (
     <>
       <View style={styles.header}>
@@ -63,6 +66,25 @@ export function RuntimeDashboard({
             ? `No known agent needs attention; ${unavailableHosts} host ${unavailableHosts === 1 ? 'inventory is' : 'inventories are'} unavailable.`
             : 'No published agents need attention.'}
         </Text>
+      ) : null}
+      <SectionTitle label="Recent events" />
+      {recentEvents.length ? (
+        recentEvents.map(({ host, event }) => (
+          <View key={`${host.pairing.endpoint}:${event.key}`} style={styles.event}>
+            <Text style={styles.cardTitle}>
+              {event.kind === 'agent-task-complete' ? 'Agent task complete' : 'Terminal bell'}
+            </Text>
+            <Text style={styles.status}>
+              {pairingEndpointLabel(host.pairing.endpoint)} · {formatAge(event.at)}
+              {host.error ? ' · stale' : ''}
+            </Text>
+          </View>
+        ))
+      ) : hosts.length ? (
+        <Text style={styles.empty}>No recent host events.</Text>
+      ) : null}
+      {hosts.reduce((total, host) => total + (host.dashboard?.eventsOmitted ?? 0), 0) > 0 ? (
+        <Text style={styles.empty}>Older host events are omitted.</Text>
       ) : null}
       <SectionTitle label="Hosts" />
       {hosts.map((host) => (
@@ -241,6 +263,13 @@ const styles = StyleSheet.create({
   },
   group: { width: '100%', marginTop: 8 },
   card: {
+    width: '100%',
+    marginTop: 6,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: wearColors.raised
+  },
+  event: {
     width: '100%',
     marginTop: 6,
     padding: 12,

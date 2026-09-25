@@ -23,6 +23,8 @@ function dashboard(id: string): OrcaDashboard {
     status: { runtimeId: id },
     usage: [],
     agents: [],
+    events: [],
+    eventsOmitted: 0,
     warnings: []
   }
 }

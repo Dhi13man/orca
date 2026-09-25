@@ -46,6 +46,20 @@ export const WEAR_DASHBOARD_METHODS: RpcAnyMethod[] = [
       } catch {
         // Inventory remains usable when account services are unavailable.
       }
+      const eventsById = new Map<string, { key: string; kind: string; at: number }>()
+      for (const event of context.runtime.getMissedNotificationsSince(0)) {
+        if (event.type === 'dismiss') {
+          eventsById.delete(event.notificationId)
+        } else if (event.source === 'agent-task-complete' || event.source === 'terminal-bell') {
+          const key = `${event.notificationEpoch}:${event.notificationSeq}`
+          eventsById.set(event.notificationId ?? key, {
+            key,
+            kind: event.source,
+            at: event.notificationAt
+          })
+        }
+      }
+      const recentEvents = [...eventsById.values()].sort((a, b) => b.at - a.at)
       return {
         snapshots: inventory.snapshots.map((snapshot) => ({
           worktree: snapshot.worktree,
@@ -103,7 +117,9 @@ export const WEAR_DASHBOARD_METHODS: RpcAnyMethod[] = [
           })
         })),
         rateLimits,
-        usageAvailable: rateLimits !== null
+        usageAvailable: rateLimits !== null,
+        events: recentEvents.slice(0, 12),
+        eventsOmitted: Math.max(0, recentEvents.length - 12)
       }
     }
   })
