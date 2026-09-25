@@ -2100,3 +2100,18 @@ screen-off dashboard delivery after reboot, not a job-caused cold-process
 wake. The host still rejected authentication, so the new snapshot contains no
 verified live usage or conversation data. Physical-device and host-originated
 notification acceptance remain open.
+
+The next unforced periodic run also woke the phone app from a cold process.
+After a scoped `am kill`, `pidof` found no Orca phone process; Android later
+logged `Start proc 5017` at 6:38:45 AM specifically for
+`WearDashboardRefreshJobService`. JobScheduler recorded `START-P` and a
+`STOP-P` with `app called jobFinished` about 36 seconds apart, while the phone
+remained asleep. Without touching the watch between runs, its Attention page
+showed "Phone snapshot sent Sep 25, 2026, 6:38 AM" in
+[the rendered evidence](../spikes/wear-companion/evidence/2026-09-25-cold-job-screen-off-attention.png)
+(SHA-256 `396FB516CFBCD50FF1B452C1E294A572C233236B6729583BE28349C540CCD9F6`).
+This closes the emulator cold-process, screen-off dashboard-delivery check;
+host authentication still failed, so it proves no live Usage or conversation
+data, notification timing, or physical-device acceptance. Existing configured
+agents and paired machines remain the validation targets, with no disposable
+profile or sign-in gate; the observed sessions were busy, so no reply was sent.
