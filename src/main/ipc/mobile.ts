@@ -147,7 +147,15 @@ export function registerMobileHandlers(
 
   ipcMain.handle(
     'mobile:getRuntimePairingUrl',
-    async (_event, args?: { address?: string; rotate?: boolean; reach?: RuntimePairingReach }) => {
+    async (
+      _event,
+      args?: {
+        address?: string
+        rotate?: boolean
+        reach?: RuntimePairingReach
+        scope?: 'runtime' | 'wear'
+      }
+    ) => {
       const ip = args?.address ?? (await getDefaultPairingAddress(getDefaultRouteInterfaceNames))
       if (!ip) {
         return { available: false as const }
@@ -179,11 +187,12 @@ export function registerMobileHandlers(
 
       // Why: web/desktop runtime clients need full runtime access, not the
       // mobile allowlist used by phone QR pairing.
+      const scope = args?.scope === 'wear' ? 'wear' : 'runtime'
       const offer = rpcServer.createPairingOffer({
         address: ip,
         rotate: args?.rotate,
-        name: `Runtime ${new Date().toLocaleDateString()}`,
-        scope: 'runtime',
+        name: `${scope === 'wear' ? 'Watch' : 'Runtime'} ${new Date().toLocaleDateString()}`,
+        scope,
         // Why: a grant that only ever pointed at loopback must not make the next launch bind every
         // interface when its local client reconnects (that would restore the exposure one restart later).
         reach: thisComputerOnly ? 'this-computer' : 'network'
@@ -231,9 +240,11 @@ export function registerMobileHandlers(
     // Why: generated web/runtime links are bearer credentials even before a
     // client first connects, so pending runtime grants must stay revocable.
     return {
-      grants: registry
-        .listDevices()
-        .filter((d) => d.scope === 'runtime')
+      grants: [
+        ...registry.listDevices(),
+        ...(rpcServer.getWearDeviceRegistry()?.listDevices() ?? [])
+      ]
+        .filter((d) => d.scope === 'runtime' || d.scope === 'wear')
         .sort((a, b) => b.pairedAt - a.pairedAt)
         .map(toRuntimeAccessGrant)
     }
@@ -248,8 +259,7 @@ export function registerMobileHandlers(
   })
 
   ipcMain.handle('mobile:revokeRuntimeAccess', (_event, args: { deviceId: string }) => {
-    const registry = rpcServer.getDeviceRegistry()
-    if (!registry) {
+    if (!rpcServer.getDeviceRegistry() && !rpcServer.getWearDeviceRegistry()) {
       return { revoked: false }
     }
     return { revoked: rpcServer.revokeRuntimeAccess(args.deviceId) }

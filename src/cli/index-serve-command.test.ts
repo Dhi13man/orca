@@ -92,6 +92,38 @@ describe('orca cli worktree awareness', () => {
     })
   })
 
+  it('requests a watch-scoped pairing offer without changing mobile pairing', async () => {
+    serveOrcaAppMock.mockResolvedValue(0)
+
+    await main(['serve', '--wear-pairing', '--json'], '/tmp/repo')
+
+    expect(serveOrcaAppMock).toHaveBeenCalledWith({
+      json: true,
+      port: null,
+      pairingAddress: null,
+      noPairing: false,
+      mobilePairing: false,
+      wearPairing: true,
+      recipeJson: false,
+      projectRoot: null
+    })
+  })
+
+  it.each([
+    ['--mobile-pairing'],
+    ['--no-pairing'],
+    ['--recipe-json']
+  ])('rejects --wear-pairing with %s', async (otherFlag) => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const priorExitCode = process.exitCode
+    await main(['serve', '--wear-pairing', otherFlag], '/tmp/repo')
+    expect(serveOrcaAppMock).not.toHaveBeenCalled()
+    expect(error.mock.calls.flat().join('\n')).toContain('--wear-pairing requires')
+    expect(process.exitCode).toBe(1)
+    process.exitCode = priorExitCode
+    error.mockRestore()
+  })
+
   it('starts a recipe JSON headless server for VM recipes', async () => {
     serveOrcaAppMock.mockResolvedValue(0)
 

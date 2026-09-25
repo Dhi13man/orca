@@ -39,7 +39,7 @@ export type E2EEChannelOptions = {
 export type E2EEAuthenticatedDevice = {
   deviceId: string
   deviceToken: string
-  scope: 'mobile' | 'runtime'
+  scope: 'mobile' | 'runtime' | 'wear'
 }
 
 export class E2EEChannel {

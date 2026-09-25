@@ -33,6 +33,7 @@ function renderForm(
         onRefreshNetworkInterfaces={vi.fn()}
         onGenerate={vi.fn()}
         onCopy={vi.fn()}
+        onWearGrant={vi.fn()}
       />
     </TooltipProvider>
   )

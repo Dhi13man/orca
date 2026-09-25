@@ -664,6 +664,11 @@ describe('registerMobileHandlers', () => {
 
   it('lists runtime access grants including unused generated links', () => {
     const rpcServer = {
+      getWearDeviceRegistry: () => ({
+        listDevices: () => [
+          { deviceId: 'wear-1', name: 'Watch', scope: 'wear', pairedAt: 6, lastSeenAt: 0 }
+        ]
+      }),
       getDeviceRegistry: () => ({
         listDevices: () => [
           {
@@ -695,6 +700,12 @@ describe('registerMobileHandlers', () => {
 
     expect(handlers.get('mobile:listRuntimeAccessGrants')?.()).toEqual({
       grants: [
+        {
+          deviceId: 'wear-1',
+          name: 'Watch',
+          createdAt: 6,
+          lastSeenAt: null
+        },
         {
           deviceId: 'pending-runtime',
           name: 'Copied link',

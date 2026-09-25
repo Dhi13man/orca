@@ -11,13 +11,12 @@
     "android": {
       "allowBackup": false,
       "blockedPermissions": [
-        "android.permission.INTERNET",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.WRITE_EXTERNAL_STORAGE"
       ],
       "package": "com.stably.orca.mobile",
-      "usesCleartextTraffic": false,
+      "usesCleartextTraffic": true,
       "versionCode": 1
     },
     "plugins": [
@@ -30,7 +29,7 @@
             "compileSdkVersion": 36,
             "minSdkVersion": 33,
             "targetSdkVersion": 36,
-            "usesCleartextTraffic": false
+            "usesCleartextTraffic": true
           }
         }
       ],

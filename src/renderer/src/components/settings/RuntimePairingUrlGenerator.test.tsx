@@ -105,4 +105,5 @@ describe('RuntimePairingUrlGenerator', () => {
       expect(mocks.getRuntimePairingUrl).toHaveBeenCalledWith({ address, rotate: true, reach })
     )
   })
+
 })

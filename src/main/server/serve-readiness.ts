@@ -10,7 +10,7 @@ export type ServePairingReadiness =
       endpoint: string
       deviceId: string
       webClientUrl: string | null
-      scope: 'runtime' | 'mobile'
+      scope: 'runtime' | 'mobile' | 'wear'
       qr: string | null
     }
   | {

@@ -96,4 +96,15 @@ describe('remote pairing address', () => {
     })
     expect(parseHostAccessLink(link)).toMatchObject({ ok: false, kind: 'mobile-only' })
   })
+
+  it('rejects watch grants as host access links', () => {
+    const link = encodePairingOffer({
+      v: PAIRING_OFFER_VERSION,
+      endpoint: 'ws://192.168.1.20:6768',
+      deviceToken: 'watch-token',
+      publicKeyB64: 'key',
+      scope: 'wear'
+    })
+    expect(parseHostAccessLink(link)).toMatchObject({ ok: false, kind: 'invalid-input' })
+  })
 })

@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { hardenExistingSecureFile, writeSecureJsonFile } from '../../shared/secure-file'
 import type { DeviceScope } from '../../shared/runtime-types'
-import { DEVICE_REGISTRY_FILENAME } from './mobile-pairing-files'
+import { DEVICE_REGISTRY_FILENAME, WEAR_DEVICE_REGISTRY_FILENAME } from './mobile-pairing-files'
 import type { RelayDeviceBinding } from './relay/relay-revoke-outbox'
 import type { MobilePairingConnectionMode } from '../../shared/mobile-pairing-connection-mode'
 import type { RuntimePairingReach } from '../../shared/runtime-pairing-reach'
@@ -56,8 +56,11 @@ export class DeviceRegistry {
   private devices: DeviceEntry[] = []
   private pendingLastSeenFlush: NodeJS.Timeout | null = null
 
-  constructor(userDataPath: string) {
-    this.registryPath = join(userDataPath, DEVICE_REGISTRY_FILENAME)
+  constructor(userDataPath: string, private readonly kind: 'device' | 'wear' = 'device') {
+    this.registryPath = join(
+      userDataPath,
+      kind === 'wear' ? WEAR_DEVICE_REGISTRY_FILENAME : DEVICE_REGISTRY_FILENAME
+    )
     this.load()
   }
 
@@ -75,6 +78,9 @@ export class DeviceRegistry {
     scope: DeviceScope,
     pairingReach: RuntimePairingReach
   ): DeviceEntry {
+    if ((this.kind === 'wear') !== (scope === 'wear')) {
+      throw new Error('Device scope does not match registry')
+    }
     const entry: DeviceEntry = {
       deviceId: randomUUID(),
       name,
@@ -281,18 +287,20 @@ export class DeviceRegistry {
     try {
       hardenExistingSecureFile(this.registryPath)
       const parsed = JSON.parse(readFileSync(this.registryPath, 'utf-8')) as DeviceEntry[]
-      this.devices = parsed.map((device) => ({
+      this.devices = parsed
+        .filter((device) => this.kind !== 'wear' || device.scope === 'wear')
+        .map((device) => ({
         ...device,
         // Why: older registries only existed for phone pairing. Treat missing
         // scope as mobile so legacy device tokens do not gain new CLI powers.
-        scope: device.scope === 'runtime' ? 'runtime' : 'mobile',
+        scope: this.kind === 'wear' ? 'wear' : device.scope === 'runtime' ? 'runtime' : 'mobile',
         relayBinding: validRelayBinding(device.relayBinding, device.deviceId),
         mobilePairingConnectionMode:
           device.mobilePairingConnectionMode === 'local-only' ? 'local-only' : 'automatic',
         // Why: registries written before this field existed only ever held network-reach grants (phones and
         // LAN links), so a missing value must keep binding every interface on reconnect.
         pairingReach: device.pairingReach === 'this-computer' ? 'this-computer' : 'network'
-      }))
+        }))
     } catch {
       this.devices = []
     }

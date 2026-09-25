@@ -7,7 +7,7 @@ import {
 } from './mobile-pairing-protocol-limits'
 
 export const PAIRING_OFFER_VERSION = 2
-const PairingScopeSchema = z.enum(['mobile', 'runtime'])
+const PairingScopeSchema = z.enum(['mobile', 'runtime', 'wear'])
 const BASE64URL_16_PATTERN = /^[A-Za-z0-9_-]{16}$/
 const BASE64URL_43_PATTERN = /^[A-Za-z0-9_-]{43}$/
 const MAX_INVITE_TTL_MS = 10 * 60 * 1000
@@ -80,13 +80,13 @@ export function createPairingOfferSchema(now: () => number = () => Date.now()) {
       relay: relaySchema.optional()
     })
     .superRefine((offer, ctx) => {
-      if (offer.relay && offer.scope === 'runtime') {
+      if (offer.relay && offer.scope !== 'mobile') {
         // Why: relay v1 is mobile-only; accepting it on runtime offers would
         // imply routing and credential support that client does not have.
         ctx.addIssue({
           code: 'custom',
           path: ['relay'],
-          message: 'Relay is invalid for runtime scope'
+          message: 'Relay is valid only for mobile scope'
         })
       }
       if (offer.relay && !isCanonicalBase64Key(offer.publicKeyB64)) {

@@ -1,5 +1,7 @@
 # Orca for Wear OS: command center plan
 
+**Current decision (2026-09-25):** Dhiman chose a standalone watch app that connects directly to Orca while the installed phone app stays unchanged. This supersedes the phone/Data Layer architecture decisions below; those sections are historical design evidence, not current acceptance criteria. Direct enrollment requires an updated Orca runtime, a watch-scoped grant, network reach, and separate enrollment for each runtime. The direct app is being implemented and has not passed physical Watch8 pairing, reply, notification/background, multi-host, or installed-device acceptance. A test APK or a successful build does not close these gates. Do not install the obsolete phone bridge build.
+
 | Field              | Value                                                                                                                                             |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Status | **Full companion implementation and internal physical installation authorized by Dhiman on 2026-09-23; implementation active, end-to-end acceptance incomplete. Public repository publication, Play release, and merge are not authorized.** |

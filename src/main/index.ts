@@ -2080,6 +2080,7 @@ type ServeOptions = {
   pairingAddress: string | null
   noPairing: boolean
   mobilePairing: boolean
+  wearPairing: boolean
   recipeJson: boolean
   projectRoot: string | null
 }
@@ -2108,6 +2109,7 @@ function getServeOptions(argv = process.argv): ServeOptions {
     pairingAddress: valueAfter('--serve-pairing-address'),
     noPairing: argv.includes('--serve-no-pairing'),
     mobilePairing: argv.includes('--serve-mobile-pairing'),
+    wearPairing: argv.includes('--serve-wear-pairing'),
     recipeJson: argv.includes('--serve-recipe-json'),
     projectRoot: valueAfter('--serve-project-root')
   }
@@ -2142,6 +2144,9 @@ async function printServeReady(options: ServeOptions): Promise<void> {
   if (!runtime || !runtimeRpc) {
     throw new Error('Runtime server must be initialized before printing serve readiness')
   }
+  if (options.mobilePairing && options.wearPairing) {
+    throw new Error('--serve-mobile-pairing and --serve-wear-pairing are mutually exclusive')
+  }
   if (options.recipeJson) {
     if (!options.projectRoot) {
       throw new Error('--serve-recipe-json requires --serve-project-root')
@@ -2166,8 +2171,8 @@ async function printServeReady(options: ServeOptions): Promise<void> {
       } as const)
     : runtimeRpc.createPairingOffer({
         address: options.pairingAddress,
-        name: `${options.mobilePairing ? 'Mobile' : 'CLI'} ${new Date().toLocaleDateString()}`,
-        scope: options.mobilePairing ? 'mobile' : 'runtime'
+        name: `${options.mobilePairing ? 'Mobile' : options.wearPairing ? 'Wear' : 'CLI'} ${new Date().toLocaleDateString()}`,
+        scope: options.mobilePairing ? 'mobile' : options.wearPairing ? 'wear' : 'runtime'
       })
   const pairingQr =
     pairing.available && options.mobilePairing
@@ -2187,7 +2192,7 @@ async function printServeReady(options: ServeOptions): Promise<void> {
             endpoint: pairing.endpoint,
             deviceId: pairing.deviceId,
             webClientUrl: pairing.webClientUrl,
-            scope: options.mobilePairing ? 'mobile' : 'runtime',
+            scope: options.mobilePairing ? 'mobile' : options.wearPairing ? 'wear' : 'runtime',
             qr: pairingQr
           }
         : pairing

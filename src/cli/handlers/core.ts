@@ -110,6 +110,14 @@ export const CORE_HANDLERS: Record<string, CommandHandler> = {
         'Recipe JSON output requires runtime pairing; remove --mobile-pairing.'
       )
     }
+    if (flags.get('wear-pairing') === true) {
+      if (flags.get('mobile-pairing') === true || flags.get('recipe-json') === true || flags.get('no-pairing') === true) {
+        throw new RuntimeClientError(
+          'invalid_argument',
+          '--wear-pairing requires a standalone pairing offer; remove --mobile-pairing, --recipe-json, or --no-pairing.'
+        )
+      }
+    }
     const projectRoot =
       typeof flags.get('project-root') === 'string' ? (flags.get('project-root') as string) : null
     if (flags.get('recipe-json') === true && !projectRoot) {
@@ -128,6 +136,7 @@ export const CORE_HANDLERS: Record<string, CommandHandler> = {
           : null,
       noPairing: flags.get('no-pairing') === true,
       mobilePairing: flags.get('mobile-pairing') === true,
+      ...(flags.get('wear-pairing') === true ? { wearPairing: true } : {}),
       recipeJson: flags.get('recipe-json') === true,
       projectRoot
     })

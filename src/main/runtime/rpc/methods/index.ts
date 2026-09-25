@@ -47,6 +47,7 @@ import { STRUCTURED_AGENT_SESSION_METHODS } from './structured-agent-session'
 import { WEAR_TARGET_METHODS } from './wear-target'
 import { WEAR_AGENT_SEND_METHODS } from './wear-agent-send'
 import { WEAR_CONVERSATION_READ_METHODS } from './wear-conversation-read'
+import { WEAR_DASHBOARD_METHODS } from './wear-dashboard'
 import { ARTIFACT_METHODS } from './artifacts'
 import { AGENT_HOOK_METHODS } from './agent-hooks'
 
@@ -67,6 +68,7 @@ export const ALL_RPC_METHODS: readonly RpcAnyMethod[] = [
   ...WEAR_TARGET_METHODS,
   ...WEAR_AGENT_SEND_METHODS,
   ...WEAR_CONVERSATION_READ_METHODS,
+  ...WEAR_DASHBOARD_METHODS,
   ...TERMINAL_METHODS,
   ...TERMINAL_ORPHAN_METHODS,
   ...BROWSER_CORE_METHODS,

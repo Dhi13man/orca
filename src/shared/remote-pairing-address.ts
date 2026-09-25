@@ -102,6 +102,13 @@ export function parseHostAccessLink(input: string): ParseHostAccessLinkResult {
       message: 'This link grants mobile-only access. Generate a link for another Orca client.'
     }
   }
+  if (pairing.scope === 'wear') {
+    return {
+      ok: false,
+      kind: 'invalid-input',
+      message: 'This link is for an Orca watch, not another Orca host.'
+    }
+  }
   let endpoint: URL
   try {
     endpoint = new URL(pairing.endpoint)

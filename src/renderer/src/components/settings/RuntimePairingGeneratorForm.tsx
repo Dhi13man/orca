@@ -6,6 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import { AddressPicker, type AddressOption } from '../network/AddressPicker'
 import { parseServerShareAddress } from '../../../../shared/network/server-share-address'
 import { GeneratedUrlRow, UnavailableUrlRow } from './RuntimePairingGeneratedUrlRows'
+import { WearPairingLinkSection } from './WearPairingLinkSection'
 import type { RuntimePairingIntent } from './runtime-pairing-link-state'
 import { translate } from '@/i18n/i18n'
 
@@ -27,6 +28,7 @@ type RuntimePairingGeneratorFormProps = {
   onRefreshNetworkInterfaces: () => void
   onGenerate: () => void
   onCopy: (target: 'web' | 'pairing', value: string) => void
+  onWearGrant: () => void
 }
 
 export function RuntimePairingGeneratorForm({
@@ -44,7 +46,8 @@ export function RuntimePairingGeneratorForm({
   onSelectedAddressChange,
   onRefreshNetworkInterfaces,
   onGenerate,
-  onCopy
+  onCopy,
+  onWearGrant
 }: RuntimePairingGeneratorFormProps): React.JSX.Element {
   const options: AddressOption[] = networkInterfaces.map((networkInterface) => ({
     value: networkInterface.address,
@@ -363,6 +366,9 @@ export function RuntimePairingGeneratorForm({
           copied={copiedTarget === 'pairing'}
           onCopy={() => onCopy('pairing', runtimePairingUrl)}
         />
+      ) : null}
+      {intent !== 'local' ? (
+        <WearPairingLinkSection address={selectedAddress} intent={intent} onGranted={onWearGrant} />
       ) : null}
     </>
   )

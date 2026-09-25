@@ -51,17 +51,14 @@ export function RuntimePairingUrlGenerator({
   const mountedRef = useMountedRef()
 
   const clearCopiedTargetResetTimer = useCallback((): void => {
-    if (copiedTargetResetTimerRef.current === null) {
-      return
+    if (copiedTargetResetTimerRef.current !== null) {
+      window.clearTimeout(copiedTargetResetTimerRef.current)
     }
-    window.clearTimeout(copiedTargetResetTimerRef.current)
     copiedTargetResetTimerRef.current = null
   }, [])
 
   const setContainerNode = useCallback(
     (node: HTMLDivElement | null): void => {
-      // Why: copy feedback timers are owned by this settings surface; clear
-      // them when Settings collapses or navigates away.
       if (!node) {
         clearCopiedTargetResetTimer()
       }
@@ -189,15 +186,11 @@ export function RuntimePairingUrlGenerator({
       const result = await window.api.mobile.getRuntimePairingUrl({
         address,
         rotate: true,
-        // Why: main gates the one-way network widen on this, so the declared choice must travel with the
-        // address — the address alone cannot tell "This computer only" from a loopback tunnel front-end.
         reach: runtimePairingReachForIntent(intent)
       })
       if (!result.available) {
         clearGeneratedUrls()
         if (mountedRef.current) {
-          // Why: STA-2370 — surface the specific network-exposure guidance when the widen failed; fall back
-          // to the generic message for other unavailable cases (e.g. no reachable address).
           toast.error(
             result.guidance ??
               translate(
@@ -406,6 +399,7 @@ export function RuntimePairingUrlGenerator({
           onRefreshNetworkInterfaces={() => void loadNetworkInterfaces({ showToastOnError: true })}
           onGenerate={() => void generateRuntimePairingUrl()}
           onCopy={(target, value) => void copyGeneratedUrl(target, value)}
+          onWearGrant={loadRuntimeAccessGrants}
         />
       ) : null}
 

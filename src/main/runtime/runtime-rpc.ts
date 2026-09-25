@@ -127,7 +127,12 @@ type MobilePairingOfferAvailable = {
 type MobilePairingOffer = PairingOfferUnavailable | MobilePairingOfferAvailable
 
 type PairingIdentityInitialization =
-  | { ok: true; deviceRegistry: DeviceRegistry; e2eeKeypair: E2EEKeypair }
+  | {
+      ok: true
+      deviceRegistry: DeviceRegistry
+      wearDeviceRegistry: DeviceRegistry
+      e2eeKeypair: E2EEKeypair
+    }
   | { ok: false; failure: PairingOfferUnavailable }
 
 function pairingUnavailable(
@@ -473,6 +478,16 @@ const MOBILE_RPC_METHOD_ALLOWLIST = new Set([
   'worktree.sleep'
 ])
 
+const WEAR_RPC_METHOD_ALLOWLIST = new Set([
+  'status.get',
+  'wear.dashboard.get',
+  'wear.target.resolve',
+  'wear.conversation.read',
+  'wear.terminal.send',
+  'wear.agent.send',
+  'wear.command.receipt'
+])
+
 // Why: 'ask' is metered separately from 'wait' — same keepalive/abort wiring, its own sub-cap.
 export type RuntimeLongPollClass = 'ask' | 'browser-host' | 'wait'
 
@@ -558,6 +573,7 @@ export class OrcaRuntimeRpcServer {
   private readonly specializedLongPollCap: number
   private readonly relayRevokeOutbox: RelayRevokeOutbox
   private deviceRegistry: DeviceRegistry | null = null
+  private wearDeviceRegistry: DeviceRegistry | null = null
   private e2eeKeypair: E2EEKeypair | null = null
   private pairingInitializationFailure: PairingOfferUnavailable | null = null
   private tlsFingerprint: string | null = null
@@ -636,6 +652,10 @@ export class OrcaRuntimeRpcServer {
     return this.deviceRegistry
   }
 
+  getWearDeviceRegistry(): DeviceRegistry | null {
+    return this.wearDeviceRegistry
+  }
+
   getTlsFingerprint(): string | null {
     return this.tlsFingerprint
   }
@@ -710,8 +730,14 @@ export class OrcaRuntimeRpcServer {
   }
 
   revokeRuntimeAccess(deviceId: string): boolean {
-    const device = this.deviceRegistry?.getDevice(deviceId)
-    if (device?.scope !== 'runtime' || !this.deviceRegistry?.removeDevice(deviceId)) {
+    const registry = this.wearDeviceRegistry?.getDevice(deviceId)
+      ? this.wearDeviceRegistry
+      : this.deviceRegistry
+    const device = registry?.getDevice(deviceId)
+    if (
+      (device?.scope !== 'runtime' && device?.scope !== 'wear') ||
+      !registry?.removeDevice(deviceId)
+    ) {
       return false
     }
     this.runtime.forgetClientNavigationState(deviceId)
@@ -751,7 +777,7 @@ export class OrcaRuntimeRpcServer {
         'WebSocket pairing is unavailable. Inspect preceding runtime errors and choose an unused --port if the listener failed.'
       )
     }
-    if (!this.deviceRegistry) {
+    if (!this.deviceRegistry || (args.scope === 'wear' && !this.wearDeviceRegistry)) {
       return pairingUnavailable('device_registry_unavailable', DEVICE_REGISTRY_UNAVAILABLE_GUIDANCE)
     }
     const publicKeyB64 = this.getE2EEPublicKey()
@@ -766,12 +792,13 @@ export class OrcaRuntimeRpcServer {
     const endpoint = advertised.endpoint
     const deviceName = args.name ?? `CLI ${new Date().toLocaleDateString()}`
     const scope = args.scope ?? 'runtime'
+    const registry = scope === 'wear' ? this.wearDeviceRegistry! : this.deviceRegistry
     let device: DeviceEntry
     try {
       const reach = args.reach ?? 'network'
       device = args.rotate
-        ? this.deviceRegistry.rotatePendingDevice(deviceName, scope, reach)
-        : this.deviceRegistry.getOrCreatePendingDevice(deviceName, scope, reach)
+        ? registry.rotatePendingDevice(deviceName, scope, reach)
+        : registry.getOrCreatePendingDevice(deviceName, scope, reach)
     } catch (error) {
       console.error('[runtime] Failed to persist pairing credential:', error)
       return pairingUnavailable('device_registry_unavailable', DEVICE_REGISTRY_UNAVAILABLE_GUIDANCE)
@@ -1139,8 +1166,10 @@ export class OrcaRuntimeRpcServer {
 
   private initializePairingIdentity(): PairingIdentityInitialization {
     let deviceRegistry: DeviceRegistry
+    let wearDeviceRegistry: DeviceRegistry
     try {
       deviceRegistry = new DeviceRegistry(this.userDataPath)
+      wearDeviceRegistry = new DeviceRegistry(this.userDataPath, 'wear')
     } catch (error) {
       console.error('[runtime] Failed to initialize pairing registry:', error)
       return {
@@ -1161,7 +1190,7 @@ export class OrcaRuntimeRpcServer {
         failure: pairingUnavailable('e2ee_key_unavailable', E2EE_KEY_UNAVAILABLE_GUIDANCE)
       }
     }
-    return { ok: true, deviceRegistry, e2eeKeypair }
+    return { ok: true, deviceRegistry, wearDeviceRegistry, e2eeKeypair }
   }
 
   async start(): Promise<void> {
@@ -1218,13 +1247,16 @@ export class OrcaRuntimeRpcServer {
     if (this.enableWebSocket) {
       // Why: land any deferred lastSeen write before a replacement registry reads the same file.
       this.deviceRegistry?.flushPendingLastSeen()
+      this.wearDeviceRegistry?.flushPendingLastSeen()
       const pairingIdentity = this.initializePairingIdentity()
       if (!pairingIdentity.ok) {
         this.deviceRegistry = null
+        this.wearDeviceRegistry = null
         this.e2eeKeypair = null
         this.pairingInitializationFailure = pairingIdentity.failure
       } else {
         this.deviceRegistry = pairingIdentity.deviceRegistry
+        this.wearDeviceRegistry = pairingIdentity.wearDeviceRegistry
         this.e2eeKeypair = pairingIdentity.e2eeKeypair
         this.pairingInitializationFailure = null
         try {
@@ -1294,10 +1326,13 @@ export class OrcaRuntimeRpcServer {
     if (this.exposeNetworkByDefault) {
       return WS_BIND_HOST_ALL_INTERFACES
     }
-    const hasConnectedNetworkDevice =
-      this.deviceRegistry
-        ?.listDevices()
-        .some((device) => device.lastSeenAt > 0 && device.pairingReach !== 'this-computer') ?? false
+    const hasConnectedNetworkDevice = [this.deviceRegistry, this.wearDeviceRegistry].some(
+      (registry) =>
+        registry
+          ?.listDevices()
+          .some((device) => device.lastSeenAt > 0 && device.pairingReach !== 'this-computer') ===
+        true
+    )
     return hasConnectedNetworkDevice ? WS_BIND_HOST_ALL_INTERFACES : WS_BIND_HOST_LOOPBACK
   }
 
@@ -1357,6 +1392,7 @@ export class OrcaRuntimeRpcServer {
     })
     const mobileSocketWiring = new MobileSocketWiring({
       deviceRegistry,
+      wearDeviceRegistry: this.wearDeviceRegistry ?? undefined,
       e2eeKeypair,
       onText: (socket, plaintext, reply, sendBinary) => {
         void this.handleWebSocketMessage(
@@ -1565,6 +1601,7 @@ export class OrcaRuntimeRpcServer {
     )
     // Why: before-quit fences relay input; direct auth can still refresh lastSeen while these transports close.
     this.deviceRegistry?.flushPendingLastSeen()
+    this.wearDeviceRegistry?.flushPendingLastSeen()
     const failedStop = stopResults.find((result) => result.status === 'rejected')
     if (failedStop?.status === 'rejected') {
       throw failedStop.reason
@@ -1741,7 +1778,8 @@ export class OrcaRuntimeRpcServer {
       reply(JSON.stringify(this.buildError(request.id, 'unauthorized', 'Missing device token')))
       return
     }
-    const device = this.deviceRegistry?.validateToken(token)
+    const device =
+      this.deviceRegistry?.validateToken(token) ?? this.wearDeviceRegistry?.validateToken(token)
     if (!device) {
       reply(JSON.stringify(this.buildError(request.id, 'unauthorized', 'Invalid device token')))
       return
@@ -1753,6 +1791,18 @@ export class OrcaRuntimeRpcServer {
             request.id,
             'forbidden',
             `Method '${request.method}' is not available to mobile clients`
+          )
+        )
+      )
+      return
+    }
+    if (device.scope === 'wear' && !WEAR_RPC_METHOD_ALLOWLIST.has(request.method)) {
+      reply(
+        JSON.stringify(
+          this.buildError(
+            request.id,
+            'forbidden',
+            `Method '${request.method}' is not available to Wear clients`
           )
         )
       )
@@ -1812,7 +1862,7 @@ export class OrcaRuntimeRpcServer {
         clientId: token,
         pairedDeviceId: device.deviceId,
         // Why: gates the mobile-only payload diet so full-screen web/desktop clients aren't truncated.
-        clientKind: device.scope,
+        clientKind: device.scope === 'wear' ? 'mobile' : device.scope,
         clientCapabilities: authenticatedSocket?.clientCapabilities,
         setClientCapabilities: authenticatedSocket?.setClientCapabilities,
         pairing: pairingContext,

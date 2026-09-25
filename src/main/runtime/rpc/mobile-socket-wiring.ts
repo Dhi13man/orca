@@ -46,6 +46,7 @@ export type AuthenticatedMobileSocket = {
 
 type MobileSocketWiringOptions = {
   deviceRegistry: DeviceRegistry
+  wearDeviceRegistry?: DeviceRegistry
   e2eeKeypair: E2EEKeypair
   onText: (
     socket: AuthenticatedMobileSocket,
@@ -70,6 +71,7 @@ function toAuthenticatedDevice(device: DeviceEntry): E2EEAuthenticatedDevice {
 
 export class MobileSocketWiring {
   private readonly deviceRegistry: DeviceRegistry
+  private readonly wearDeviceRegistry: DeviceRegistry | undefined
   private readonly e2eeKeypair: E2EEKeypair
   private readonly onText: MobileSocketWiringOptions['onText']
   private readonly onBinary: MobileSocketWiringOptions['onBinary']
@@ -84,6 +86,7 @@ export class MobileSocketWiring {
 
   constructor(options: MobileSocketWiringOptions) {
     this.deviceRegistry = options.deviceRegistry
+    this.wearDeviceRegistry = options.wearDeviceRegistry
     this.e2eeKeypair = options.e2eeKeypair
     this.onText = options.onText
     this.onBinary = options.onBinary
@@ -152,8 +155,12 @@ export class MobileSocketWiring {
         requireV2: metadata.transport === 'relay',
         outboundMemoryBudget: this.outboundMemoryBudget,
         resolveAuthenticatedDevice: (token) => {
-          const device = this.deviceRegistry.validateToken(token)
+          const device =
+            this.deviceRegistry.validateToken(token) ?? this.wearDeviceRegistry?.validateToken(token)
           if (!device) {
+            return null
+          }
+          if (device.scope === 'wear' && metadata.transport === 'relay') {
             return null
           }
           // Why: outer relay authorization cannot choose the local Orca
@@ -191,7 +198,9 @@ export class MobileSocketWiring {
           this.authenticatedSockets.set(ws, socket)
           transport.setClientId(ws, device.deviceToken)
           // Why: deferred — the client's e2ee_authenticated must not wait on a secure-file rewrite.
-          this.deviceRegistry.updateLastSeenDeferred(device.deviceId)
+          ;(device.scope === 'wear' ? this.wearDeviceRegistry : this.deviceRegistry)?.updateLastSeenDeferred(
+            device.deviceId
+          )
           this.onReady?.(socket)
         },
         onError: (code, reason) => {

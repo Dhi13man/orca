@@ -52,7 +52,7 @@ class FakeTransport implements MobileSocketTransport {
 function registryFor(
   deviceId: string,
   token: string,
-  scope: 'mobile' | 'runtime' = 'mobile'
+  scope: 'mobile' | 'runtime' | 'wear' = 'mobile'
 ): DeviceRegistry {
   return {
     validateToken: (candidate: string) =>
@@ -72,6 +72,49 @@ function registryFor(
 }
 
 describe('MobileSocketWiring', () => {
+  it('authenticates a watch only through its separate registry on a direct socket', () => {
+    const desktop = generateKeyPair()
+    const watch = generateKeyPair()
+    const ws = new FakeSocket()
+    const transport = new FakeTransport()
+    const onText = vi.fn()
+    const baseRegistry = registryFor('phone', 'phone-token')
+    const wearRegistry = registryFor('watch', 'watch-token', 'wear')
+    const wiring = new MobileSocketWiring({
+      deviceRegistry: baseRegistry,
+      wearDeviceRegistry: wearRegistry,
+      e2eeKeypair: {
+        publicKey: desktop.publicKey,
+        secretKey: desktop.secretKey,
+        publicKeyB64: Buffer.from(desktop.publicKey).toString('base64')
+      },
+      onText,
+      onBinary: vi.fn(),
+      onClose: vi.fn()
+    })
+    wiring.attachTransport(transport)
+    transport.receive(
+      ws,
+      JSON.stringify({
+        type: 'e2ee_hello',
+        publicKeyB64: Buffer.from(watch.publicKey).toString('base64')
+      })
+    )
+    const key = deriveSharedKey(watch.secretKey, desktop.publicKey)
+    transport.receive(
+      ws,
+      encrypt(JSON.stringify({ type: 'e2ee_auth', deviceToken: 'watch-token' }), key)
+    )
+    transport.receive(ws, encrypt('{"id":"status","method":"status.get"}', key))
+
+    expect(onText.mock.calls[0]?.[0]).toMatchObject({
+      device: { deviceId: 'watch', scope: 'wear' },
+      transport: { transport: 'direct' }
+    })
+    expect(baseRegistry.updateLastSeenDeferred).not.toHaveBeenCalled()
+    expect(wearRegistry.updateLastSeenDeferred).toHaveBeenCalledWith('watch')
+  })
+
   it('terminates a revoked device across every attached transport', () => {
     const direct = new FakeTransport()
     const relay = new FakeTransport()
