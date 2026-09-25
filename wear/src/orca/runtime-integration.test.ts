@@ -180,8 +180,10 @@ function createWearEmulatorDriver(androidHome: string, serial: string) {
     async pair(endpoint: string, code: string): Promise<void> {
       await shell('am', 'force-stop', 'com.stably.orca.mobile')
       await shell('am', 'start', '-n', 'com.stably.orca.mobile/.MainActivity')
-      await reachAddHost()
-      await tap('Add Orca host')
+      if (!(await readScreen()).includes('Pair this watch')) {
+        await reachAddHost()
+        await tap('Add Orca host')
+      }
       await enter('Enter Orca endpoint', endpoint.replace(/^ws:\/\//, ''))
       await enter('Enter watch code', code.replace(/-/g, ''))
       await reach('Connect')
@@ -445,6 +447,24 @@ it(
         expect(restored).not.toContain('secret-body')
         console.info('wear-ui: process restart restored host and redacted event')
         verifyEmulatorRevocation = async () => {
+          await emulator.shell('input', 'keyevent', '3')
+          await emulator.shell('am', 'kill', 'com.stably.orca.mobile')
+          runtime.dispatchMobileNotification({
+            type: 'notification',
+            source: 'terminal-bell',
+            notificationId: 'event-background',
+            title: 'background-title',
+            body: 'secret-background-body'
+          })
+          await emulator.shell(
+            'cmd',
+            'jobscheduler',
+            'run',
+            '-f',
+            'com.stably.orca.mobile',
+            '1464156499'
+          )
+          await new Promise((resolve) => setTimeout(resolve, 35_000))
           expect(server.revokeRuntimeAccess(emulatorOffer.deviceId)).toBe(true)
           const revokedOffer = parsePairingCode(emulatorOffer.pairingUrl)
           await expect(
@@ -464,7 +484,15 @@ it(
           }
           expect(revokedScreen).toContain(expectedHost)
           expect(revokedScreen).toContain('Unavailable')
-          console.info('wear-ui: revoked host shown unavailable')
+          for (let attempt = 0; attempt < 16; attempt++) {
+            await emulator.shell('input', 'swipe', '228', '80', '220', '396', '120')
+          }
+          const cachedAttention = await emulator.readScreen()
+          expect(cachedAttention).toContain('Terminal bell')
+          expect(cachedAttention).not.toContain('secret-background-body')
+          console.info(
+            'wear-ui: cold background job persisted a redacted event; revoked host unavailable'
+          )
         }
       }
       runtime.dispatchMobileNotification({ type: 'dismiss', notificationId: 'event-a' })

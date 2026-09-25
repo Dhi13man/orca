@@ -86,6 +86,9 @@ type WearDataLayerModule = {
   requestText(label: string): Promise<string | null>
   isBackgroundRefreshActive(runId: number): boolean
   completeBackgroundRefresh(runId: number): void
+  setDirectPairingIdentity(identity: string): void
+  getDirectSnapshotSlot(): { slot: number; identity: string } | null
+  publishDirectSnapshotSlot(runId: number, identity: string, slot: number): boolean
   discoverPeers(): Promise<WearPeer[]>
   beginEnrollment(nodeId: string): Promise<void>
   confirmEnrollment(fingerprint: string): Promise<void>

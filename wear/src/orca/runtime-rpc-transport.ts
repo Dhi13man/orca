@@ -35,6 +35,7 @@ export type ClientDependencies = {
   createSocket: (endpoint: string) => OrcaSocket
   createRequestId: () => string
   timeoutMs: number
+  signal?: AbortSignal
 }
 
 type RuntimeRequest = { method: string; params?: unknown }
@@ -66,6 +67,10 @@ export function requestRuntime(
 ): Promise<Record<string, RuntimeReply>> {
   const dependencies = { ...defaultDependencies, ...dependencyOverrides }
   return new Promise((resolve, reject) => {
+    if (dependencies.signal?.aborted) {
+      reject(new RuntimeTransportError('Orca request cancelled', 'not-sent'))
+      return
+    }
     const socket = dependencies.createSocket(offer.endpoint)
     const serverPublicKey = publicKeyFromBase64(offer.publicKeyB64)
     const ephemeral = generateKeyPair()
@@ -86,6 +91,7 @@ export function requestRuntime(
       }
       settled = true
       clearTimeout(timer)
+      dependencies.signal?.removeEventListener('abort', abort)
       socket.close()
       if ('replies' in result) {
         resolve(result.replies)
@@ -98,12 +104,21 @@ export function requestRuntime(
         error: new RuntimeTransportError(message, requestFramesSent ? 'unknown' : 'not-sent')
       })
     }
+    const abort = (): void => failTransport('Orca request cancelled')
+    dependencies.signal?.addEventListener('abort', abort, { once: true })
     const timer = setTimeout(
       () => failTransport('Orca connection timed out'),
       dependencies.timeoutMs
     )
+    if (dependencies.signal?.aborted) {
+      abort()
+      return
+    }
 
     socket.onopen = () => {
+      if (settled || dependencies.signal?.aborted) {
+        return
+      }
       try {
         socket.send(
           JSON.stringify({
@@ -116,6 +131,9 @@ export function requestRuntime(
       }
     }
     socket.onmessage = (event) => {
+      if (settled || dependencies.signal?.aborted) {
+        return
+      }
       if (typeof event.data !== 'string') {
         return
       }
@@ -135,6 +153,9 @@ export function requestRuntime(
     const handleHandshake = (data: string): void => {
       const plaintextMessage = parseJson(data)
       if (plaintextMessage?.type === 'e2ee_ready') {
+        if (settled || dependencies.signal?.aborted) {
+          return
+        }
         socket.send(
           encrypt(
             JSON.stringify({
@@ -151,6 +172,9 @@ export function requestRuntime(
       if (handshake?.type === 'e2ee_authenticated') {
         authenticated = true
         for (const [id, key] of requestById) {
+          if (settled || dependencies.signal?.aborted) {
+            return
+          }
           const request = requests[key]
           if (!request) {
             continue

@@ -30,8 +30,10 @@ class WearDashboardRefreshJobService : JobService(), HeadlessJsTaskEventListener
 
     override fun onStartJob(params: JobParameters): Boolean {
         parameters = params
-        runId = ++nextRunId
-        active = this
+        synchronized(gate) {
+            runId = ++nextRunId
+            active = this
+        }
         handler.postDelayed(startupTimeout, 20_000)
         val app = application as ReactApplication
         if (ReactNativeNewArchitectureFeatureFlags.enableBridgelessArchitecture()) {
@@ -97,14 +99,14 @@ class WearDashboardRefreshJobService : JobService(), HeadlessJsTaskEventListener
         context?.let { ready -> taskId?.let(HeadlessJsTaskContext.getInstance(ready)::finishTask) }
         context = null
         taskId = null
-        if (active === this) active = null
+        synchronized(gate) { if (active === this) active = null }
         parameters?.let { jobFinished(it, retry) }
         parameters = null
     }
 
     override fun onStopJob(params: JobParameters): Boolean {
         handler.removeCallbacks(startupTimeout)
-        if (active === this) active = null
+        synchronized(gate) { if (active === this) active = null }
         parameters = null
         removeInitializationListener?.invoke()
         removeInitializationListener = null
@@ -122,11 +124,36 @@ class WearDashboardRefreshJobService : JobService(), HeadlessJsTaskEventListener
         private const val JOB_ID = 0x57454153
         private const val INTERVAL_MS = 15 * 60_000L
         private var nextRunId = 0
+        private val gate = Any()
         @Volatile private var active: WearDashboardRefreshJobService? = null
+        private const val PREFS = "orca.wear.direct.refresh"
 
-        fun isActive(runId: Int): Boolean = active?.let {
+        fun isActive(runId: Int): Boolean = synchronized(gate) { active?.let {
             it.runId == runId && it.parameters != null
-        } == true
+        } == true }
+
+        fun setDirectIdentity(context: Context, identity: String) = synchronized(gate) {
+            require(identity.length <= 64)
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            if (prefs.getString("identity", "") != identity) {
+                check(prefs.edit().putString("identity", identity).putInt("slot", -1).commit())
+            }
+            syncScheduleLocked(context)
+        }
+
+        fun currentSlot(context: Context): Map<String, Any>? = synchronized(gate) {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val slot = prefs.getInt("slot", -1)
+            val identity = prefs.getString("identity", "") ?: ""
+            mapOf("slot" to slot, "identity" to identity)
+        }
+
+        fun publishSlot(context: Context, runId: Int, identity: String, slot: Int): Boolean = synchronized(gate) {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            if (slot !in 0..1 || !isActive(runId) || identity.isEmpty() ||
+                prefs.getString("identity", "") != identity || prefs.getInt("slot", -1) == slot) false
+            else prefs.edit().putInt("slot", slot).commit()
+        }
 
         fun complete(runId: Int) {
             Handler(Looper.getMainLooper()).post {
@@ -135,8 +162,17 @@ class WearDashboardRefreshJobService : JobService(), HeadlessJsTaskEventListener
         }
 
         fun syncSchedule(context: Context, bound: Boolean) {
+            synchronized(gate) {
+                context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                    .putBoolean("bound", bound).commit()
+                syncScheduleLocked(context)
+            }
+        }
+
+        private fun syncScheduleLocked(context: Context) {
             val scheduler = context.getSystemService(JobScheduler::class.java)
-            if (!bound) {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            if (!prefs.getBoolean("bound", false) && prefs.getString("identity", "").isNullOrEmpty()) {
                 scheduler.cancel(JOB_ID)
                 return
             }

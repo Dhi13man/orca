@@ -91,6 +91,15 @@ class ExpoWearDataLayerModule : Module() {
         Function("completeBackgroundRefresh") { runId: Int ->
             WearDashboardRefreshJobService.complete(runId)
         }
+        Function("setDirectPairingIdentity") { identity: String ->
+            WearDashboardRefreshJobService.setDirectIdentity(requireNotNull(appContext.reactContext), identity)
+        }
+        Function("getDirectSnapshotSlot") {
+            WearDashboardRefreshJobService.currentSlot(requireNotNull(appContext.reactContext))
+        }
+        Function("publishDirectSnapshotSlot") { runId: Int, identity: String, slot: Int ->
+            WearDashboardRefreshJobService.publishSlot(requireNotNull(appContext.reactContext), runId, identity, slot)
+        }
         AsyncFunction("discoverPeers") { promise: Promise ->
             val context = requireNotNull(appContext.reactContext)
             Wearable.getNodeClient(context).connectedNodes

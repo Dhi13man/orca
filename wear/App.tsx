@@ -14,6 +14,11 @@ import { AgentConversation } from './src/command-center/agent-conversation'
 import { RuntimeDashboard } from './src/command-center/runtime-dashboard'
 import { fetchRuntimeStatus } from './src/orca/direct-orca-client'
 import { refreshFleet, type FleetHost } from './src/orca/fleet-dashboard'
+import {
+  invalidateDirectPairings,
+  loadCachedFleet,
+  syncDirectPairings
+} from './src/orca/direct-dashboard-cache'
 import { loadPairings, removePairing, savePairing } from './src/orca/pairing-store'
 import { parsePairingCode, type PairingOffer } from './src/orca/pairing'
 import { redeemWearManualCode } from './src/orca/manual-enrollment'
@@ -51,7 +56,8 @@ export default function App() {
     setHosts(
       offers.map((offer) => {
         const saved = prior.get(offer.endpoint)
-        return saved?.pairing.publicKeyB64 === offer.publicKeyB64
+        return saved?.pairing.publicKeyB64 === offer.publicKeyB64 &&
+          saved.pairing.deviceToken === offer.deviceToken
           ? { ...saved, pairing: offer }
           : { pairing: offer, dashboard: null, observedAt: null, checkedAt: 0, error: null }
       })
@@ -78,8 +84,10 @@ export default function App() {
       setError('')
       try {
         await fetchRuntimeStatus(offer)
+        invalidateDirectPairings()
         await savePairing(offer)
         const saved = await loadPairings()
+        await syncDirectPairings(saved)
         setPairings(saved)
         usageFollowups.current = 0
         setShowEnroll(false)
@@ -87,7 +95,13 @@ export default function App() {
         setManualCode('')
         void refresh(saved)
       } catch (caught) {
-        setError(caught instanceof Error ? caught.message : 'Could not pair with Orca')
+        let message = caught instanceof Error ? caught.message : 'Could not pair with Orca'
+        try {
+          await syncDirectPairings(await loadPairings())
+        } catch {
+          message = 'Saved runtimes are unavailable; restart the watch app'
+        }
+        setError(message)
       } finally {
         setBusy(false)
       }
@@ -139,10 +153,17 @@ export default function App() {
   useEffect(() => {
     let active = true
     void Promise.all([loadPairings(), Linking.getInitialURL()])
-      .then(([saved, url]) => {
+      .then(async ([saved, url]) => {
         if (!active) {
           return
         }
+        await syncDirectPairings(saved)
+        const cached = await loadCachedFleet(saved)
+        if (!active) {
+          return
+        }
+        hostsRef.current = cached
+        setHosts(cached)
         setPairings(saved)
         if (url && parsePairingCode(url)) {
           void enroll(url)
@@ -201,8 +222,10 @@ export default function App() {
 
   const forget = async (host: FleetHost) => {
     try {
+      invalidateDirectPairings()
       await removePairing(host.pairing)
       const remaining = await loadPairings()
+      await syncDirectPairings(remaining)
       setPairings(remaining)
       usageFollowups.current = 0
       setShowEnroll(remaining.length === 0)
@@ -210,7 +233,16 @@ export default function App() {
       setError('')
       void refresh(remaining)
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Could not remove this runtime')
+      let message = caught instanceof Error ? caught.message : 'Could not remove this runtime'
+      try {
+        const saved = await loadPairings()
+        await syncDirectPairings(saved)
+        setPairings(saved)
+        void refresh(saved)
+      } catch {
+        message = 'Saved runtimes are unavailable; restart the watch app'
+      }
+      setError(message)
     }
   }
 

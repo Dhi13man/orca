@@ -110,4 +110,49 @@ describe('fleet dashboard refresh', () => {
     )
     expect(host).toMatchObject({ dashboard: null, observedAt: null, error: 'Connection refused' })
   })
+
+  it('drops stale data when the same runtime rotates its watch grant', async () => {
+    const previous = [
+      {
+        pairing: pairings[0],
+        dashboard: dashboard('runtime-0'),
+        observedAt: 10,
+        checkedAt: 10,
+        error: null
+      }
+    ]
+    const rotated = { ...pairings[0], deviceToken: 'rotated-grant' }
+    const [host] = await refreshFleet(
+      [rotated],
+      previous,
+      async () => {
+        throw new Error('Connection refused')
+      },
+      () => 50
+    )
+    expect(host).toMatchObject({ dashboard: null, observedAt: null, error: 'Connection refused' })
+  })
+
+  it('stops queued hosts and rejects late results after cancellation', async () => {
+    const abort = new AbortController()
+    const release: (() => void)[] = []
+    const fetched: string[] = []
+    const pending = refreshFleet(
+      pairings,
+      [],
+      async (offer) => {
+        fetched.push(offer.endpoint)
+        await new Promise<void>((resolve) => release.push(resolve))
+        return dashboard(offer.endpoint)
+      },
+      () => 100,
+      abort.signal
+    )
+    await Promise.resolve()
+    expect(fetched).toHaveLength(3)
+    abort.abort()
+    release.forEach((done) => done())
+    await expect(pending).rejects.toThrow('cancelled')
+    expect(fetched).toHaveLength(3)
+  })
 })

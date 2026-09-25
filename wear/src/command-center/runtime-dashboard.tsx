@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import type { FleetHost } from '../orca/fleet-dashboard'
+import { CACHED_HOST_LIMIT } from '../orca/direct-dashboard-cache'
 import { pairingEndpointLabel } from '../orca/pairing'
 import type {
   WearAgentSession,
@@ -49,6 +50,11 @@ export function RuntimeDashboard({
           {hosts.length} paired {hosts.length === 1 ? 'host' : 'hosts'} ·{' '}
           {hosts.filter((host) => host.dashboard).length} with data
         </Text>
+        {hosts.length > CACHED_HOST_LIMIT ? (
+          <Text style={styles.meta}>
+            Background cache covers {CACHED_HOST_LIMIT}; refresh to check all hosts.
+          </Text>
+        ) : null}
       </View>
       {hosts.length === 0 ? <Text style={styles.empty}>Checking paired hosts…</Text> : null}
       {attention.length ? (
@@ -76,7 +82,7 @@ export function RuntimeDashboard({
             </Text>
             <Text style={styles.status}>
               {pairingEndpointLabel(host.pairing.endpoint)} · {formatAge(event.at)}
-              {host.error ? ' · stale' : ''}
+              {host.error || host.cached ? ' · stale' : ''}
             </Text>
           </View>
         ))
@@ -118,7 +124,7 @@ export function RuntimeDashboard({
             host.dashboard.usage.map((usage) => (
               <UsageCard
                 key={usage.provider}
-                stale={Boolean(host.error || host.dashboard?.usageRefreshPending)}
+                stale={Boolean(host.error || host.cached || host.dashboard?.usageRefreshPending)}
                 usage={usage}
               />
             ))
@@ -161,7 +167,7 @@ function HostStatus({ host }: { host: FleetHost }) {
         {host.error
           ? `Unavailable · ${host.error} · checked ${formatAge(host.checkedAt)}`
           : host.dashboard
-            ? `Last read ${formatAge(host.observedAt!)}`
+            ? `${host.cached ? 'Cached read' : 'Last read'} ${formatAge(host.observedAt!)}`
             : 'Checking…'}
       </Text>
       {host.error && host.observedAt ? (
@@ -172,6 +178,9 @@ function HostStatus({ host }: { host: FleetHost }) {
           {warning}
         </Text>
       ))}
+      {host.agentsOmitted ? (
+        <Text style={styles.status}>{host.agentsOmitted} older agents omitted from cache</Text>
+      ) : null}
     </View>
   )
 }
@@ -232,9 +241,14 @@ function AgentCard({
   const source = pairingEndpointLabel(host.pairing.endpoint)
   return (
     <Pressable
-      accessibilityHint="Opens the exact host and agent conversation"
-      accessibilityLabel={`${agent.title}, ${agent.agent}, ${agent.state}, ${source}${host.error ? ', stale' : ''}`}
+      accessibilityHint={
+        host.cached || host.error
+          ? 'Refresh host before opening conversation'
+          : 'Opens the exact host and agent conversation'
+      }
+      accessibilityLabel={`${agent.title}, ${agent.agent}, ${agent.state}, ${source}${host.error || host.cached ? ', stale' : ''}`}
       accessibilityRole="button"
+      disabled={Boolean(host.cached || host.error)}
       onPress={onPress}
       style={({ pressed }) => [styles.agentCard, pressed && styles.pressed]}
     >
@@ -246,7 +260,7 @@ function AgentCard({
           {source} · {agent.agent}
         </Text>
         <Text style={[styles.agentState, agent.state === 'blocked' && styles.error]}>
-          {host.error ? 'stale' : agent.state}
+          {host.error || host.cached ? 'stale' : agent.state}
         </Text>
       </View>
     </Pressable>

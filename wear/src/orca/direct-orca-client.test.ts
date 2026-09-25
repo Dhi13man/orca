@@ -147,6 +147,23 @@ describe('fetchRuntimeStatus', () => {
     ).rejects.toThrow('Orca rejected this pairing')
   })
 
+  it('closes an aborted socket before open and sends no request frames', async () => {
+    const abort = new AbortController()
+    let socket: FakeOrcaSocket | undefined
+    const pending = fetchRuntimeStatus(offer, {
+      signal: abort.signal,
+      createSocket: () => {
+        socket = new FakeOrcaSocket(serverSecretKey, 'watch-token')
+        return socket
+      }
+    })
+    abort.abort()
+    await expect(pending).rejects.toThrow('cancelled')
+    await Promise.resolve()
+    expect(socket).toBeDefined()
+    expect(socket?.requests).toEqual([])
+  })
+
   it('loads usage and agent inventory through one authenticated batch', async () => {
     let socket: FakeOrcaSocket
     const responder = (message: Record<string, unknown>): FakeReply => {
