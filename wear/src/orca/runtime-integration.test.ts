@@ -18,7 +18,13 @@ vi.mock('../../../src/main/git/worktree', () => ({
 
 import { OrcaRuntimeService } from '../../../src/main/runtime/orca-runtime'
 import { OrcaRuntimeRpcServer } from '../../../src/main/runtime/runtime-rpc'
-import { fetchRuntimeDashboard, type OrcaSocket } from './direct-orca-client'
+import { WearCommandLedger } from '../../../src/main/runtime/wear-command-ledger'
+import {
+  fetchCommandReceipt,
+  fetchRuntimeDashboard,
+  sendAgentMessage,
+  type OrcaSocket
+} from './direct-orca-client'
 import { parsePairingCode } from './pairing'
 import { requestRuntime } from './runtime-rpc-transport'
 import { redeemWearManualCode } from './manual-enrollment'
@@ -244,6 +250,15 @@ it(
           ]
         }) as never
     )
+    vi.spyOn(runtime, 'isLocalOrWslWearTerminalTarget').mockReturnValue(true)
+    vi.spyOn(runtime, 'getWearWslTerminalDistro').mockReturnValue(null)
+    vi.spyOn(runtime, 'isCurrentLocalWearTerminalTarget').mockReturnValue(true)
+    vi.spyOn(runtime, 'isTerminalRunningSettledPromptAgent').mockResolvedValue(true)
+    const wearLedger = new WearCommandLedger(':memory:')
+    vi.spyOn(runtime, 'getWearCommandLedger').mockReturnValue(wearLedger)
+    const sendTerminalAgentPrompt = vi
+      .spyOn(runtime, 'sendTerminalAgentPrompt')
+      .mockResolvedValue({ accepted: true } as never)
     const refreshUsage = vi.spyOn(runtime, 'refreshAllWearUsageIfStale').mockResolvedValue()
     const accountsSnapshot = vi.spyOn(runtime, 'getAccountsSnapshot').mockReturnValue({
       rateLimits: { claude: null }
@@ -310,6 +325,41 @@ it(
       expect(dashboard.agents).toMatchObject([{ sessionTabId: 'tab-a', agent: 'codex' }])
       expect(dashboard.events).toMatchObject([{ kind: 'agent-task-complete' }])
       expect(restoreStructuredTabs).toHaveBeenCalled()
+      const replyId = 'isolated-watch-reply'
+      const replyExpiresAt = Date.now() + 60_000
+      const reply = () =>
+        sendAgentMessage(
+          parsed!,
+          dashboard.agents[0],
+          offer.deviceId,
+          dashboard.status.runtimeId,
+          replyId,
+          replyExpiresAt,
+          'test acknowledgement only',
+          { createSocket: (endpoint) => new WebSocket(endpoint) as unknown as OrcaSocket }
+        )
+      expect(await reply()).toBe('accepted')
+      expect(await reply()).toBe('accepted')
+      expect(sendTerminalAgentPrompt).toHaveBeenCalledOnce()
+      expect(sendTerminalAgentPrompt.mock.calls[0][0]).toBe('term-a')
+      expect(
+        await fetchCommandReceipt(parsed!, offer.deviceId, replyId, {
+          createSocket: (endpoint) => new WebSocket(endpoint) as unknown as OrcaSocket
+        })
+      ).toBe('accepted')
+      expect(
+        await sendAgentMessage(
+          parsed!,
+          { ...dashboard.agents[0], snapshotVersion: dashboard.agents[0].snapshotVersion + 1 },
+          offer.deviceId,
+          dashboard.status.runtimeId,
+          'changed-watch-target',
+          replyExpiresAt,
+          'test acknowledgement only',
+          { createSocket: (endpoint) => new WebSocket(endpoint) as unknown as OrcaSocket }
+        )
+      ).toBe('rejected')
+      expect(sendTerminalAgentPrompt).toHaveBeenCalledOnce()
       const raw = await requestRuntime(
         parsed!,
         {
@@ -430,6 +480,7 @@ it(
       await verifyEmulatorRevocation?.()
     } finally {
       await server.stop()
+      wearLedger.close()
     }
   },
   process.env.ORCA_WEAR_EMULATOR_SERIAL ? 300_000 : 15_000
