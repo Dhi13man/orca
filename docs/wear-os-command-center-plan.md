@@ -2230,3 +2230,11 @@ other paired machines. The seven focused replay tests, mobile typecheck/lint,
 and scoped formatting pass. This closes the synchronous ownership leak in
 source; it does not prove host-originated notification delivery or physical
 timing.
+
+After `67dd9bbef`, the current phone source built offline as an ARM64-only
+release APK with a bundled JS asset. The 62,901,104-byte artifact has SHA-256
+`C54A28F72329D35AA64661C26B5F6D5F5CF0C500839A0482240892EC4358C911`,
+package `com.stably.orca.mobile` versionCode 15, only `arm64-v8a` native code,
+and signing certificate
+`fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c`.
+It remains uninstalled on the physical phone; ADB lists only emulators.
