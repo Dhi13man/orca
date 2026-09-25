@@ -2,12 +2,10 @@ import {
   buildRegistry,
   isStreamingMethod,
   type RpcAnyMethod,
-  type RpcEnvelopeMeta,
   type RpcRegistry,
   type RpcRequest,
   type RpcResponse
 } from './core'
-
 import { errorResponse, successResponse } from './errors'
 import { ALL_RPC_METHODS } from './methods'
 import { emulatorProbe, emulatorProbeError } from '../../emulator/emulator-probe'
@@ -20,7 +18,7 @@ import {
 import { orchestrationMigrationFence } from './orchestration-contract-fence'
 import { recordRuntimeFeatureInteraction } from './runtime-feature-interaction'
 import { OrchestrationLegacyCompatibility } from './orchestration-legacy-compatibility'
-import type { RpcDispatchStreamingOptions } from './dispatcher-stream-options'
+import type { DispatchCallOptions, RpcDispatchStreamingOptions } from './dispatcher-stream-options'
 import { mapDispatcherError } from './dispatcher-error-response'
 import { parseRpcRequestParams } from './dispatcher-request-parsing'
 import { routeDispatcherClientHostedBrowserRpc } from './dispatcher-client-browser-routing'
@@ -28,9 +26,6 @@ import { needsLocalCallerFingerprint } from './dispatcher-caller-fingerprint'
 import { createDispatcherStreamingFeatureEmitter } from './dispatcher-streaming-feature-emitter'
 
 export type DispatcherOptions = { runtime: OrcaRuntimeService; methods?: readonly RpcAnyMethod[] }
-
-// oxfmt-ignore
-type DispatchCallOptions = Pick<RpcDispatchStreamingOptions, 'signal' | 'connectionId' | 'clientId' | 'clientKind' | 'clientCapabilities' | 'setClientCapabilities' | 'authenticatedCallerFingerprint'>
 
 export class RpcDispatcher {
   private readonly runtime: OrcaRuntimeService
@@ -46,7 +41,7 @@ export class RpcDispatcher {
   }
 
   async dispatch(request: RpcRequest, options?: DispatchCallOptions): Promise<RpcResponse> {
-    const meta = this.meta()
+    const meta = { runtimeId: this.runtime.getRuntimeId() }
     const method = this.registry.get(request.method)
     if (!method) {
       return errorResponse(
@@ -158,15 +153,12 @@ export class RpcDispatcher {
     }
   }
 
-  // Why: streaming dispatch sends multiple responses through the reply callback
-  // instead of returning a single Promise. This enables terminal.subscribe and
-  // other subscription-style methods that push data over time.
   async dispatchStreaming(
     request: RpcRequest,
     reply: (response: string) => void,
     options?: RpcDispatchStreamingOptions
   ): Promise<void> {
-    const meta = this.meta()
+    const meta = { runtimeId: this.runtime.getRuntimeId() }
     const method = this.registry.get(request.method)
     if (!method) {
       reply(
@@ -235,6 +227,7 @@ export class RpcDispatcher {
             connectionId: options?.connectionId,
             clientId: options?.clientId,
             pairedDeviceId: options?.pairedDeviceId,
+            wearPush: options?.wearPush,
             clientKind: options?.clientKind,
             clientCapabilities: options?.clientCapabilities,
             setClientCapabilities: options?.setClientCapabilities,
@@ -292,6 +285,7 @@ export class RpcDispatcher {
           connectionId: options?.connectionId,
           clientId: options?.clientId,
           pairedDeviceId: options?.pairedDeviceId,
+          wearPush: options?.wearPush,
           clientKind: options?.clientKind,
           clientCapabilities: options?.clientCapabilities,
           setClientCapabilities: options?.setClientCapabilities,
@@ -313,9 +307,5 @@ export class RpcDispatcher {
     } catch (error) {
       reply(JSON.stringify(mapDispatcherError(request, meta, error)))
     }
-  }
-
-  private meta(): RpcEnvelopeMeta {
-    return { runtimeId: this.runtime.getRuntimeId() }
   }
 }

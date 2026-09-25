@@ -6,6 +6,7 @@ import { DeviceRegistry } from './device-registry'
 import { parsePairingCode } from '../../shared/pairing'
 import { OrcaRuntimeService } from './orca-runtime'
 import { OrcaRuntimeRpcServer } from './runtime-rpc'
+import { WearPushRegistrations } from './wear-push-registrations'
 
 describe('Wear runtime credential', () => {
   it('issues only a Wear grant and revokes it after restart', async () => {
@@ -79,6 +80,64 @@ describe('Wear runtime credential', () => {
           })
         )
       }
+    } finally {
+      await server.stop()
+    }
+  })
+
+  it('accepts push registration only from an authenticated Wear grant', async () => {
+    const userDataPath = mkdtempSync(join(tmpdir(), 'orca-wear-push-auth-'))
+    const server = new OrcaRuntimeRpcServer({
+      runtime: new OrcaRuntimeService(),
+      userDataPath,
+      enableWebSocket: false
+    })
+    const mobile = new DeviceRegistry(userDataPath)
+    const wear = new DeviceRegistry(userDataPath, 'wear')
+    const phoneDevice = mobile.addDevice('Phone', 'mobile')
+    const watchDevice = wear.addDevice('Watch', 'wear')
+    server['deviceRegistry'] = mobile
+    server['wearDeviceRegistry'] = wear
+    const push = new WearPushRegistrations(
+      userDataPath,
+      (id) => wear.getDevice(id)?.scope === 'wear'
+    )
+    push.load()
+    server['wearPush'] = push
+    const request = (deviceToken: string, id: string) =>
+      JSON.stringify({
+        id,
+        method: 'wear.push.register',
+        deviceToken,
+        params: { token: 'watch-fcm-token-1234567890' }
+      })
+    try {
+      const phoneReplies: Record<string, unknown>[] = []
+      await server['handleWebSocketMessage'](
+        request(phoneDevice.token, 'phone'),
+        (response) => phoneReplies.push(JSON.parse(response) as Record<string, unknown>),
+        () => {}
+      )
+      expect(phoneReplies).toContainEqual(
+        expect.objectContaining({
+          id: 'phone',
+          ok: false,
+          error: expect.objectContaining({ code: 'forbidden' })
+        })
+      )
+      const watchReplies: Record<string, unknown>[] = []
+      await server['handleWebSocketMessage'](
+        request(watchDevice.token, 'watch'),
+        (response) => watchReplies.push(JSON.parse(response) as Record<string, unknown>),
+        () => {}
+      )
+      expect(watchReplies).toContainEqual(
+        expect.objectContaining({ id: 'watch', ok: true, result: { configured: false } })
+      )
+      expect(server.revokeRuntimeAccess(watchDevice.deviceId)).toBe(true)
+      expect(() => push.register(watchDevice.deviceId, 'watch-fcm-token-1234567890')).toThrow(
+        'no longer active'
+      )
     } finally {
       await server.stop()
     }

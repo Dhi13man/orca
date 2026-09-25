@@ -51,6 +51,7 @@ import type {
 import { encodePairingOffer, PAIRING_OFFER_VERSION } from '../../shared/pairing'
 import { resolveAdvertisedPairingEndpoint } from './pairing-endpoint'
 import { WearManualEnrollment } from './wear-manual-enrollment'
+import { WearPushRegistrations, type SendWearWake } from './wear-push-registrations'
 import type { TerminalStreamFrame } from '../../shared/terminal-stream-protocol'
 import { RuntimeBinaryMessageRouter } from './runtime-binary-message-router'
 
@@ -97,6 +98,7 @@ type OrcaRuntimeRpcServerOptions = {
   metadataOwnershipPollMs?: number
   // Why: tests may inject inert protocol stages before production authorization registers them.
   methods?: readonly RpcAnyMethod[]
+  sendWearWake?: SendWearWake
 }
 
 export type PairingOfferUnavailableReason =
@@ -486,7 +488,8 @@ const WEAR_RPC_METHOD_ALLOWLIST = new Set([
   'wear.conversation.read',
   'wear.terminal.send',
   'wear.agent.send',
-  'wear.command.receipt'
+  'wear.command.receipt',
+  'wear.push.register'
 ])
 
 // Why: 'ask' is metered separately from 'wait' — same keepalive/abort wiring, its own sub-cap.
@@ -575,6 +578,9 @@ export class OrcaRuntimeRpcServer {
   private readonly relayRevokeOutbox: RelayRevokeOutbox
   private deviceRegistry: DeviceRegistry | null = null
   private wearDeviceRegistry: DeviceRegistry | null = null
+  private wearPush: WearPushRegistrations | null = null
+  private stopWearPushListener: (() => void) | null = null
+  private readonly sendWearWake?: SendWearWake
   private readonly wearManualEnrollment = new WearManualEnrollment()
   private e2eeKeypair: E2EEKeypair | null = null
   private pairingInitializationFailure: PairingOfferUnavailable | null = null
@@ -623,7 +629,8 @@ export class OrcaRuntimeRpcServer {
     keepaliveIntervalMs = KEEPALIVE_INTERVAL_MS,
     longPollCap = LONG_POLL_CAP,
     metadataOwnershipPollMs = RUNTIME_METADATA_OWNERSHIP_POLL_MS,
-    methods
+    methods,
+    sendWearWake
   }: OrcaRuntimeRpcServerOptions) {
     this.runtime = runtime
     this.dispatcher = new RpcDispatcher({ runtime, methods: methods ?? ALL_RPC_METHODS })
@@ -648,6 +655,7 @@ export class OrcaRuntimeRpcServer {
     this.browserHostLongPollCapPerDevice = Math.max(1, Math.floor(this.browserHostLongPollCap / 2))
     this.specializedLongPollCap = Math.max(1, Math.floor(longPollCap * SPECIALIZED_LONG_POLL_SHARE))
     this.relayRevokeOutbox = new RelayRevokeOutbox(userDataPath)
+    this.sendWearWake = sendWearWake
   }
 
   getDeviceRegistry(): DeviceRegistry | null {
@@ -744,6 +752,13 @@ export class OrcaRuntimeRpcServer {
     }
     this.runtime.forgetClientNavigationState(deviceId)
     this.mobileSocketWiring?.terminateDeviceConnections(device.token)
+    if (device.scope === 'wear') {
+      try {
+        this.wearPush?.remove(deviceId)
+      } catch {
+        console.warn('[runtime] Wear push token cleanup failed')
+      }
+    }
     return true
   }
 
@@ -1270,6 +1285,23 @@ export class OrcaRuntimeRpcServer {
         this.e2eeKeypair = pairingIdentity.e2eeKeypair
         this.pairingInitializationFailure = null
         try {
+          const push = new WearPushRegistrations(
+            this.userDataPath,
+            (deviceId) => this.wearDeviceRegistry?.getDevice(deviceId)?.scope === 'wear',
+            this.sendWearWake
+          )
+          push.load()
+          this.wearPush = push
+          if (this.sendWearWake) {
+            this.stopWearPushListener = this.runtime.onNotificationDispatched((event) =>
+              push.dispatch(event)
+            )
+          }
+        } catch {
+          this.wearPush = null
+          console.warn('[runtime] Wear push registrations unavailable')
+        }
+        try {
           const host = this.resolveInitialWebSocketBindHost()
           const { transport, endpoint } = await this.startWebSocketTransport({
             host,
@@ -1592,6 +1624,8 @@ export class OrcaRuntimeRpcServer {
   }
 
   async stop(): Promise<void> {
+    this.stopWearPushListener?.()
+    this.stopWearPushListener = null
     this.wearManualEnrollment.clear()
     // Why: STA-2370 — refuse new widens, then let any in-flight pairing widen settle into the live
     // transport arrays before snapshotting them, so a racing rebind can't strand a wide 0.0.0.0 listener
@@ -1875,6 +1909,7 @@ export class OrcaRuntimeRpcServer {
         connectionId,
         clientId: token,
         pairedDeviceId: device.deviceId,
+        wearPush: device.scope === 'wear' ? (this.wearPush ?? undefined) : undefined,
         // Why: gates the mobile-only payload diet so full-screen web/desktop clients aren't truncated.
         clientKind: device.scope === 'wear' ? 'mobile' : device.scope,
         clientCapabilities: authenticatedSocket?.clientCapabilities,

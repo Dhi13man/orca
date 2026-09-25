@@ -8,6 +8,7 @@ export type RpcDispatchStreamingOptions = {
   signal?: AbortSignal
   clientId?: string
   pairedDeviceId?: string
+  wearPush?: RpcContext['wearPush']
   clientKind?: 'mobile' | 'runtime'
   clientCapabilities?: readonly RuntimeCapability[]
   setClientCapabilities?: RpcContext['setClientCapabilities']
@@ -21,3 +22,14 @@ export type RpcDispatchStreamingOptions = {
     handler: (bytes: Uint8Array<ArrayBufferLike>) => void
   ) => () => void
 }
+
+export type DispatchCallOptions = Pick<
+  RpcDispatchStreamingOptions,
+  | 'signal'
+  | 'connectionId'
+  | 'clientId'
+  | 'clientKind'
+  | 'clientCapabilities'
+  | 'setClientCapabilities'
+  | 'authenticatedCallerFingerprint'
+>
