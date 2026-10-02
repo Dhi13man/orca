@@ -17,9 +17,9 @@ import { MAX_TIMER_DELAY_MS } from './timer-delay'
 import {
   BROWSER_CLIENT_HOST_RUNTIME_CAPABILITY,
   BROWSER_CLIENT_PAGE_METADATA_RUNTIME_CAPABILITY,
-  BROWSER_NETWORK_TUNNEL_RUNTIME_CAPABILITY,
-  ELECTRON_REMOTE_RUNTIME_CLIENT_CAPABILITIES
+  BROWSER_NETWORK_TUNNEL_RUNTIME_CAPABILITY
 } from './protocol-version'
+import { ELECTRON_REMOTE_RUNTIME_CLIENT_CAPABILITIES } from './electron-remote-runtime-client-capabilities'
 
 const servers: WebSocketServer[] = []
 
@@ -539,7 +539,12 @@ async function createSubscriptionServer(
   const nextAuth = new Promise<unknown>((resolve) => {
     resolveAuth = resolve
   })
-  const wss = new WebSocketServer({ port: 0, autoPong: options.disableAutoPong !== true })
+  // host must match the 127.0.0.1 clients dial: a wildcard bind lets a foreign loopback listener claim the port and answer here.
+  const wss = new WebSocketServer({
+    host: '127.0.0.1',
+    port: 0,
+    autoPong: options.disableAutoPong !== true
+  })
   servers.push(wss)
 
   wss.on('connection', (ws) => {
@@ -625,7 +630,7 @@ async function createClosingServer(
   reason: string
 ): Promise<{ pairing: PairingOffer }> {
   const serverKeyPair = generateKeyPair()
-  const wss = new WebSocketServer({ port: 0 })
+  const wss = new WebSocketServer({ host: '127.0.0.1', port: 0 })
   servers.push(wss)
   wss.on('connection', (ws) => {
     ws.close(code, reason)
@@ -649,7 +654,7 @@ async function createClosingServer(
 
 async function createInvalidHandshakeServer(): Promise<{ pairing: PairingOffer }> {
   const serverKeyPair = generateKeyPair()
-  const wss = new WebSocketServer({ port: 0 })
+  const wss = new WebSocketServer({ host: '127.0.0.1', port: 0 })
   servers.push(wss)
   wss.on('connection', (ws) => {
     ws.once('message', () => ws.send(JSON.stringify({ type: 'not_orca' })))
@@ -680,7 +685,7 @@ async function createOneShotServer(
   } = {}
 ): Promise<{ pairing: PairingOffer }> {
   const serverKeyPair = generateKeyPair()
-  const wss = new WebSocketServer({ port: 0 })
+  const wss = new WebSocketServer({ host: '127.0.0.1', port: 0 })
   servers.push(wss)
 
   wss.on('connection', (ws) => {

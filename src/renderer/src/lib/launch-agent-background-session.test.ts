@@ -25,7 +25,6 @@ const mockRegisterEagerPtyBuffer = vi.fn()
 const mockSubscribeToPtyData = vi.fn()
 const mockSubscribeToPtyExit = vi.fn()
 const mockPasteDraftWhenAgentReady = vi.fn()
-const mockMarkTrusted = vi.fn()
 const mockDispatchEvent = vi.fn()
 const mockGetAgentLaunchPlatformForRepo = vi.fn<() => NodeJS.Platform>()
 const state = createAgentBackgroundSessionTestState({
@@ -84,7 +83,6 @@ describe('launchAgentBackgroundSession', () => {
       updateTabPtyId: mockUpdateTabPtyId,
       dispatchEvent: mockDispatchEvent,
       kill: mockKill,
-      markTrusted: mockMarkTrusted,
       spawn: mockSpawn,
       write: mockWrite
     })
@@ -347,22 +345,6 @@ describe('launchAgentBackgroundSession', () => {
     )
   })
 
-  it('pre-marks trust for agents with first-launch trust prompts', async () => {
-    const { launchAgentBackgroundSession } = await import('./launch-agent-background-session')
-
-    await launchAgentBackgroundSession({
-      agent: 'codex',
-      worktreeId: 'wt-1',
-      prompt: 'run the automation'
-    })
-
-    expect(mockMarkTrusted).toHaveBeenCalledWith({
-      preset: 'codex',
-      workspacePath: '/repo/worktree'
-    })
-    expect(mockSpawn).toHaveBeenCalled()
-  })
-
   it('stamps hidden SSH status from renderer fallback when the kill switch is off', async () => {
     // Why: with main side-effect authority disabled, this sidecar is the only
     // OSC 9999 → store path for hidden SSH sessions.
@@ -474,6 +456,31 @@ describe('launchAgentBackgroundSession', () => {
     )
     expect(onExit).toHaveBeenCalledWith('pty-1', 0)
     expect(unsubscribe).toHaveBeenCalled()
+    expect(state.markUnverifiedPtyLoss).not.toHaveBeenCalled()
+  })
+
+  it('keeps the tab bound to its PTY when contact was lost rather than observed', async () => {
+    // Same rule the terminal panes follow: a -1 sentinel retires the transport
+    // only. Clearing the binding would leave a reconnect with nothing to adopt
+    // and let orphan cleanup sweep a tab whose agent may still be running.
+    mockSubscribeToPtyExit.mockReturnValue(vi.fn())
+    const onExit = vi.fn()
+    const { launchAgentBackgroundSession } = await import('./launch-agent-background-session')
+
+    await launchAgentBackgroundSession({
+      agent: 'claude',
+      worktreeId: 'wt-1',
+      prompt: 'run the automation',
+      onExit
+    })
+
+    const sidecar = mockSubscribeToPtyExit.mock.calls[0]?.[1] as (code: number) => void
+    sidecar(-1)
+
+    const tabId = expectReservedAgentBackgroundTabId(mockSpawn)
+    expect(state.clearTabPtyId).not.toHaveBeenCalled()
+    expect(state.markUnverifiedPtyLoss).toHaveBeenCalledWith(tabId)
+    expect(onExit).toHaveBeenCalledWith('pty-1', -1)
   })
 
   it('leaves no tab behind if PTY spawn fails', async () => {
