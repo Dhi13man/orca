@@ -142,12 +142,13 @@ export function refreshManagedOrcadPairing(
   const environments = store.environments.map((candidate) =>
     candidate.id === existing.id ? next : candidate
   )
-  const { binding: _binding, ...state } = entry ?? {}
-  writeRuntimeEnvironmentSidecarEntry(userDataPath, environments, next, {
-    ...state,
-    orcadDeployment: deployment
-  })
+  const { binding: _binding, ...rest } = entry ?? {}
+  const state = { ...rest, orcadDeployment: deployment }
+  // Why three writes: the entry stays current for both store states, so a failed or interrupted
+  // store write can never strand the deployment link.
+  writeRuntimeEnvironmentSidecarEntry(userDataPath, store.environments, existing, state, next)
   writeEnvironmentStore(userDataPath, { version: 1, environments })
+  writeRuntimeEnvironmentSidecarEntry(userDataPath, environments, next, state)
   return resolveEnvironmentFromStore(readEnvironmentStore(userDataPath), environmentId)
 }
 
@@ -158,4 +159,33 @@ function samePairing(left: PairingOffer, right: PairingOffer): boolean {
     left.publicKeyB64 === right.publicKeyB64 &&
     left.pairedDeviceId === right.pairedDeviceId
   )
+}
+
+/**
+ * Marks a managed server as holding migrated state from `at` on. Written before a commit is
+ * attempted, so a crash after the commit can never leave a rollback across it unblocked.
+ */
+export function recordManagedOrcadMigration(
+  userDataPath: string,
+  environmentId: string,
+  at: string
+): KnownRuntimeEnvironment {
+  const store = readPersistedEnvironmentStore(userDataPath)
+  const persisted = resolveEnvironmentFromStore(store, environmentId)
+  const entry = readCurrentRuntimeEnvironmentSidecarEntry(userDataPath, persisted)
+  if (!entry?.orcadDeployment) {
+    throw new RuntimeEnvironmentStoreError('invalid_argument', 'This server is not managed.')
+  }
+  const { binding: _binding, ...state } = entry
+  // The latest mark wins and never moves back: a snapshot older than any migration, including a
+  // later delta move, must stay out of reach.
+  const latest =
+    state.orcadMigratedAt && Date.parse(state.orcadMigratedAt) >= Date.parse(at)
+      ? state.orcadMigratedAt
+      : at
+  writeRuntimeEnvironmentSidecarEntry(userDataPath, store.environments, persisted, {
+    ...state,
+    orcadMigratedAt: latest
+  })
+  return resolveEnvironmentFromStore(readEnvironmentStore(userDataPath), environmentId)
 }

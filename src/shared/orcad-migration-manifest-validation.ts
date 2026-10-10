@@ -163,7 +163,8 @@ function parseRepository(value: unknown): Repo {
   return copy
 }
 
-/** Throws the specific field error; narrowing only follows these checks. */
+// SAFETY: checks the fields import reads and throws the specific error; the rest pass through as
+// the client's own load normalized them.
 function isMigratedRepository(value: unknown): value is Repo {
   if (!isRecord(value)) {
     throw new Error('orcad_migration_manifest_repository_invalid')
@@ -187,7 +188,8 @@ function parseProjectGroup(value: unknown): ProjectGroup {
   return copy
 }
 
-/** Throws the specific field error; narrowing only follows these checks. */
+// SAFETY: checks the fields import reads and throws the specific error; the rest pass through as
+// the client's own load normalized them.
 function isMigratedProjectGroup(value: unknown): value is ProjectGroup {
   if (!isRecord(value)) {
     throw new Error('orcad_migration_manifest_project_group_invalid')
@@ -223,7 +225,8 @@ function parseFolderWorkspace(value: unknown): FolderWorkspace {
   return copy
 }
 
-/** Throws the specific field error; narrowing only follows these checks. */
+// SAFETY: checks the fields import reads and throws the specific error; the rest pass through as
+// the client's own load normalized them.
 function isMigratedFolderWorkspace(value: unknown): value is FolderWorkspace {
   if (!isRecord(value)) {
     throw new Error('orcad_migration_manifest_folder_workspace_invalid')
@@ -261,17 +264,17 @@ function parseReceipt(value: unknown): OrcadMigrationImportReceipt {
     repositoryIds: boundedStringArray(
       value.repositoryIds,
       MAX_ORCAD_MIGRATION_REPOSITORIES,
-      'receipt.repositoryIds'
+      'receipt.repositoryIds_invalid'
     ),
     projectGroupIds: boundedStringArray(
       value.projectGroupIds,
       MAX_ORCAD_MIGRATION_PROJECT_GROUPS,
-      'receipt.projectGroupIds'
+      'receipt.projectGroupIds_invalid'
     ),
     folderWorkspaceIds: boundedStringArray(
       value.folderWorkspaceIds,
       MAX_ORCAD_MIGRATION_FOLDER_WORKSPACES,
-      'receipt.folderWorkspaceIds'
+      'receipt.folderWorkspaceIds_invalid'
     )
   }
 }

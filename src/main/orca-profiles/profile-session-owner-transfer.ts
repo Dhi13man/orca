@@ -16,6 +16,7 @@ export {
   buildMarkdownFrontmatterIdMap,
   markdownFileIdCandidates
 } from './profile-session-markdown-transfer'
+import { paneBelongsToTabs } from '../../shared/workspace-session-pane-ownership'
 
 export type SessionOwnerProjection = {
   mapOwnerKey: (ownerKey: string) => string | null
@@ -105,7 +106,7 @@ export function extractSessionOwnersForTransfer(
   )
   transferred.terminalLayoutsByTabId = Object.fromEntries(
     [...terminalTabIds].flatMap((tabId) => {
-      const layout = source.terminalLayoutsByTabId[tabId]
+      const layout = source.terminalLayoutsByTabId?.[tabId]
       return layout ? [[tabId, structuredClone(layout)] as const] : []
     })
   )
@@ -169,7 +170,7 @@ export function extractSessionOwnersForTransfer(
 
 export function hasTransferredSessionState(session: WorkspaceSessionState): boolean {
   return (
-    Object.keys(session.tabsByWorktree).length > 0 ||
+    Object.keys(session.tabsByWorktree ?? {}).length > 0 ||
     Object.keys(session.openFilesByWorktree ?? {}).length > 0 ||
     Object.keys(session.markdownFrontmatterVisible ?? {}).length > 0 ||
     Object.keys(session.browserTabsByWorktree ?? {}).length > 0 ||
@@ -266,9 +267,4 @@ function mapUnifiedTab(tab: Tab, projection: SessionOwnerProjection): Tab {
 
 function mapTabGroup(group: TabGroup, projection: SessionOwnerProjection): TabGroup {
   return { ...structuredClone(group), worktreeId: projection.mapWorktreeId(group.worktreeId) }
-}
-
-function paneBelongsToTabs(paneKey: string, tabIds: ReadonlySet<string>): boolean {
-  const separator = paneKey.lastIndexOf(':')
-  return separator > 0 && tabIds.has(paneKey.slice(0, separator))
 }

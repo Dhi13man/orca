@@ -1,10 +1,8 @@
 import type {
   OrcadMigrationCatalogPayload,
   OrcadMigrationDormantStatePayload,
-  OrcadMigrationManifest,
   OrcadMigrationManifestSource
 } from '../../../shared/orcad-migration-manifest'
-import { serializeOrcadMigrationValue } from '../../../shared/orcad-migration-manifest'
 import type { OrcadMigrationDependencyKind } from '../../../shared/orcad-migration-preflight'
 import type { PersistedState } from '../../../shared/persisted-state-types'
 import type { TerminalScrollbackSnapshotStorage } from '../../terminal-scrollback-snapshots'
@@ -22,6 +20,7 @@ import {
 } from './orcad-source-scope'
 import { collectOrcadMigrationSourceClientState } from './orcad-source-client-state'
 import { inspectOrcadSourceWorktreeMetadata } from './orcad-source-worktree-metadata'
+import { compareKeys } from './orcad-source-key-order'
 
 export const ORCAD_MIGRATION_TRANSFERRED_DORMANT_KINDS = [
   'worktree-metadata',
@@ -51,7 +50,7 @@ export function collectOrcadMigrationSourceDormantState(
   storage?: TerminalScrollbackSnapshotStorage,
   destinationEnvironmentId?: string
 ): OrcadMigrationSourceDormantInspection {
-  const scope = createOrcadMigrationSourceScope({ source, catalog })
+  const scope = createOrcadMigrationSourceScope({ source, catalog, repos: state.repos })
   const blockedCounts = emptyBlockedCounts()
   const destinationRepos = catalog.repositories.map(toOrcadDestinationRepository)
   const setupByRepoId = new Map(
@@ -134,13 +133,15 @@ export function collectOrcadMigrationSourceDormantState(
     (entry) => entry.childWorkspaceKey,
     () => (blockedCounts['workspace-lineage'] += 1)
   )
-  const sparsePresets = [...scope.repoIds]
+  // A repo id another host shares keys one registry for both hosts: it stays where it is.
+  const ownedRepoIds = [...scope.repoIds].filter((repoId) => !scope.sharedRepoIds.has(repoId))
+  const sparsePresets = ownedRepoIds
     .flatMap((repoId) => state.sparsePresetsByRepo[repoId] ?? [])
     .map((preset) => structuredClone(preset))
     .sort((left, right) =>
       compareKeys(`${left.repoId}\0${left.id}`, `${right.repoId}\0${right.id}`)
     )
-  const retiredWorktreeNames = [...scope.repoIds]
+  const retiredWorktreeNames = ownedRepoIds
     .flatMap((repoId) => {
       const registry = state.retiredWorktreeNamesByRepo?.[repoId]
       return registry && !isEmptyRetiredNameRegistry(registry)
@@ -200,24 +201,6 @@ export function collectOrcadMigrationSourceDormantState(
   }
 }
 
-export function orcadMigrationDormantStateMatchesSource(
-  state: PersistedState,
-  manifest: OrcadMigrationManifest,
-  storage?: TerminalScrollbackSnapshotStorage
-): boolean {
-  const current = collectOrcadMigrationSourceDormantState(
-    state,
-    manifest.source,
-    manifest.payload,
-    storage,
-    manifest.destinationEnvironmentId
-  ).payload
-  return (
-    serializeOrcadMigrationValue(current) ===
-    serializeOrcadMigrationValue(manifest.payload.dormantState ?? emptyDormantPayload())
-  )
-}
-
 export function emptyDormantPayload(): OrcadMigrationDormantStatePayload {
   return {
     version: 1,
@@ -266,8 +249,4 @@ function emptyBlockedCounts(): Record<TransferredDormantKind, number> {
     'ui-routing': 0,
     'saved-port-forward': 0
   }
-}
-
-function compareKeys(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0
 }

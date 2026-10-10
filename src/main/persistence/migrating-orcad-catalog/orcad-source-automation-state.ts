@@ -14,9 +14,11 @@ import type { TaskSourceContext, WorkspaceRunContext } from '../../../shared/tas
 import {
   createOrcadMigrationSourceScope,
   orcadMigrationOwnerMatchesScope,
-  unqualifyOrcadMigrationOwnerKey,
-  type OrcadMigrationSourceScope
+  orcadMigrationOwnsRepoId,
+  type OrcadMigrationSourceScope,
+  unqualifyOrcadMigrationOwnerKey
 } from './orcad-source-scope'
+import { compareKeys } from './orcad-source-key-order'
 
 export type OrcadMigrationSourceAutomationInspection = {
   automations: Automation[]
@@ -30,7 +32,7 @@ export function collectOrcadMigrationSourceAutomationState(
   source: OrcadMigrationManifestSource,
   catalog: OrcadMigrationCatalogPayload
 ): OrcadMigrationSourceAutomationInspection {
-  const scope = createOrcadMigrationSourceScope({ source, catalog })
+  const scope = createOrcadMigrationSourceScope({ source, catalog, repos: state.repos })
   const touchedAutomations = state.automations.filter((entry) =>
     automationTouchesScope(entry, scope)
   )
@@ -70,12 +72,17 @@ export function collectOrcadMigrationSourceAutomationState(
   return { automations, automationRuns, blockedAutomationCount, blockedRunCount }
 }
 
-function automationTouchesScope(automation: Automation, scope: OrcadMigrationSourceScope): boolean {
+export function automationTouchesScope(
+  automation: Automation,
+  scope: OrcadMigrationSourceScope
+): boolean {
   return (
     (automation.executionTargetType === 'ssh' && automation.executionTargetId === scope.targetId) ||
+    // Why the target too: a generation is per target, so another host's can share the number.
     (scope.targetGeneration !== null &&
+      automation.executionTargetId === scope.targetId &&
       automation.executionTargetGeneration === scope.targetGeneration) ||
-    scope.repoIds.has(getAutomationRunRepoId(automation)) ||
+    orcadMigrationOwnsRepoId(scope, getAutomationRunRepoId(automation)) ||
     orcadMigrationOwnerMatchesScope(automation.workspaceId, scope) ||
     contextTouchesScope(automation.runContext, scope) ||
     contextTouchesScope(automation.sourceContext, scope)
@@ -124,7 +131,7 @@ function contextTouchesScope(
 ): boolean {
   return (
     context?.hostId === scope.hostId ||
-    (typeof context?.repoId === 'string' && scope.repoIds.has(context.repoId))
+    (!context?.hostId && orcadMigrationOwnsRepoId(scope, context?.repoId))
   )
 }
 
@@ -180,8 +187,4 @@ function projectContextToDestination<T extends WorkspaceRunContext | TaskSourceC
 
 function projectOwnerToDestination(value: string | null): string | null {
   return value === null ? null : unqualifyOrcadMigrationOwnerKey(value)
-}
-
-function compareKeys(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0
 }

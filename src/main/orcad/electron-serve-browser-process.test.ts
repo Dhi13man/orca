@@ -1,17 +1,20 @@
+import type { ProcessSpec } from '@orca/process-host/process-spec'
 import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type * as RunProcessModule from '../../shared/child-process/run-process'
+import type * as RunProcessModule from '@orca/process-host'
 import type { RuntimeBrowserCommandHost } from '../runtime/orca-runtime-browser'
 
-const { spawnProcessMock } = vi.hoisted(() => ({ spawnProcessMock: vi.fn() }))
+const { spawnProcessMock } = vi.hoisted(() => ({
+  spawnProcessMock: vi.fn<(spec: ProcessSpec) => ReturnType<typeof RunProcessModule.spawnProcess>>()
+}))
 
 // Why wrap rather than fake: the provider must still go through the real spawn
 // path (argv/env handling, a real pid to signal); only the program is swapped
 // for a stub that speaks the sidecar's serve protocol.
-vi.mock('../../shared/child-process/run-process', async (importOriginal) => ({
+vi.mock('@orca/process-host', async (importOriginal) => ({
   ...(await importOriginal<typeof RunProcessModule>()),
   spawnProcess: spawnProcessMock
 }))
@@ -91,8 +94,8 @@ async function startProvider(): Promise<ElectronServeBrowserProcess> {
   return processHandle
 }
 
-function spawnSpec(): RunProcessModule.ProcessSpec {
-  return spawnProcessMock.mock.calls[0][0] as RunProcessModule.ProcessSpec
+function spawnSpec(): ProcessSpec {
+  return spawnProcessMock.mock.calls[0][0]
 }
 
 beforeEach(async () => {
@@ -103,11 +106,9 @@ beforeEach(async () => {
   started = []
   await writeFile(logPath, '')
   await setControl({})
-  const actual = await vi.importActual<typeof RunProcessModule>(
-    '../../shared/child-process/run-process'
-  )
+  const actual = await vi.importActual<typeof RunProcessModule>('@orca/process-host')
   spawnProcessMock.mockReset()
-  spawnProcessMock.mockImplementation((spec: RunProcessModule.ProcessSpec) =>
+  spawnProcessMock.mockImplementation((spec: ProcessSpec) =>
     actual.spawnProcess({
       ...spec,
       program: process.execPath,
@@ -172,6 +173,14 @@ describe('ElectronServeBrowserProcess start-up', () => {
       vi.stubEnv(key, `leaked-${key}`)
     }
     vi.stubEnv('ORCA_HARNESS_UNRELATED', 'preserved')
+    for (const key of ['ORCA_E2E_USER_DATA_DIR', 'ORCA_USER_DATA', 'ORCA_USER_DATA_PATH']) {
+      vi.stubEnv(key, harnessRoot)
+    }
+    const isolatedHome = join(harnessRoot, 'home')
+    vi.stubEnv('ORCA_E2E_HOME_DIR', isolatedHome)
+    vi.stubEnv('HOME', isolatedHome)
+    vi.stubEnv('XDG_DATA_HOME', join(isolatedHome, 'data'))
+    vi.stubEnv('XDG_STATE_HOME', join(isolatedHome, 'state'))
 
     const processHandle = await startProvider()
 
@@ -189,6 +198,15 @@ describe('ElectronServeBrowserProcess start-up', () => {
       expect(spec.env).not.toHaveProperty(key)
     }
     expect(spec.env?.ORCA_HARNESS_UNRELATED).toBe('preserved')
+    for (const key of ['ORCA_USER_DATA', 'ORCA_USER_DATA_PATH']) {
+      expect(spec.env).not.toHaveProperty(key)
+    }
+    expect(spec.env?.ORCA_E2E_USER_DATA_DIR).toBe(userDataArg?.slice('--user-data-dir='.length))
+    expect(spec.env?.ORCA_E2E_HOME_DIR).toBe(isolatedHome)
+    expect(spec.env?.HOME).toBe(isolatedHome)
+    expect(spec.env?.XDG_DATA_HOME).toBe(join(isolatedHome, 'data'))
+    expect(spec.env?.XDG_STATE_HOME).toBe(join(isolatedHome, 'state'))
+    expect(args).toEqual(expect.arrayContaining(['--password-store=basic', '--use-mock-keychain']))
     expect(processHandle.isAvailable()).toBe(true)
   })
 

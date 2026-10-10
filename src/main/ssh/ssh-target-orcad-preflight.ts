@@ -6,8 +6,8 @@
  * What blocks is what cannot move: another owner, live terminal leases, and dependent state the
  * manifest cannot carry. Read-only: building the manifest here exports nothing.
  */
+import { isLiveSshPtyLease } from '../../shared/ssh-types'
 import type { Store } from '../persistence'
-import { getManagedOrcadOwnerEnvironmentId } from '../../shared/managed-orcad-ssh-owner'
 import type {
   OrcadMigrationBlocker,
   OrcadMigrationPreflight
@@ -16,7 +16,10 @@ import {
   createOrcadMigrationManifest,
   type OrcadMigrationExportStore
 } from './orcad-migration-manifest-export'
-import { collectTargetCatalogBlockers } from './ssh-target-orcad-claims'
+import {
+  collectTargetCatalogBlockers,
+  resolveOrcadPreflightTarget
+} from './ssh-target-orcad-claims'
 import { collectUntransferredDependentBlockers } from './ssh-target-orcad-dependents'
 
 export type OrcadMigrationPreflightStore = OrcadMigrationExportStore &
@@ -25,27 +28,21 @@ export type OrcadMigrationPreflightStore = OrcadMigrationExportStore &
     'getSshTarget' | 'getSshRemotePtyLeases' | 'inspectOrcadMigrationUntransferredDependencies'
   >
 
+/** `owner` passes the environment's own fence only when its migration journal is on disk. */
 export function preflightOrcadMigrationExport(
   store: OrcadMigrationPreflightStore,
   targetId: string,
-  environmentId?: string
+  owner?: { environmentId: string; recorded: boolean }
 ): OrcadMigrationPreflight {
-  const target = store.getSshTarget(targetId)
-  if (!target) {
-    return {
-      targetId,
-      targetLabel: null,
-      claimable: false,
-      blockers: [{ code: 'orcad_migration_target_not_found', category: 'registration' }]
-    }
+  const resolved = resolveOrcadPreflightTarget(store, targetId, owner)
+  if ('result' in resolved) {
+    return resolved.result
   }
-  if (environmentId && getManagedOrcadOwnerEnvironmentId(target.owner) === environmentId) {
-    return { targetId, targetLabel: target.label, claimable: true, blockers: [] }
-  }
+  const { target } = resolved
   const blockers: OrcadMigrationBlocker[] = [...collectTargetCatalogBlockers(store, target)]
   const terminalLeases = store
     .getSshRemotePtyLeases(targetId)
-    .filter((lease) => lease.state !== 'terminated' && lease.state !== 'expired')
+    .filter(isLiveSshPtyLease)
     .map(({ ptyId, worktreeId, tabId, leafId, state, updatedAt }) => ({
       ptyId,
       worktreeId,
@@ -68,12 +65,15 @@ export function preflightOrcadMigrationExport(
   return {
     targetId,
     targetLabel: target.label,
-    // Exported catalog rows and saved port forwards (which stay with the source) do not block.
-    claimable: blockers.every(
-      (blocker) =>
-        blocker.category === 'drainable-static-state' ||
-        blocker.code === 'orcad_migration_saved_port_forwards'
-    ),
+    claimable: !blockers.some(isBlockingOrcadMigrationBlocker),
     blockers
   }
+}
+
+// Exported catalog rows and saved port forwards (which stay with the source) do not block.
+export function isBlockingOrcadMigrationBlocker(blocker: OrcadMigrationBlocker): boolean {
+  return (
+    blocker.category !== 'drainable-static-state' &&
+    blocker.code !== 'orcad_migration_saved_port_forwards'
+  )
 }

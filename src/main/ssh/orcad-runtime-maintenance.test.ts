@@ -1,6 +1,9 @@
 import { rmSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { listEnvironments } from '../../shared/runtime-environment-store'
+import { recordManagedOrcadMigration } from '../../shared/runtime-environment-managed-orcad-store'
+import { orcadMigrationCutoverFixture } from './orcad-migration-cutover-fixture'
+import { writeOrcadMigrationSourceCutover } from './orcad-migration-cutover-journal'
 import {
   createManagedLifecycleHarness,
   MANAGED_PREVIOUS_VERSION,
@@ -19,7 +22,8 @@ const mocks = vi.hoisted(() => {
     recover: vi.fn(),
     probe: vi.fn(),
     buildHash: vi.fn(),
-    ensureTunnel: vi.fn()
+    ensureTunnel: vi.fn(),
+    pendingMigration: vi.fn()
   }
 })
 
@@ -39,6 +43,9 @@ vi.mock('./orcad-artifact-materializer', () => ({
 }))
 vi.mock('./orcad-local-build-hash', () => ({ computeLocalOrcadBuildHash: () => 'local-hash' }))
 vi.mock('./orcad-managed-tunnel', () => ({ ensureOrcadManagedTunnel: mocks.ensureTunnel }))
+vi.mock('./orcad-managed-migration-status', () => ({
+  findIncompleteManagedOrcadMigration: mocks.pendingMigration
+}))
 vi.mock('./orcad-activation-transaction-store', () => ({
   readOrcadActivationTransaction: async () => null
 }))
@@ -148,6 +155,43 @@ describe('rollbackManagedOrcadEnvironment', () => {
       rollbackManagedOrcadEnvironment(harness.userDataPath, { selector: 'Managed' })
     ).resolves.toMatchObject({ outcome: 'refused', code: 'orcad_rollback_no_target' })
     expect(mocks.census).not.toHaveBeenCalled()
+  })
+
+  it('refuses while a migration into the server is unfinished', async () => {
+    mocks.pendingMigration.mockReturnValueOnce({ migrationId: 'm-1', phase: 'destination-staged' })
+    await expect(
+      rollbackManagedOrcadEnvironment(harness.userDataPath, { selector: 'Managed' })
+    ).resolves.toMatchObject({ outcome: 'refused', code: 'orcad_rollback_migration_in_progress' })
+    expect(mocks.rollback).not.toHaveBeenCalled()
+  })
+
+  it('refuses a rollback to a snapshot older than the migrated catalog, not a newer one', async () => {
+    // The harness's active version activated 2026-01-01.
+    recordManagedOrcadMigration(harness.userDataPath, 'environment-1', '2026-02-01T00:00:00.000Z')
+    await expect(
+      rollbackManagedOrcadEnvironment(harness.userDataPath, { selector: 'Managed' })
+    ).resolves.toMatchObject({ outcome: 'refused', code: 'orcad_rollback_crosses_migration' })
+    expect(mocks.rollback).not.toHaveBeenCalled()
+    mocks.resolveContext.mockImplementation(async () =>
+      harness.context({ activatedAt: '2026-03-01T00:00:00.000Z' })
+    )
+    mocks.rollback.mockResolvedValueOnce({ outcome: 'refused', code: 'x', reason: 'y' })
+    await rollbackManagedOrcadEnvironment(harness.userDataPath, { selector: 'Managed' })
+    expect(mocks.rollback).toHaveBeenCalledOnce()
+  })
+
+  it('refuses a rollback across a retained delta move that predates the mark', async () => {
+    // A delta finished by an earlier build left no mark; its retained journal still counts.
+    writeOrcadMigrationSourceCutover(harness.userDataPath, {
+      ...orcadMigrationCutoverFixture('delta-1', 'ssh-1', { environmentId: 'environment-1' }),
+      startedAt: '2026-02-01T00:00:00.000Z',
+      phase: 'destination-committed',
+      sourceRetainedAt: '2026-02-01T00:00:00.000Z'
+    })
+    await expect(
+      rollbackManagedOrcadEnvironment(harness.userDataPath, { selector: 'Managed' })
+    ).resolves.toMatchObject({ outcome: 'refused', code: 'orcad_rollback_crosses_migration' })
+    expect(mocks.rollback).not.toHaveBeenCalled()
   })
 
   it('rolls back against the installed bytes of the previous slot', async () => {

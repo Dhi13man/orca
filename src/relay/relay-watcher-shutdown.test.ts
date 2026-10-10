@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import type { RelayDispatcher } from './dispatcher'
+import type { RelayDispatcher } from '../wsl-guest/dispatcher'
 import { RelayFilesystemWatchRegistry } from './relay-filesystem-watch-registry'
 
 function fixture() {
@@ -10,7 +10,8 @@ function fixture() {
     subscribe: vi.fn(async () => ({ unsubscribe })),
     forgetRoot: vi.fn(),
     dispose: vi.fn(),
-    disposeAndWait: vi.fn(async () => {})
+    disposeAndWait: vi.fn(async () => {}),
+    reopen: vi.fn()
   }
   // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: shutdown paths never reach the dispatcher.
   const registry = new RelayFilesystemWatchRegistry({} as RelayDispatcher, pool)

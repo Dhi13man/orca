@@ -13,13 +13,15 @@ import type {
   PersistedState
 } from '../../../shared/persisted-state-types'
 import type { WorkspaceSessionState } from '../../../shared/workspace-session-state-types'
-import { orcadMigrationPaneBelongsToTabs } from './orcad-source-session-dependencies'
+import { sessionPartitions } from './orcad-source-workspace-session-fragments'
 import { collectCloseIntents } from './orcad-source-client-browser-intents'
 import {
   createOrcadMigrationSourceScope,
   orcadMigrationOwnerMatchesScope,
+  orcadMigrationOwnsRepoId,
   unqualifyOrcadMigrationOwnerKey
 } from './orcad-source-scope'
+import { paneBelongsToTabs } from '../../../shared/workspace-session-pane-ownership'
 
 export type OrcadMigrationSourceClientStateInspection = {
   payload: OrcadMigrationClientStatePayload | undefined
@@ -39,7 +41,7 @@ export function collectOrcadMigrationSourceClientState(
   destinationEnvironmentId: string | undefined,
   eligibleSession: WorkspaceSessionState | undefined
 ): OrcadMigrationSourceClientStateInspection {
-  const scope = createOrcadMigrationSourceScope({ source, catalog })
+  const scope = createOrcadMigrationSourceScope({ source, catalog, repos: state.repos })
   const blockedCounts = {
     'mobile-tab-selection': 0,
     'ui-routing': 0,
@@ -140,13 +142,13 @@ function collectUiRouting(
 ): OrcadMigrationUiRoutingState | undefined {
   const ui = state.ui
   const result: OrcadMigrationUiRoutingState = {}
-  if (ui.lastActiveRepoId && scope.repoIds.has(ui.lastActiveRepoId)) {
+  if (ui.lastActiveRepoId && orcadMigrationOwnsRepoId(scope, ui.lastActiveRepoId)) {
     result.lastActiveRepoId = ui.lastActiveRepoId
   }
   if (ui.lastActiveWorktreeId && orcadMigrationOwnerMatchesScope(ui.lastActiveWorktreeId, scope)) {
     result.lastActiveWorktreeId = unqualifyOrcadMigrationOwnerKey(ui.lastActiveWorktreeId)
   }
-  const filterRepoIds = ui.filterRepoIds.filter((repoId) => scope.repoIds.has(repoId))
+  const filterRepoIds = ui.filterRepoIds.filter((repoId) => orcadMigrationOwnsRepoId(scope, repoId))
   if (filterRepoIds.length > 0) {
     result.filterRepoIds = filterRepoIds
   }
@@ -157,7 +159,7 @@ function collectUiRouting(
     result.showDotfilesByWorktree = Object.fromEntries(dotfiles)
   }
   const dismissed = (ui.setupScriptPromptDismissedRepoIds ?? []).filter((repoId) =>
-    scope.repoIds.has(repoId)
+    orcadMigrationOwnsRepoId(scope, repoId)
   )
   if (dismissed.length > 0) {
     result.setupScriptPromptDismissedRepoIds = dismissed
@@ -197,9 +199,14 @@ function collectUiRouting(
       : { kind: 'host', hostKey: 'host:desktop:self' }
   }
   const eligible = session ? collectEligibleSessionIdentity(session, scope) : null
+  const sourceTabIds = collectSourceOwnedTabIds(state, scope)
   const acknowledgements = Object.entries(ui.acknowledgedAgentsByPaneKey ?? {}).filter(
     ([paneKey]) => {
-      const allowed = eligible ? orcadMigrationPaneBelongsToTabs(paneKey, eligible.tabIds) : false
+      // Another host's acknowledgement is not this source's state to move or block on.
+      if (!paneBelongsToTabs(paneKey, sourceTabIds)) {
+        return false
+      }
+      const allowed = eligible ? paneBelongsToTabs(paneKey, eligible.tabIds) : false
       if (!allowed) {
         blockedCounts['ui-routing'] += 1
       }
@@ -212,6 +219,22 @@ function collectUiRouting(
   return Object.keys(result).length > 0 ? result : undefined
 }
 
+/** Every tab the source owns: its own partition's, and those keyed to its projects anywhere. */
+function collectSourceOwnedTabIds(
+  state: PersistedState,
+  scope: ReturnType<typeof createOrcadMigrationSourceScope>
+): Set<string> {
+  const tabIds = new Set<string>()
+  for (const [hostId, session] of sessionPartitions(state, 'local')) {
+    for (const [ownerKey, tabs] of Object.entries(session.tabsByWorktree ?? {})) {
+      if (hostId === scope.hostId || orcadMigrationOwnerMatchesScope(ownerKey, scope)) {
+        tabs.forEach((tab) => tabIds.add(tab.id))
+      }
+    }
+  }
+  return tabIds
+}
+
 type EligibleSessionIdentity = { tabIds: ReadonlySet<string>; groupIds: ReadonlySet<string> }
 
 function collectEligibleSessionIdentity(
@@ -220,7 +243,7 @@ function collectEligibleSessionIdentity(
 ): EligibleSessionIdentity {
   const tabIds = new Set<string>()
   const groupIds = new Set<string>()
-  for (const [ownerKey, tabs] of Object.entries(session.tabsByWorktree)) {
+  for (const [ownerKey, tabs] of Object.entries(session.tabsByWorktree ?? {})) {
     if (!orcadMigrationOwnerMatchesScope(ownerKey, scope)) {
       continue
     }

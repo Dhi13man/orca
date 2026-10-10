@@ -1,12 +1,6 @@
-import { build } from 'esbuild'
 import { appendFileSync, globSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import {
-  externalNativeAddons,
-  ORCAD_CHILD_ENTRY_POINTS,
-  ORCAD_ENTRY_POINT
-} from './orcad-entry-build.mjs'
 import { nodeServerTestPaths } from './node-server-test-paths.mjs'
 import { nodeServerQualification } from './node-server-qualification.mjs'
 
@@ -17,6 +11,7 @@ const BUILD_SCRIPTS = [
   'config/scripts/pinned-node-downloads.mjs',
   'config/scripts/build-orcad.mjs',
   'config/scripts/build-orcad-prebuilds.mjs',
+  'config/scripts/orcad-windows-prebuild-cache.mjs',
   'config/scripts/orcad-prebuild-smoke-child.cjs',
   'config/scripts/build-windows-process-tree-relay-addon.mjs',
   'config/scripts/run-node-server-tests.mjs',
@@ -36,12 +31,22 @@ const ALWAYS_FILES = new Set([
   '.github/workflows/node-server-tests.yml',
   'config/scripts/node-server-change-scope.mjs',
   'config/scripts/node-server-change-scope.test.mjs',
+  'config/scripts/workspace-source-exports.mjs',
+  'config/scripts/workspace-source-exports.test.mjs',
+  'config/scripts/headless-detector-compiler-cache.mjs',
   'config/scripts/node-server-qualification.mjs',
-  'config/scripts/node-server-qualification.test.mjs'
+  'config/scripts/node-server-qualification.test.mjs',
+  // The source graph sees process-host source, not the build that emits the dist servers load.
+  'src/packages/process-host/.gitignore',
+  'src/packages/process-host/scripts/build-dist.mjs',
+  'src/packages/process-host/tsconfig.json'
 ])
 const ALWAYS_PREFIXES = [
   '.github/actions/install-node-dependencies/',
+  '.github/actions/restore-pnpm-verification/',
+  '.github/actions/prepare-headless-compiler/',
   '.github/actions/prepare-native-runtime/',
+  '.github/actions/prepare-orcad-prebuilds/',
   // These areas also contain worker paths and fixtures opened without an import.
   'src/main/persistence/',
   'src/main/sqlite/',
@@ -66,8 +71,38 @@ export function discoverNodeServerTests(root = ROOT) {
 }
 
 export async function collectNodeServerInputs({ root = ROOT, entryPoints } = {}) {
+  const [
+    { build },
+    {
+      externalNativeAddons,
+      ORCAD_CHILD_ENTRY_POINTS,
+      ORCAD_ENTRY_POINT,
+      ORCAD_LAUNCHER_ENTRY_POINT
+    },
+    { createWorkspaceSourceResolver }
+  ] = await Promise.all([
+    import('esbuild'),
+    import('./orcad-entry-build.mjs'),
+    import('./workspace-source-exports.mjs')
+  ])
+  const workspace = createWorkspaceSourceResolver(root)
+  const manifests = new Set()
+  const workspaceSources = {
+    name: 'workspace-source-exports',
+    setup(pluginBuild) {
+      pluginBuild.onResolve({ filter: /^[^./]/ }, ({ path }) => {
+        const source = workspace.resolve(path)
+        if (!source) {
+          return null
+        }
+        manifests.add(source.manifest)
+        return { path: source.path }
+      })
+    }
+  }
   const entries = entryPoints ?? [
     ORCAD_ENTRY_POINT,
+    ORCAD_LAUNCHER_ENTRY_POINT,
     ...Object.values(ORCAD_CHILD_ENTRY_POINTS),
     ...BUILD_SCRIPTS,
     ...discoverNodeServerTests(root)
@@ -83,21 +118,34 @@ export async function collectNodeServerInputs({ root = ROOT, entryPoints } = {})
     splitting: true,
     packages: 'external',
     loader: { '.svg': 'empty', '.png': 'empty', '.webp': 'empty', '.css': 'empty' },
-    plugins: [externalNativeAddons],
+    plugins: [workspaceSources, externalNativeAddons],
     metafile: true,
     logLevel: 'silent'
   })
   if (result.warnings.length > 0) {
     throw new Error(result.warnings.map((warning) => warning.text).join('\n'))
   }
-  return new Set(
-    Object.keys(result.metafile.inputs).map((file) =>
+  return new Set([
+    ...manifests,
+    ...Object.keys(result.metafile.inputs).map((file) =>
       file.replaceAll('\\', '/').replace(/\?.*$/, '')
     )
+  ])
+}
+
+function isSourceUnitTest(file) {
+  return (
+    /^src\/(?:[^/]+\/)*[^/]+\.test\.(?:ts|tsx)$/.test(file) &&
+    !file.includes('/../') &&
+    !file.includes('/./')
   )
 }
 
-export async function classifyNodeServerChanges(changedFiles, collect = collectNodeServerInputs) {
+export async function classifyNodeServerChanges(
+  changedFiles,
+  collect = collectNodeServerInputs,
+  { deferGraph = false } = {}
+) {
   if (changedFiles.length === 0) {
     return { shouldRun: true, reason: 'No complete changed-file evidence' }
   }
@@ -105,11 +153,14 @@ export async function classifyNodeServerChanges(changedFiles, collect = collectN
   const forced = changedFiles.find(
     (file) =>
       ALWAYS_FILES.has(file) ||
-      ALWAYS_PREFIXES.some((prefix) => file.startsWith(prefix)) ||
+      (ALWAYS_PREFIXES.some((prefix) => file.startsWith(prefix)) && !isSourceUnitTest(file)) ||
       selectors.some((selector) => file.includes(selector))
   )
   if (forced) {
     return { shouldRun: true, reason: `Build or CI input changed: ${forced}` }
+  }
+  if (deferGraph) {
+    return { graphRequired: true, reason: 'Installed dependencies are needed to check imports' }
   }
   try {
     const inputs = await collect()
@@ -131,10 +182,16 @@ export async function classifyNodeServerChanges(changedFiles, collect = collectN
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const changedFiles = readFileSync(process.argv[2], 'utf8').split('\0').filter(Boolean)
-  const result = await classifyNodeServerChanges(changedFiles)
+  const result = await classifyNodeServerChanges(changedFiles, collectNodeServerInputs, {
+    deferGraph: process.argv.includes('--defer-graph')
+  })
   console.log(result.reason)
-  const policy = nodeServerQualification(changedFiles, result)
-  const output = `should_run=${result.shouldRun}\nqualification=${policy.qualification}\nrunners=${JSON.stringify(policy.runners)}\n`
+  const policy = nodeServerQualification(changedFiles, result, {
+    fullQualification: process.argv.includes('--full-qualification')
+  })
+  const output = result.graphRequired
+    ? 'graph_required=true\n'
+    : `should_run=${result.shouldRun}\nqualification=${policy.qualification}\nrunners=${JSON.stringify(policy.runners)}\n`
   if (process.env.GITHUB_OUTPUT) {
     appendFileSync(process.env.GITHUB_OUTPUT, output)
   } else {

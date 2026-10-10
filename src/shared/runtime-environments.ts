@@ -82,6 +82,8 @@ export const KnownRuntimeEnvironmentSchema = PersistedRuntimeEnvironmentSchema.e
   sshAccess: RuntimeSshAccessLinkSchema.optional(),
   pendingSshAccessOperation: RuntimeSshAccessOperationSchema.optional(),
   orcadDeployment: OrcadDeploymentLinkSchema.optional(),
+  /** When a migration into this managed server began committing; older snapshots predate it. */
+  orcadMigratedAt: z.string().datetime().optional(),
   reconciliation: RuntimeEnvironmentReconciliationRecordSchema.optional()
 })
   .refine(
@@ -133,6 +135,8 @@ export type KnownRuntimeEnvironment = z.infer<typeof KnownRuntimeEnvironmentSche
 
 export type PublicKnownRuntimeEnvironment = Omit<KnownRuntimeEnvironment, 'endpoints'> & {
   endpoints: PublicRuntimeAccessEndpoint[]
+  /** Digest of the host's persisted E2EE public key, which its pairing handshake proves. */
+  hostKeyFingerprint?: string
 }
 
 export function redactRuntimeEnvironment(

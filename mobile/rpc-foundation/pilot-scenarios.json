@@ -9268,7 +9268,7 @@
         {
           "complete": "preflight.detectAgents#1",
           "params": {
-            "$undefined": true
+            "worktreeId": "repo-9::/w"
           },
           "reply": {
             "ok": true,
@@ -9361,7 +9361,7 @@
         {
           "complete": "preflight.detectAgents#1",
           "params": {
-            "$undefined": true
+            "worktreeId": "repo-9::/w"
           },
           "reply": {
             "ok": true,
@@ -9454,7 +9454,7 @@
         {
           "complete": "preflight.detectAgents#1",
           "params": {
-            "$undefined": true
+            "worktreeId": "repo-9::/w"
           },
           "reply": {
             "ok": true,
@@ -18538,7 +18538,7 @@
         {
           "complete": "preflight.detectAgents#1",
           "params": {
-            "$undefined": true
+            "worktreeId": "workspace-1"
           },
           "reply": {
             "ok": true,
@@ -20905,18 +20905,6 @@
           "checkpoint": "unsubscribing"
         },
         {
-          "complete": "notifications.unsubscribe#1",
-          "params": {
-            "subscriptionId": "sub-1"
-          },
-          "reply": {
-            "ok": true,
-            "result": {
-              "unsubscribed": true
-            }
-          }
-        },
-        {
           "checkpoint": "stopped"
         }
       ]
@@ -21065,18 +21053,6 @@
         {
           "action": "stop",
           "id": "stop"
-        },
-        {
-          "complete": "notifications.unsubscribe#1",
-          "params": {
-            "subscriptionId": "sub-2"
-          },
-          "reply": {
-            "ok": true,
-            "result": {
-              "unsubscribed": true
-            }
-          }
         },
         {
           "checkpoint": "stopped"
@@ -22712,18 +22688,6 @@
           "id": "stop"
         },
         {
-          "complete": "notifications.unsubscribe#1",
-          "params": {
-            "subscriptionId": "sub-1"
-          },
-          "reply": {
-            "ok": true,
-            "result": {
-              "unsubscribed": true
-            }
-          }
-        },
-        {
           "checkpoint": "stopped"
         },
         {
@@ -23185,7 +23149,7 @@
         {
           "complete": "preflight.detectAgents#1",
           "params": {
-            "$undefined": true
+            "worktreeId": "repo-1::/folder"
           },
           "reply": {
             "ok": true,

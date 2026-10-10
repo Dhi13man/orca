@@ -20,7 +20,7 @@ vi.mock('./orcad-remote-record-file', async (importOriginal) => ({
 import { execCommand } from './ssh-relay-deploy-helpers'
 import { acquireInstallLock } from './ssh-relay-install-lock'
 import { writeAtomicOrcadRemoteRecord } from './orcad-remote-record-file'
-import { decommissionRemoteOrcad } from './orcad-remote-stop'
+import { decommissionRemoteOrcad } from './orcad-remote-decommission'
 import { recoverInterruptedOrcadActivation } from './orcad-activation-recovery'
 import { parseOrcadActivationRecord } from './orcad-activation-record'
 import { getRemoteHostPlatform } from './ssh-remote-platform'
@@ -63,7 +63,9 @@ beforeEach(() => {
   vi.clearAllMocks()
   host = FakeOrcadHost.deployedOld()
   vi.mocked(execCommand).mockImplementation(async (_conn, command) => host.exec(command))
-  vi.mocked(acquireInstallLock).mockImplementation(async () => host.acquireFence())
+  vi.mocked(acquireInstallLock).mockImplementation(async (_conn, _root, _host, options) => {
+    host.acquireFence(options)
+  })
   vi.mocked(writeAtomicOrcadRemoteRecord).mockImplementation(async (_target, path, contents) =>
     host.write(path, contents)
   )

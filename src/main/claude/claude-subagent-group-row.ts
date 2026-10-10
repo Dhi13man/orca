@@ -92,15 +92,29 @@ export function writeClaudeSubagentGroupRow(
   group: RosterGroup
 ): void {
   const agents = [...group.entries.values()].map((tracked) => tracked.entry)
-  const options = { coalescingKey: `claude-subagents:${group.groupId}`, turnScope: group.turnScope }
   if (agents.length === 0) {
-    // The row's last child turned out not to be a subagent. An empty roster is
-    // not a roster of nothing, so the row goes rather than reading "Ran 0".
-    if (group.lastSerialized !== null) {
+    const serialized = JSON.stringify(claudeSubagentGroupBody(group.groupId, []))
+    if (serialized === group.lastSerialized) {
+      return
+    }
+    // Reclassification removes the row; refused tombstones remain retryable.
+    const admission = sink.tryAppendTombstone?.(group.identity)
+    if (admission && !admission.accepted) {
       group.lastSerialized = null
-      sink.appendTombstone(group.identity, options)
+      return
+    }
+    if (!admission) {
+      sink.appendTombstone(group.identity)
+    }
+    const publication = sink.tryPublish?.()
+    if (publication && !publication.accepted) {
+      group.lastSerialized = null
+      return
+    }
+    if (!publication) {
       sink.publish()
     }
+    group.lastSerialized = serialized
     return
   }
   const body = claudeSubagentGroupBody(group.groupId, agents)
@@ -109,9 +123,22 @@ export function writeClaudeSubagentGroupRow(
     // Nothing changed — a duplicate delivery must not burn a revision.
     return
   }
+  const options = { turnScope: group.turnScope }
+  const admission = sink.tryAppendItem?.(group.identity, body, options)
+  if (admission && !admission.accepted) {
+    group.lastSerialized = null
+    return
+  }
+  if (!admission) {
+    sink.appendItem(group.identity, body, options)
+  }
+  const publication = sink.tryPublish?.()
+  if (publication && !publication.accepted) {
+    group.lastSerialized = null
+    return
+  }
+  if (!publication) {
+    sink.publish()
+  }
   group.lastSerialized = serialized
-  sink.appendItem(group.identity, body, options)
-  // Publish keeps the sink's own coalescing slot: sharing the row's key makes
-  // each queued publish evict the append it was meant to flush.
-  sink.publish()
 }

@@ -1,8 +1,8 @@
 /**
  * The Store's read-only view of a relay-hosted SSH target, for migrating it to a managed orcad.
  *
- * Everything here reads the profile-state store and returns copies; nothing writes or retires
- * source rows. Retiring the source after a verified import is the cutover's job (T8).
+ * Everything here reads the profile-state store and returns copies; nothing writes or deletes
+ * source rows, and nothing else deletes them after an import either.
  */
 import {
   ORCAD_MIGRATION_SCROLLBACK_CHUNK_BYTES,
@@ -17,12 +17,16 @@ import type {
 import { assertOrcadMigrationManifestDigest } from '../../orcad/orcad-migration-manifest-digest'
 import type { StoreRuntimeState } from '../loading-store/store-runtime-state'
 import {
-  collectOrcadMigrationSourceDependencyCensus,
   collectOrcadMigrationUntransferredDependencyCensus,
   type OrcadMigrationSourceDependencyCensus
 } from './orcad-source-dependency-census'
 import { collectOrcadMigrationSourceDormantState } from './orcad-source-dormant-state'
 import { readOrcadMigrationSourceScrollbackChunk } from './orcad-source-scrollback-state'
+import {
+  createOrcadMigrationDeltaView,
+  type OrcadMigrationDeltaView
+} from './orcad-source-delta-view'
+import { syncOrcadMigrationScrollbackRetention } from './orcad-source-scrollback-retention'
 
 type OrcadSourceExportRuntime = Pick<
   StoreRuntimeState,
@@ -53,16 +57,9 @@ export class OrcadSourceExportPersistence {
     ).payload
   }
 
-  /** Every dependency on the target, transferable or not; preflight decides what blocks. */
-  inspectOrcadMigrationSourceDependencies(
-    manifest: OrcadMigrationManifest
-  ): OrcadMigrationSourceDependencyCensus {
-    const runtime = this[orcadSourceExportContext]
-    return collectOrcadMigrationSourceDependencyCensus(
-      runtime.state,
-      manifest,
-      runtime.terminalScrollbackSnapshotStorage
-    )
+  /** A copy of the source with `moved` subtracted from it, for a delta move. */
+  createOrcadMigrationDeltaView(moved: OrcadMigrationManifest): OrcadMigrationDeltaView {
+    return createOrcadMigrationDeltaView(this[orcadSourceExportContext], moved)
   }
 
   /** What still references the target that this manifest cannot carry. */
@@ -77,19 +74,9 @@ export class OrcadSourceExportPersistence {
     )
   }
 
-  /** Keeps the snapshot files this manifest names until released, even if their tabs close. */
-  retainOrcadMigrationScrollback(manifest: OrcadMigrationManifest): void {
-    const refs = (manifest.payload.dormantState?.terminalScrollbackSnapshots ?? []).map(
-      (snapshot) => snapshot.ref
-    )
-    this[orcadSourceExportContext].retainedScrollbackRefsByMigrationId.set(
-      manifest.migrationId,
-      new Set(refs)
-    )
-  }
-
-  releaseOrcadMigrationScrollback(migrationId: string): void {
-    this[orcadSourceExportContext].retainedScrollbackRefsByMigrationId.delete(migrationId)
+  /** Holds the snapshots unfinished migrations name; see syncOrcadMigrationScrollbackRetention. */
+  syncOrcadMigrationScrollbackRetention(pending: readonly OrcadMigrationManifest[]): void {
+    syncOrcadMigrationScrollbackRetention(this[orcadSourceExportContext], pending)
   }
 
   /**
@@ -111,18 +98,12 @@ export class OrcadSourceExportPersistence {
     return readOrcadMigrationSourceScrollbackChunk({
       state: runtime.state,
       descriptor,
+      retained: [...runtime.retainedScrollbackRefsByMigrationId.values()].some((refs) =>
+        refs.has(ref)
+      ),
       offset,
       length: ORCAD_MIGRATION_SCROLLBACK_CHUNK_BYTES,
       storage: runtime.terminalScrollbackSnapshotStorage
     })
   }
-}
-
-export function installOrcadSourceExportPersistenceContext(
-  target: OrcadSourceExportPersistence,
-  source: OrcadSourceExportPersistence
-): void {
-  Object.defineProperty(target, orcadSourceExportContext, {
-    value: source[orcadSourceExportContext]
-  })
 }

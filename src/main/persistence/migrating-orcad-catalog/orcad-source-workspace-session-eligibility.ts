@@ -1,18 +1,15 @@
 import { isWorkspaceKey } from '../../../shared/workspace-scope'
 import { LOCAL_EXECUTION_HOST_ID } from '../../../shared/execution-host'
 import type { SleepingAgentSessionRecord } from '../../../shared/agent-session-resume'
-import type { PersistedState } from '../../../shared/persisted-state-types'
 import type { WorkspaceSessionState } from '../../../shared/workspace-session-state-types'
 import { buildMarkdownFrontmatterIdMap } from '../../orca-profiles/profile-session-owner-transfer'
 import {
   orcadMigrationOwnerMatchesScope,
+  orcadMigrationOwnsRepoId,
   unqualifyOrcadMigrationOwnerKey,
   type OrcadMigrationSourceScope
 } from './orcad-source-scope'
-import {
-  paneBelongsToTabs,
-  paneBelongsToTerminalLayout
-} from './orcad-source-workspace-session-layout'
+import { paneBelongsToTerminalLayout } from '../../../shared/workspace-session-pane-ownership'
 import { collectSessionOwnerKeys } from './orcad-source-workspace-session-fragments'
 
 export function countUnrepresentableMarkdownState(
@@ -34,7 +31,6 @@ export function countUnrepresentableMarkdownState(
 }
 
 export function countUnsupportedSessionState(
-  state: PersistedState,
   session: WorkspaceSessionState,
   scope: OrcadMigrationSourceScope,
   sourceHostPartition: boolean,
@@ -46,22 +42,8 @@ export function countUnsupportedSessionState(
   let count = sourceHostPartition
     ? [...collectSessionOwnerKeys(session)].filter((ownerKey) => !owns(ownerKey)).length
     : 0
-  for (const [ownerKey, tabs] of Object.entries(session.tabsByWorktree)) {
-    if (!owns(ownerKey)) {
-      continue
-    }
-    tabs.forEach((tab) => {
-      count += tab.ptyId ? 1 : 0
-    })
-  }
-  for (const tabId of terminalTabIds) {
-    const layout = session.terminalLayoutsByTabId[tabId]
-    count += Object.keys(layout?.ptyIdsByLeafId ?? {}).length
-    count += session.remoteSessionIdsByTabId?.[tabId] ? 1 : 0
-  }
-  count += Object.keys(session.terminalPtyIncarnationsByPaneKey ?? {}).filter((paneKey) =>
-    paneBelongsToTabs(paneKey, terminalTabIds)
-  ).length
+  // PTY bindings, remote session ids and shutdown markers are not counted: whether their terminals
+  // still run is the terminal gate's verdict, taken before every move; the move drops them.
   count += Object.values(session.sleepingAgentSessionsByPaneKey ?? {}).filter((record) => {
     const touchesSource = matches(record.worktreeId) || record.connectionId === scope.targetId
     return (
@@ -73,35 +55,16 @@ export function countUnsupportedSessionState(
     .filter(
       ([ownerKey, pages]) => !clientHostedPagesAreTransferable(session, ownerKey, pages)
     ).length
-  count += (session.activeWorktreeIdsOnShutdown ?? []).filter(
-    (worktreeId) =>
-      matches(worktreeId) &&
-      shutdownMarkerHasTerminalAuthority(state, session, scope, sourceHostPartition, worktreeId)
-  ).length
   count +=
+    sourceHostPartition &&
     session.activeRepoId &&
     owns(session.activeRepoId) &&
-    !(sourceHostPartition && scope.repoIds.has(session.activeRepoId))
+    !scope.repoIds.has(session.activeRepoId)
       ? 1
       : 0
-  count +=
-    session.activeWorktreeId &&
-    matches(session.activeWorktreeId) &&
-    !(sourceHostPartition && orcadMigrationOwnerMatchesScope(session.activeWorktreeId, scope))
-      ? 1
-      : 0
-  count +=
-    session.activeWorkspaceKey &&
-    matches(session.activeWorkspaceKey) &&
-    !(sourceHostPartition && orcadMigrationOwnerMatchesScope(session.activeWorkspaceKey, scope))
-      ? 1
-      : 0
-  count += session.activeWorkspaceExecutionHostId === scope.hostId && !sourceHostPartition ? 1 : 0
-  count += (session.activeConnectionIdsAtShutdown ?? []).filter(
-    (targetId) => targetId === scope.targetId
-  ).length
-  count +=
-    session.activeTabId && terminalTabIds.has(session.activeTabId) && !sourceHostPartition ? 1 : 0
+  // Focus outside the source partition is client focus, not host state, so it never moves.
+  // activeConnectionIdsAtShutdown is not counted: it is the renderer's live "connected now" hint, and
+  // the remote work it can stand for (tab PTYs, remote session ids, leases) is the terminal gate's.
   for (const [ownerKey, files] of Object.entries(session.openFilesByWorktree ?? {})) {
     if (owns(ownerKey)) {
       count += files.filter(
@@ -119,57 +82,12 @@ export function countUnsupportedSessionState(
   for (const [ownerKey, tabs] of Object.entries(session.unifiedTabs ?? {})) {
     if (owns(ownerKey)) {
       count += tabs.filter(
-        (tab) => tab.executionHostId !== undefined && tab.executionHostId !== scope.hostId
+        (tab) =>
+          tab.executionHostId !== undefined && !isOrcadSourceTabHost(tab.executionHostId, scope)
       ).length
     }
   }
   return count
-}
-
-export function shutdownMarkerHasTerminalAuthority(
-  state: PersistedState,
-  session: WorkspaceSessionState,
-  scope: OrcadMigrationSourceScope,
-  sourceHostPartition: boolean,
-  worktreeId: string
-): boolean {
-  const marker = unqualifyOrcadMigrationOwnerKey(worktreeId)
-  const ownerMatchesMarker = (ownerKey: string): boolean =>
-    (sourceHostPartition || orcadMigrationOwnerMatchesScope(ownerKey, scope)) &&
-    unqualifyOrcadMigrationOwnerKey(ownerKey) === marker
-  const tabIds = new Set<string>()
-  for (const [ownerKey, tabs] of Object.entries(session.tabsByWorktree)) {
-    if (!ownerMatchesMarker(ownerKey)) {
-      continue
-    }
-    for (const tab of tabs) {
-      tabIds.add(tab.id)
-      if (tab.ptyId) {
-        return true
-      }
-      const layout = session.terminalLayoutsByTabId[tab.id]
-      if (Object.keys(layout?.ptyIdsByLeafId ?? {}).length > 0) {
-        return true
-      }
-      if (session.remoteSessionIdsByTabId?.[tab.id]) {
-        return true
-      }
-    }
-  }
-  if (
-    Object.keys(session.terminalPtyIncarnationsByPaneKey ?? {}).some((paneKey) =>
-      paneBelongsToTabs(paneKey, tabIds)
-    )
-  ) {
-    return true
-  }
-  return state.sshRemotePtyLeases.some(
-    (lease) =>
-      lease.targetId === scope.targetId &&
-      lease.state !== 'terminated' &&
-      (lease.worktreeId === undefined ||
-        unqualifyOrcadMigrationOwnerKey(lease.worktreeId) === marker)
-  )
 }
 
 function clientHostedPagesAreTransferable(
@@ -192,7 +110,7 @@ export function projectDormantSessionFocus(
   // These scalars are UI focus, not execution ownership. They are safe to carry
   // only from the source host partition and only when they point at an entity
   // already proven dormant and included in the projected session.
-  if (source.activeRepoId && scope.repoIds.has(source.activeRepoId)) {
+  if (orcadMigrationOwnsRepoId(scope, source.activeRepoId)) {
     transferred.activeRepoId = source.activeRepoId
   }
   if (source.activeWorktreeId && orcadMigrationOwnerMatchesScope(source.activeWorktreeId, scope)) {
@@ -211,6 +129,11 @@ export function projectDormantSessionFocus(
   if (source.activeTabId && terminalTabIds.has(source.activeTabId)) {
     transferred.activeTabId = source.activeTabId
   }
+}
+
+/** Older builds stamped 'local' on tabs created in an SSH worktree; its owner key proves the host. */
+function isOrcadSourceTabHost(executionHostId: string, scope: OrcadMigrationSourceScope): boolean {
+  return executionHostId === scope.hostId || executionHostId === LOCAL_EXECUTION_HOST_ID
 }
 
 export function projectSessionToDestination(

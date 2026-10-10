@@ -1,30 +1,23 @@
-import { lstat } from 'node:fs/promises'
 import { basename, posix, resolve } from 'node:path'
-import { authorizeExternalPath } from './filesystem-auth'
-import { isENOENT } from './filesystem-path-containment'
-import { getSshConnectionManager } from './ssh'
+import { classifyImportSource } from './filesystem-import-source-stat'
+import { deconflictCopyName } from '../../shared/import-copy-name'
+import { getSshConnectionManager } from '../ssh/ssh-target-registry'
 import { requireSshFilesystemProvider } from '../providers/ssh-filesystem-dispatch'
 import type { FileUploadSession, IFilesystemProvider } from '../providers/types'
 import type { ImportItemResult } from '../../shared/filesystem-import-result-types'
 import { assertSafeRemotePathSegment, type RemotePathFlavor } from '../ssh/ssh-remote-platform'
 import { isWindowsAbsolutePathLike } from '../../shared/cross-platform-path'
-import { runSshProviderContinuation } from '../ssh/ssh-provider-continuations'
 import { remotePathExists } from './filesystem-import-ssh-remote-existence'
 import {
   captureLocalUploadRoot,
   preScanSshImportDirectory,
   uploadSshImportDirectory
 } from './filesystem-import-ssh-directory'
+import { errorMessage } from '../../shared/error-message'
 
 // Why: the SSH import path uses SshFilesystemProvider instead of direct SFTP so
 // system-SSH transports (ProxyCommand/ProxyJump/FIDO2) get the same workflows.
 export async function importExternalPathsSsh(
-  ...args: Parameters<typeof importExternalPathsSshTracked>
-): Promise<{ results: ImportItemResult[] }> {
-  return runSshProviderContinuation(args[2], () => importExternalPathsSshTracked(...args))
-}
-
-async function importExternalPathsSshTracked(
   sourcePaths: string[],
   destDir: string,
   connectionId: string,
@@ -105,8 +98,6 @@ async function importOneSourceSsh(
 ): Promise<ImportItemResult> {
   const resolvedSource = resolve(sourcePath)
 
-  authorizeExternalPath(resolvedSource)
-
   const originalName = basename(resolvedSource)
   try {
     assertSafeRemotePathSegment(originalName, remotePathFlavor)
@@ -114,40 +105,15 @@ async function importOneSourceSsh(
     return {
       sourcePath,
       status: 'failed',
-      reason: error instanceof Error ? error.message : String(error)
+      reason: errorMessage(error)
     }
   }
 
-  let sourceStat: Awaited<ReturnType<typeof lstat>>
-  try {
-    sourceStat = await lstat(resolvedSource)
-  } catch (error) {
-    if (isENOENT(error)) {
-      return { sourcePath, status: 'skipped', reason: 'missing' }
-    }
-    if (
-      error instanceof Error &&
-      'code' in error &&
-      ((error as NodeJS.ErrnoException).code === 'EACCES' ||
-        (error as NodeJS.ErrnoException).code === 'EPERM')
-    ) {
-      return { sourcePath, status: 'skipped', reason: 'permission-denied' }
-    }
-    return {
-      sourcePath,
-      status: 'failed',
-      reason: error instanceof Error ? error.message : String(error)
-    }
+  const classified = await classifyImportSource(sourcePath, resolvedSource)
+  if ('rejection' in classified) {
+    return classified.rejection
   }
-
-  if (sourceStat.isSymbolicLink()) {
-    return { sourcePath, status: 'skipped', reason: 'symlink' }
-  }
-
-  if (!sourceStat.isFile() && !sourceStat.isDirectory()) {
-    return { sourcePath, status: 'skipped', reason: 'unsupported' }
-  }
-
+  const sourceStat = classified.stat
   const isDir = sourceStat.isDirectory()
 
   let createdDestDir: string | null = null
@@ -159,13 +125,10 @@ async function importOneSourceSsh(
 
     // Why: local inspection can outlive a HUB SSH session; revalidate before the first remote write.
     assertCurrent?.()
-    const finalName = await deconflictName(
-      provider,
-      destDir,
-      originalName,
-      reservedNames,
-      assertCurrent
-    )
+    const finalName = await deconflictCopyName(originalName, async (n) => {
+      assertCurrent?.()
+      return (await remotePathExists(provider, `${destDir}/${n}`)) || reservedNames.has(n)
+    })
     const destPath = `${destDir}/${finalName}`
     const renamed = finalName !== originalName
 
@@ -208,56 +171,9 @@ async function importOneSourceSsh(
     return {
       sourcePath,
       status: 'failed',
-      reason: error instanceof Error ? error.message : String(error)
+      reason: errorMessage(error)
     }
   }
-}
-
-async function deconflictName(
-  provider: IFilesystemProvider,
-  destDir: string,
-  originalName: string,
-  reservedNames: Set<string>,
-  assertCurrent?: () => void
-): Promise<string> {
-  assertCurrent?.()
-  if (
-    !(await remotePathExists(provider, `${destDir}/${originalName}`)) &&
-    !reservedNames.has(originalName)
-  ) {
-    return originalName
-  }
-
-  const dotIndex = originalName.lastIndexOf('.')
-  const hasMeaningfulExt = dotIndex > 0
-  const stem = hasMeaningfulExt ? originalName.slice(0, dotIndex) : originalName
-  const ext = hasMeaningfulExt ? originalName.slice(dotIndex) : ''
-
-  let candidate = `${stem} copy${ext}`
-  assertCurrent?.()
-  if (
-    !(await remotePathExists(provider, `${destDir}/${candidate}`)) &&
-    !reservedNames.has(candidate)
-  ) {
-    return candidate
-  }
-
-  let counter = 2
-  while (counter < 10000) {
-    candidate = `${stem} copy ${counter}${ext}`
-    assertCurrent?.()
-    if (
-      !(await remotePathExists(provider, `${destDir}/${candidate}`)) &&
-      !reservedNames.has(candidate)
-    ) {
-      return candidate
-    }
-    counter += 1
-  }
-
-  throw new Error(
-    `Could not generate a unique name for '${originalName}' after ${counter} attempts`
-  )
 }
 
 async function ensureDropStagingDir(

@@ -15,6 +15,7 @@ import type { RuntimeRpcFailure, RuntimeRpcResponse } from '../../shared/runtime
 import type { RuntimeStatus } from '../../shared/runtime-types'
 import type { Store } from '../persistence'
 import { retireRemovedRuntimeEnvironment } from './runtime-environment-removal-cleanup'
+import { readSettingsWithRuntimeEnvironmentPreference } from './runtime-environment-preference'
 import { verifyAndAddRuntimeEnvironmentFromPairingCode } from './runtime-environment-pairing-verification'
 import {
   closeRemoteRuntimeRequestConnection,
@@ -32,6 +33,7 @@ import {
   callRuntimeEnvironment,
   getRuntimeEnvironmentStatus
 } from './runtime-environment-transport-routing'
+import { publicRuntimeEnvironmentWithHostKey } from './runtime-environment-host-key'
 
 function manuallyDisconnectedResponse(
   environment: ReturnType<typeof resolveEnvironment>
@@ -63,9 +65,11 @@ export function registerRuntimeEnvironmentConnectivityHandlers({
   ipcMain.handle('runtimeEnvironments:getStatusSnapshots', () =>
     getRuntimeEnvironmentStatusSnapshots()
   )
-  ipcMain.handle('runtimeEnvironments:list', () =>
-    listEnvironments(getUserDataPath()).map(redactRuntimeEnvironment)
-  )
+  ipcMain.handle('runtimeEnvironments:list', () => {
+    const environments = listEnvironments(getUserDataPath())
+    readSettingsWithRuntimeEnvironmentPreference(store, getUserDataPath())
+    return environments.map(publicRuntimeEnvironmentWithHostKey)
+  })
   ipcMain.handle(
     'runtimeEnvironments:addFromPairingCode',
     (
@@ -104,7 +108,9 @@ export function registerRuntimeEnvironmentConnectivityHandlers({
         throw new Error('Choose another Active Server in Advanced before removing this server.')
       }
       const removed = removeEnvironment(getUserDataPath(), args.selector)
-      void retireRemovedRuntimeEnvironment(removed.id, invalidateTransport)
+      void retireRemovedRuntimeEnvironment(removed.id, invalidateTransport, (hostId) =>
+        store.removeWorkspaceSessionHost(hostId)
+      )
       closeLegacySelectorTransport(args.selector, removed.id)
       return { removed: redactRuntimeEnvironment(removed) }
     }

@@ -14,6 +14,7 @@ import type { TerminalScrollbackSnapshotStorage } from '../../terminal-scrollbac
 import {
   createOrcadMigrationSourceScope,
   orcadMigrationOwnerMatchesScope,
+  orcadMigrationPartitionScope,
   unqualifyOrcadMigrationOwnerKey
 } from './orcad-source-scope'
 import {
@@ -21,10 +22,12 @@ import {
   countUnsupportedSessionState,
   projectDormantSessionFocus,
   projectSessionToDestination,
-  shutdownMarkerHasTerminalAuthority,
   transferableSleepingAgentSession
 } from './orcad-source-workspace-session-eligibility'
-import { collectOwnedTerminalTabIds } from './orcad-source-workspace-session-layout'
+import {
+  collectOwnedTerminalTabIds,
+  dropOrcadMigrationTerminalBindings
+} from './orcad-source-workspace-session-layout'
 import {
   mergeSessionFragments,
   sessionPartitions
@@ -40,21 +43,36 @@ export type OrcadMigrationSourceWorkspaceSessionInspection = {
   blockedCount: number
 }
 
+/** Fails closed: a session shape no collector expects blocks the move instead of failing connect. */
 export function collectOrcadMigrationSourceWorkspaceSession(
   state: PersistedState,
   source: OrcadMigrationManifestSource,
   catalog: OrcadMigrationCatalogPayload,
   storage?: TerminalScrollbackSnapshotStorage
 ): OrcadMigrationSourceWorkspaceSessionInspection {
-  const scope = createOrcadMigrationSourceScope({ source, catalog })
+  try {
+    return collectWorkspaceSession(state, source, catalog, storage)
+  } catch (error) {
+    console.warn('[migration] Unreadable workspace session blocks the move:', error)
+    return { payload: undefined, snapshots: [], blockedCount: 1 }
+  }
+}
+
+function collectWorkspaceSession(
+  state: PersistedState,
+  source: OrcadMigrationManifestSource,
+  catalog: OrcadMigrationCatalogPayload,
+  storage?: TerminalScrollbackSnapshotStorage
+): OrcadMigrationSourceWorkspaceSessionInspection {
+  const sourceScope = createOrcadMigrationSourceScope({ source, catalog, repos: state.repos })
   const fragments: WorkspaceSessionState[] = []
   const snapshots: OrcadMigrationTerminalScrollbackSnapshot[] = []
   let blockedCount = 0
   for (const [partitionId, session] of sessionPartitions(state, LOCAL_EXECUTION_HOST_ID)) {
+    const scope = orcadMigrationPartitionScope(sourceScope, partitionId)
     const sourceHostPartition = partitionId === scope.hostId
     const terminalTabIds = collectOwnedTerminalTabIds(session, scope)
     blockedCount += countUnsupportedSessionState(
-      state,
       session,
       scope,
       sourceHostPartition,
@@ -80,18 +98,12 @@ export function collectOrcadMigrationSourceWorkspaceSession(
             }
           : null
     })
-    // A shutdown marker is only a reconnect hint. Once the source has no live
-    // PTY authority for that worktree, carrying it would make the destination
-    // try to resurrect a process that no longer exists.
-    if (fragment.activeWorktreeIdsOnShutdown) {
-      fragment.activeWorktreeIdsOnShutdown = fragment.activeWorktreeIdsOnShutdown.filter(
-        (worktreeId) =>
-          shutdownMarkerHasTerminalAuthority(state, session, scope, sourceHostPartition, worktreeId)
-      )
-      if (fragment.activeWorktreeIdsOnShutdown.length === 0) {
-        delete fragment.activeWorktreeIdsOnShutdown
-      }
+    if (!sourceHostPartition) {
+      // Client focus is not host state, so the destination never carries it.
+      fragment.activeWorktreeId = null
+      delete fragment.activeWorkspaceKey
     }
+    dropOrcadMigrationTerminalBindings(fragment)
     if (hasTransferredSessionState(fragment)) {
       const projected = projectOrcadMigrationSessionScrollback(
         projectSessionToDestination(fragment, scope),

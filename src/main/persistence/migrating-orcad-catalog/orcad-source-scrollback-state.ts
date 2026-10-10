@@ -12,6 +12,7 @@ import {
   readTerminalScrollbackStoredBytesSync,
   type TerminalScrollbackSnapshotStorage
 } from '../../terminal-scrollback-snapshots'
+import { compareKeys } from './orcad-source-key-order'
 
 export type ProjectedOrcadMigrationScrollback = {
   session: WorkspaceSessionState
@@ -43,7 +44,7 @@ export function projectOrcadMigrationSessionScrollback(
   const snapshots: OrcadMigrationTerminalScrollbackSnapshot[] = []
   let blockedCount = 0
   let totalBytes = 0
-  for (const [tabId, layout] of Object.entries(projected.terminalLayoutsByTabId)) {
+  for (const [tabId, layout] of Object.entries(projected.terminalLayoutsByTabId ?? {})) {
     const sourceLayout = session.terminalLayoutsByTabId[tabId]
     const refs: Record<string, string> = {}
     const leafIds = new Set([
@@ -103,8 +104,10 @@ export function readOrcadMigrationSourceScrollbackChunk(args: {
   offset: number
   length: number
   storage?: TerminalScrollbackSnapshotStorage
+  /** Kept on disk for an export in flight, so a tab closed mid-transfer still reads from storage. */
+  retained?: boolean
 }): { bytesBase64: string; totalBytes: number; eof: boolean } {
-  const bytes = findSnapshotBytes(args.state, args.descriptor, args.storage)
+  const bytes = findSnapshotBytes(args.state, args.descriptor, args.storage, args.retained)
   if (!bytes) {
     throw new Error('orcad_migration_source_snapshot_changed')
   }
@@ -119,13 +122,14 @@ export function readOrcadMigrationSourceScrollbackChunk(args: {
   }
 }
 
-function findSnapshotBytes(
+export function findSnapshotBytes(
   state: PersistedState,
   descriptor: OrcadMigrationTerminalScrollbackSnapshot,
-  storage?: TerminalScrollbackSnapshotStorage
+  storage?: TerminalScrollbackSnapshotStorage,
+  retained = false
 ): Buffer | null {
   for (const session of sessionPartitions(state)) {
-    const layout = session.terminalLayoutsByTabId[descriptor.tabId]
+    const layout = session.terminalLayoutsByTabId?.[descriptor.tabId]
     if (!layout) {
       continue
     }
@@ -136,23 +140,27 @@ function findSnapshotBytes(
       : ref === descriptor.ref
         ? readTerminalScrollbackStoredBytesSync(ref, storage)
         : null
-    if (
-      bytes &&
-      bytes.length === descriptor.byteLength &&
-      createHash('sha256').update(bytes).digest('hex') === descriptor.sha256
-    ) {
+    if (matchesDescriptor(bytes, descriptor)) {
       return bytes
     }
   }
-  return null
+  const stored = retained ? readTerminalScrollbackStoredBytesSync(descriptor.ref, storage) : null
+  return matchesDescriptor(stored, descriptor) ? stored : null
+}
+
+function matchesDescriptor(
+  bytes: Buffer | null,
+  descriptor: OrcadMigrationTerminalScrollbackSnapshot
+): bytes is Buffer {
+  return (
+    bytes !== null &&
+    bytes.length === descriptor.byteLength &&
+    createHash('sha256').update(bytes).digest('hex') === descriptor.sha256
+  )
 }
 
 function sessionPartitions(state: PersistedState): WorkspaceSessionState[] {
   return [state.workspaceSession, ...Object.values(state.workspaceSessionsByHostId ?? {})].filter(
     (session): session is WorkspaceSessionState => session !== undefined
   )
-}
-
-function compareKeys(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0
 }

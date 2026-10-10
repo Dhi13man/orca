@@ -6,7 +6,8 @@ import {
 } from './relay-grace-branch'
 import { relayLogLine } from './relay-diagnostic-log'
 import { SSH_RELAY_CONFIGURE_GRACE_TIME_METHOD } from '../shared/ssh-types'
-import type { RelayDispatcher, RequestContext } from './dispatcher'
+import type { RelayDispatcher } from '../wsl-guest/dispatcher'
+import { errorMessage } from '../shared/error-message'
 
 type RelayGraceLifecycleOptions = {
   dispatcher: RelayDispatcher
@@ -18,6 +19,10 @@ type RelayGraceLifecycleOptions = {
   hasAcceptedSocketClient: () => boolean
   ownsSocketPath: () => boolean
   disposeOwnedProcesses: () => Promise<void>
+  /** Lifts the admission fences disposal raised, for a relay that stays up after a deferral. */
+  reopenOwnedProcesses: () => void
+  /** Never rejects; runs only after nothing can defer the exit. */
+  disposeExitOnlyServices: () => Promise<void>
   disposeRuntime: () => void
 }
 
@@ -26,9 +31,6 @@ export class RelayGraceLifecycle {
   private graceReason: string | null = null
   private graceBranch: RelayGraceBranch | null = null
   private shutdownInFlight = false
-  private shutdownPreparation: Promise<void> | null = null
-  private shutdownPrepared = false
-  private shutdownInitiator: RequestContext | undefined
   private stopPoolWatch = (): void => {}
   private stopPoolActiveWatch = (): void => {}
 
@@ -116,93 +118,33 @@ export class RelayGraceLifecycle {
     if (this.shutdownInFlight) {
       return
     }
+    this.shutdownInFlight = true
     relayLogLine(
       `[relay] Shutdown: ptys=${this.options.ptyHandler.activePtyCount}, clients=${this.options.readSocketClientCount()}, ownsSocket=${this.options.ownsSocketPath()}`
     )
-    void this.prepareShutdown()
-      .then(() => this.finishShutdown())
+    this.graceDeadlineAt = null
+    this.graceReason = null
+    this.graceBranch = null
+    // Why owned processes first: their disposal can defer, and a deferral must leave the PTYs intact,
+    // because a disposed PTY handler kills every terminal and refuses new ones.
+    void this.options
+      .disposeOwnedProcesses()
+      .then(async () => {
+        await this.options.ptyHandler.dispose()
+        await this.options.disposeExitOnlyServices()
+        this.stopPoolWatch()
+        this.stopPoolActiveWatch()
+        this.options.disposeRuntime()
+        process.exit(0)
+      })
       .catch((error) => {
         this.shutdownInFlight = false
-        relayLogLine(
-          `[relay] Shutdown deferred: ${error instanceof Error ? error.message : String(error)}`
-        )
+        this.options.reopenOwnedProcesses()
+        relayLogLine(`[relay] Shutdown deferred: ${errorMessage(error)}`)
         if (this.options.readSocketClientCount() === 0) {
           this.start('shutdown deferred', { retryDeferredShutdown: true })
         }
       })
-  }
-
-  /**
-   * Disposes PTYs and owned processes but leaves the transport up, so a host-owned reset can
-   * settle its response before {@link finishShutdown} exits. Only a reset initiator also drains
-   * admitted requests; idle and signal shutdown keep exiting without waiting on them.
-   */
-  prepareShutdown(initiator?: RequestContext, onAdmitted?: () => void): Promise<void> {
-    if (initiator) {
-      try {
-        this.options.dispatcher.assertActiveWorkContext(initiator)
-      } catch (error) {
-        return Promise.reject(error)
-      }
-    }
-    if (this.shutdownPreparation) {
-      if (initiator && initiator !== this.shutdownInitiator) {
-        return Promise.reject(new Error('relay_shutdown_preparation_in_progress'))
-      }
-      return this.shutdownPreparation
-    }
-    try {
-      onAdmitted?.()
-    } catch (error) {
-      return Promise.reject(error)
-    }
-    this.shutdownInFlight = true
-    this.shutdownInitiator = initiator
-    let drainage: Promise<void>
-    let disposal: Promise<void>
-    try {
-      this.cancel('shutdown preparation')
-      drainage = initiator ? this.options.dispatcher.beginWorkDrain(initiator) : Promise.resolve()
-      disposal = this.options.ptyHandler.dispose()
-    } catch (error) {
-      this.shutdownInFlight = false
-      this.shutdownInitiator = undefined
-      return Promise.reject(error)
-    }
-    const preparation = Promise.allSettled([drainage, disposal]).then(async (results) => {
-      const failures = results.flatMap((result) =>
-        result.status === 'rejected' ? [result.reason] : []
-      )
-      if (failures.length === 1) {
-        throw failures[0]
-      }
-      if (failures.length > 1) {
-        throw new AggregateError(failures, 'relay_shutdown_admitted_work_incomplete')
-      }
-      await this.options.disposeOwnedProcesses()
-      if (initiator) {
-        // Cleanup controls may have arrived while owned producers were settling.
-        await this.options.dispatcher.beginWorkDrain(initiator)
-      }
-      this.shutdownPrepared = true
-    })
-    this.shutdownPreparation = preparation.catch((error: unknown) => {
-      this.shutdownPreparation = null
-      this.shutdownInitiator = undefined
-      this.shutdownInFlight = false
-      throw error
-    })
-    return this.shutdownPreparation
-  }
-
-  finishShutdown(): void {
-    if (!this.shutdownPrepared) {
-      throw new Error('relay_shutdown_preparation_required')
-    }
-    this.stopPoolWatch()
-    this.stopPoolActiveWatch()
-    this.options.disposeRuntime()
-    process.exit(0)
   }
 
   private configure(params: Record<string, unknown>): { graceTimeMs: number } {

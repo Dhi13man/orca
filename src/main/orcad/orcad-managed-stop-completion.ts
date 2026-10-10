@@ -15,17 +15,23 @@ import {
   type OrcadManagedStopVerdict
 } from '../../shared/orcad-stop-request'
 import {
-  getProcessStartedAtMs,
   START_TIME_TOLERANCE_MS,
   startTimesWithinTolerance
 } from '../daemon/daemon-process-start-time'
+import { readOrcadProcessStartedAtMs } from './orcad-process-start-time'
+import { hasErrorCode, inspectProcessSignal } from '../daemon/daemon-process-inspection'
 import { persistOrcadCompletedStopReceipt } from './orcad-completed-stop-receipt'
 import { readOrcadManagedStopDecision } from './orcad-managed-stop-decision'
+import { withdrawOrcadManagedStopRequest } from './orcad-managed-stop-cancellation'
 import {
   orcadInstanceLockNames,
   orcadManagedStopRequestPath,
   readOrcadManagedStopRequest
 } from './orcad-managed-stop-request'
+import {
+  ORCAD_STOP_COMPLETION_POLL_ATTEMPTS,
+  ORCAD_STOP_COMPLETION_POLL_MS
+} from './orcad-stop-deadlines'
 
 export type OrcadProcessProbe = (pid: number) => 'alive' | 'missing' | 'unverifiable'
 
@@ -38,14 +44,9 @@ export type OrcadManagedStopCompletionOptions = {
 }
 
 function defaultProbe(pid: number): ReturnType<OrcadProcessProbe> {
-  try {
-    process.kill(pid, 0)
-    return 'alive'
-  } catch (error) {
-    const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : null
-    // EPERM proves some process holds the PID; it cannot prove ours exited.
-    return code === 'ESRCH' ? 'missing' : 'unverifiable'
-  }
+  const signal = inspectProcessSignal(pid)
+  // EPERM proves some process holds the PID; it cannot prove ours exited.
+  return signal === 'occupied' ? 'alive' : signal === 'missing' ? 'missing' : 'unverifiable'
 }
 
 function observeInstance(
@@ -56,8 +57,9 @@ function observeInstance(
   if (probe !== 'alive') {
     return probe === 'missing' ? 'exited' : 'unverifiable'
   }
-  const actual = (options.startedAtMs ?? getProcessStartedAtMs)(instance.pid)
-  // A reused PID is proof of exit only when both start times are known and disagree.
+  const actual = (options.startedAtMs ?? readOrcadProcessStartedAtMs)(instance.pid)
+  // A reused PID is proof of exit only when both start times are known and disagree; on Windows
+  // without the addon both stay null, so a live PID is never read as exited.
   if (
     actual !== null &&
     instance.startedAtMs !== null &&
@@ -74,7 +76,7 @@ export async function completeOrcadManagedStop(
   options: OrcadManagedStopCompletionOptions = {}
 ): Promise<OrcadManagedStopVerdict> {
   const request = OrcadManagedStopRequestSchema.parse(input)
-  const attempts = options.attempts ?? 80
+  const attempts = options.attempts ?? ORCAD_STOP_COMPLETION_POLL_ATTEMPTS
   if (!Number.isSafeInteger(attempts) || attempts < 1 || attempts > 240) {
     throw new Error('orcad_managed_stop_invalid_attempts')
   }
@@ -101,8 +103,13 @@ export async function completeOrcadManagedStop(
   if (!writeDurableSecureJsonFile(requestPath, request)) {
     throw new Error('orcad_managed_stop_request_permissions_unconfirmed')
   }
+  // A cancel that won between the check above and this write found no file to remove.
+  if (readOrcadManagedStopDecision(request) === 'canceled') {
+    withdrawOrcadManagedStopRequest(request)
+    return 'live'
+  }
   for (let attempt = 0; attempt < attempts; attempt++) {
-    await (options.sleep ?? (() => delay(250)))()
+    await (options.sleep ?? (() => delay(ORCAD_STOP_COMPLETION_POLL_MS)))()
     verdict = observeInstance(request.instance, options)
     if (verdict !== 'live') {
       return verdict === 'exited' ? completed() : verdict
@@ -124,6 +131,6 @@ function existingRequestMatches(path: string, request: OrcadManagedStopRequest):
   try {
     return JSON.stringify(readOrcadManagedStopRequest(path)) === JSON.stringify(request)
   } catch (error) {
-    return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
+    return hasErrorCode(error, 'ENOENT')
   }
 }

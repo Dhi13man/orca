@@ -1,3 +1,4 @@
+import { RipgrepSearchDiagnostics } from '../shared/ripgrep-search-diagnostics'
 /**
  * Pure helpers and child-process search utilities extracted from fs-handler.ts.
  *
@@ -6,7 +7,7 @@
  * so they are straightforward to test independently.
  */
 import { SearchSubprocessLineAccumulator } from '../shared/search-subprocess-lines'
-import { spawnProcess } from '../shared/child-process/run-process'
+import { spawnProcess } from '@orca/process-host'
 import { abortSignalReason } from '../shared/abort-signal-reason'
 import { open } from 'node:fs/promises'
 import {
@@ -17,6 +18,7 @@ import {
   SEARCH_TIMEOUT_MS as SHARED_SEARCH_TIMEOUT_MS
 } from '../shared/text-search'
 import { IMAGE_FILE_MIME_TYPES } from '../shared/image-file-extensions'
+import { BINARY_PROBE_BYTES, isBinaryBuffer } from '../shared/binary-buffer'
 import type { SearchResult as SharedSearchResult } from '../shared/code-search-types'
 import {
   absorbPendingRipgrepSpawnError,
@@ -26,7 +28,7 @@ import {
   ripgrepMissingCwdError,
   RipgrepUnavailableError
 } from '../shared/ripgrep-process-availability'
-import { buildRelayCommandEnv } from './relay-command-env'
+import { buildRelayCommandEnv } from '../wsl-guest/relay-command-env'
 import {
   pathRipgrepCommand,
   resolveRelayRipgrepCommand,
@@ -43,25 +45,12 @@ export const MAX_TEXT_FILE_SIZE = 10 * 1024 * 1024
 // Reads above the legacy 16MB single-frame budget go through fs.readFileStream,
 // which chunks at STREAM_CHUNK_SIZE; see docs/relay-file-stream-design.md.
 export const MAX_PREVIEWABLE_BINARY_SIZE = 50 * 1024 * 1024
-export const BINARY_PROBE_BYTES = 8192
 export const SEARCH_TIMEOUT_MS = SHARED_SEARCH_TIMEOUT_MS
 export const DEFAULT_MAX_RESULTS = 2000
 
 export const IMAGE_MIME_TYPES: Record<string, string> = {
   ...IMAGE_FILE_MIME_TYPES,
   '.pdf': 'application/pdf'
-}
-
-// ─── Binary detection ────────────────────────────────────────────────
-
-export function isBinaryBuffer(buffer: Buffer): boolean {
-  const len = Math.min(buffer.length, 8192)
-  for (let i = 0; i < len; i++) {
-    if (buffer[i] === 0) {
-      return true
-    }
-  }
-  return false
 }
 
 export async function isBinaryFilePrefix(
@@ -115,18 +104,15 @@ export function searchWithRg(
     return Promise.reject(abortSignalReason(signal))
   }
   return new Promise((resolve, reject) => {
-    const rgArgs = buildRgArgs(query, rootPath, opts)
+    const rgArgs = buildRgArgs(query, '.', opts)
     const acc = createAccumulator()
-    const lines = new SearchSubprocessLineAccumulator(Number.MAX_SAFE_INTEGER)
+    const lines = new SearchSubprocessLineAccumulator()
+    const diagnostics = new RipgrepSearchDiagnostics()
     let resolved = false
     let processErrorObserved = false
     let unavailableExitObserved = false
     let launchFailureCheck: Promise<void> | null = null
 
-    // Why: spawn can throw synchronously on invalid options (e.g. bad cwd),
-    // which would leak out of the `new Promise` executor and leave the
-    // promise forever pending. Treat a synchronous throw as a clean
-    // "no results" fallback, the same way an async 'error' event is handled.
     const resolvedRgCommand = resolveRelayRipgrepCommand()
     // Why not spawn a bare name when this is null: on Windows CreateProcessW searches the spawn
     // cwd -- the user's repo -- before PATH, so a planted rg.exe would run instead.
@@ -146,8 +132,8 @@ export function searchWithRg(
         env,
         stdio: ['ignore', 'pipe', 'pipe']
       })
-    } catch {
-      resolve(finalize(acc))
+    } catch (error) {
+      reject(error)
       return
     }
 
@@ -185,9 +171,14 @@ export function searchWithRg(
       }
     }
 
-    function resolveOnce(): void {
+    function resolveOnce(code = 0, signal: NodeJS.Signals | null = null): void {
       if (settle()) {
-        resolve(finalize(acc))
+        const error = diagnostics.failure(code, signal, acc)
+        if (error) {
+          reject(error)
+        } else {
+          resolve(finalize(acc))
+        }
       }
     }
 
@@ -239,11 +230,15 @@ export function searchWithRg(
     }
 
     function handleStdoutData(chunk: string): void {
-      lines.push(chunk, processLine)
+      if (!lines.push(chunk, processLine)) {
+        acc.truncated = true
+        killSpawnedRipgrepProcess(child)
+        resolveOnce()
+      }
     }
 
-    function handleStderrData(): void {
-      /* drain */
+    function handleStderrData(chunk: Buffer): void {
+      diagnostics.append(chunk)
     }
 
     function handleError(error: Error): void {
@@ -252,7 +247,10 @@ export function searchWithRg(
         settleLaunchFailure(error)
         return
       }
-      resolveOnce()
+      if (settle()) {
+        reject(error)
+      }
+      killSpawnedRipgrepProcess(child)
     }
 
     function handleClose(code: number | null, signal: NodeJS.Signals | null): void {
@@ -265,11 +263,11 @@ export function searchWithRg(
         settleLaunchFailure()
         return
       }
-      const tail = lines.finish()
+      const tail = !signal && (code === 0 || code === 1) ? lines.finish() : null
       if (tail !== null) {
         processLine(tail)
       }
-      resolveOnce()
+      resolveOnce(code ?? -1, signal)
     }
 
     child.stdout?.setEncoding('utf-8')

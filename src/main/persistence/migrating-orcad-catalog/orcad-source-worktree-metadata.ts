@@ -29,7 +29,7 @@ export function inspectOrcadSourceWorktreeMetadata(
       }
       continue
     }
-    if (orcadMigrationOwnerMatchesScope(sourceKey, scope)) {
+    if (orcadMigrationOwnerMatchesScope(sourceKey, scope, meta.hostId)) {
       rows.push({ sourceKey, meta })
     } else if (meta.hostId === scope.hostId || host === scope.hostId) {
       blockedCount++
@@ -44,6 +44,9 @@ export function inspectOrcadSourceWorktreeMetadata(
   for (const [alias, identities] of Object.entries(state.worktreeIdentityAliases ?? {})) {
     if (getExecutionHostIdFromWorktreeHostIdentity(alias) !== scope.hostId) {
       continue
+    }
+    if (isDanglingAlias(state, identities) && orcadMigrationOwnerMatchesScope(alias, scope)) {
+      continue // Names no metadata (its legacy row, if any, moves instead): nothing to move.
     }
     const meta = identities.length === 1 ? state.worktreeMetaByIdentity?.[identities[0]] : undefined
     const worktreeId = unqualifyOrcadMigrationOwnerKey(alias)
@@ -83,40 +86,42 @@ export function inspectOrcadSourceWorktreeMetadata(
   return { rows, blockedCount }
 }
 
-export function retireOrcadSourceWorktreeMetadata(
+export function subtractOrcadSourceWorktreeMetadata(
   state: PersistedState,
   manifest: OrcadMigrationManifest
 ) {
   const scope = createOrcadMigrationSourceScope({
     source: manifest.source,
-    catalog: manifest.payload
+    catalog: manifest.payload,
+    repos: state.repos
   })
   const entries = manifest.payload.dormantState?.worktreeMeta ?? []
-  const worktreeIds = new Set(entries.map((entry) => entry.worktreeId))
+  // Rows a downgraded build added in a moved project go too: the server's copy of it wins.
+  const added = inspectOrcadSourceWorktreeMetadata(state, scope).rows.map((row) => row.sourceKey)
+  const sourceKeys = new Set([...entries.map((entry) => entry.sourceKey), ...added])
+  const worktreeIds = new Set([
+    ...entries.map((entry) => entry.worktreeId),
+    ...added.map(unqualifyOrcadMigrationOwnerKey)
+  ])
   const removedIdentities = new Set<string>()
   for (const [alias, identities] of Object.entries(state.worktreeIdentityAliases ?? {})) {
     if (
       getExecutionHostIdFromWorktreeHostIdentity(alias) === scope.hostId &&
-      worktreeIds.has(unqualifyOrcadMigrationOwnerKey(alias))
+      (worktreeIds.has(unqualifyOrcadMigrationOwnerKey(alias)) ||
+        (isDanglingAlias(state, identities) && orcadMigrationOwnerMatchesScope(alias, scope)))
     ) {
       identities.forEach((identity) => removedIdentities.add(identity))
       delete state.worktreeIdentityAliases?.[alias]
     }
   }
-  entries.forEach((entry) => delete state.worktreeMeta[entry.sourceKey])
+  sourceKeys.forEach((sourceKey) => delete state.worktreeMeta[sourceKey])
   pruneUnreferencedWorktreeIdentityMeta(state, removedIdentities)
 }
 
-export function assertOrcadSourceWorktreeMetadataRetired(
-  state: PersistedState,
-  manifest: OrcadMigrationManifest
-) {
-  const scope = createOrcadMigrationSourceScope({
-    source: manifest.source,
-    catalog: manifest.payload
+/** An alias whose identities hold no metadata, as a profile that lost them leaves behind. */
+function isDanglingAlias(state: PersistedState, identities: readonly string[]): boolean {
+  return identities.every((identity) => {
+    const meta = state.worktreeMetaByIdentity?.[identity]
+    return !meta || Object.keys(meta).length === 0
   })
-  const inspection = inspectOrcadSourceWorktreeMetadata(state, scope)
-  if (inspection.rows.length || inspection.blockedCount) {
-    throw new Error('orcad_migration_source_worktree_metadata_reappeared')
-  }
 }

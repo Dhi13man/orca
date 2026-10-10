@@ -32,12 +32,16 @@ const SidecarSshAccessSchema = RuntimeSshAccessLinkSchema.extend({
 
 const SidecarEntrySchema = z.object({
   binding: SidecarBindingSchema,
+  // The store state a two-file rebind is moving to; the entry stays current through a crash between them.
+  pendingBinding: SidecarBindingSchema.optional(),
   // The runtime a link verified; it outlives the link like a learned runtimeId would.
   runtimeId: z.string().min(1).optional(),
   sshAccess: SidecarSshAccessSchema.optional(),
   pendingSshAccessOperation: RuntimeSshAccessOperationSchema.optional(),
   // The managed deployment's tunnel; its loopback endpoint is the persisted pairing itself.
   orcadDeployment: OrcadDeploymentLinkSchema.optional(),
+  // A rollback to a snapshot older than this would discard the migrated catalog.
+  orcadMigratedAt: z.string().datetime().optional(),
   // Keeps the overlaid pairing revision monotonic after the access that raised it is removed.
   pairingRevisionFloor: z.number().finite().optional(),
   reconciliation: RuntimeEnvironmentReconciliationRecordSchema.optional()
@@ -92,11 +96,11 @@ function isCurrentEntry(
   entry: RuntimeEnvironmentSidecarEntry
 ): boolean {
   const binding = runtimeEnvironmentSidecarBinding(environment)
-  return (
-    entry.binding.createdAt === binding.createdAt &&
-    entry.binding.pairingRevision === binding.pairingRevision &&
-    entry.binding.preferredEndpointId === binding.preferredEndpointId
-  )
+  const matches = (candidate: z.infer<typeof SidecarBindingSchema> | undefined): boolean =>
+    candidate?.createdAt === binding.createdAt &&
+    candidate.pairingRevision === binding.pairingRevision &&
+    candidate.preferredEndpointId === binding.preferredEndpointId
+  return matches(entry.binding) || matches(entry.pendingBinding)
 }
 
 /**
@@ -143,17 +147,22 @@ export function overlayRuntimeEnvironmentSidecar(
       ? { pendingSshAccessOperation: entry.pendingSshAccessOperation }
       : {}),
     ...(entry.orcadDeployment ? { orcadDeployment: entry.orcadDeployment } : {}),
+    ...(entry.orcadMigratedAt ? { orcadMigratedAt: entry.orcadMigratedAt } : {}),
     ...(entry.reconciliation ? { reconciliation: entry.reconciliation } : {})
   })
   return overlaid.success ? overlaid.data : base
 }
 
-/** Replaces one environment's sidecar entry and drops entries whose environment no longer exists. */
+/**
+ * Replaces one environment's sidecar entry and drops entries whose environment no longer exists.
+ * `pendingEnvironment` also binds the entry to the store state about to be written.
+ */
 export function writeRuntimeEnvironmentSidecarEntry(
   userDataPath: string,
   environments: readonly PersistedRuntimeEnvironment[],
   environment: PersistedRuntimeEnvironment,
-  entry: Omit<RuntimeEnvironmentSidecarEntry, 'binding'> | null
+  entry: Omit<RuntimeEnvironmentSidecarEntry, 'binding'> | null,
+  pendingEnvironment?: PersistedRuntimeEnvironment
 ): void {
   const current = readRuntimeEnvironmentSidecar(userDataPath)
   const live = new Map(environments.map((candidate) => [candidate.id, candidate]))
@@ -171,12 +180,17 @@ export function writeRuntimeEnvironmentSidecarEntry(
       entry.sshAccess !== undefined ||
       entry.pendingSshAccessOperation !== undefined ||
       entry.orcadDeployment !== undefined ||
+      entry.orcadMigratedAt !== undefined ||
       entry.reconciliation !== undefined ||
       (entry.pairingRevisionFloor ?? basePairingRevision) > basePairingRevision)
   if (entry && hasState) {
+    const { pendingBinding: _staleTarget, ...state } = entry
     entries[environment.id] = SidecarEntrySchema.parse({
-      ...entry,
-      binding: runtimeEnvironmentSidecarBinding(environment)
+      ...state,
+      binding: runtimeEnvironmentSidecarBinding(environment),
+      ...(pendingEnvironment
+        ? { pendingBinding: runtimeEnvironmentSidecarBinding(pendingEnvironment) }
+        : {})
     })
   }
   writeSecureJsonFileWithinLimit(

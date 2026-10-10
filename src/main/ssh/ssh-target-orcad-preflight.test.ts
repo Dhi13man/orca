@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { SshRemotePtyLease, SshTarget } from '../../shared/ssh-types'
-import { createManagedOrcadSshOwner } from '../../shared/managed-orcad-ssh-owner'
 import { closeTestStores, createSqliteTestStore } from '../persistence-test-harness'
 import { Store } from '../persistence/loading-store/store'
 import {
@@ -72,6 +71,18 @@ describe('migration export preflight', () => {
     ])
   })
 
+  it('previews a connected but unused host as movable with no blockers', () => {
+    const store = preflightStore((store) => {
+      store.addSshTarget(TARGET)
+      // What the renderer writes on connect: the reconnect hint names the now-connected target.
+      store.patchWorkspaceSession({ activeConnectionIdsAtShutdown: [TARGET.id] })
+    })
+    expect(preflightOrcadMigrationExport(store, TARGET.id)).toMatchObject({
+      claimable: true,
+      blockers: []
+    })
+  })
+
   it('blocks on a live relay terminal, which cannot move', () => {
     const lease: SshRemotePtyLease = {
       targetId: TARGET.id,
@@ -137,12 +148,21 @@ describe('migration export preflight', () => {
     )
   })
 
-  it('refuses a target another runtime owns, and passes the owner its own claim', () => {
+  it('refuses a target another runtime owns, and passes the owner only with its journal', () => {
     const owned = preflightStore((store) =>
-      store.addSshTarget({ ...TARGET, owner: createManagedOrcadSshOwner('env-1') })
+      store.addSshTarget({ ...TARGET, orcadFence: { environmentId: 'env-1' } })
     )
     expect(preflightOrcadMigrationExport(owned, TARGET.id).claimable).toBe(false)
-    expect(preflightOrcadMigrationExport(owned, TARGET.id, 'env-1').claimable).toBe(true)
+    expect(
+      preflightOrcadMigrationExport(owned, TARGET.id, { environmentId: 'env-1', recorded: true })
+        .claimable
+    ).toBe(true)
+    expect(
+      preflightOrcadMigrationExport(owned, TARGET.id, { environmentId: 'env-1', recorded: false })
+    ).toMatchObject({
+      claimable: false,
+      blockers: [{ code: 'orcad_migration_owner_unrecorded' }]
+    })
   })
 
   it('reports an unknown target', () => {

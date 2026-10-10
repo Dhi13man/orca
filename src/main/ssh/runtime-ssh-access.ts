@@ -15,7 +15,7 @@ import {
   prepareRuntimeEnvironmentSshAccessLink,
   prepareRuntimeEnvironmentSshAccessUnlink
 } from '../../shared/runtime-environment-ssh-access-store'
-import { getManagedOrcadOwnerEnvironmentId } from '../../shared/managed-orcad-ssh-owner'
+import { getManagedOrcadFenceEnvironmentId } from '../../shared/managed-orcad-ssh-owner'
 import type { SshTarget } from '../../shared/ssh-types'
 import { runTargetLifecycle } from '../ipc/ssh-target-lifecycle-queue'
 import { requireManagedOrcadInfrastructure } from './orcad-managed-runtime-context'
@@ -73,7 +73,7 @@ function requireAccessOnlyTarget(claims: TargetClaims, targetId: string, environ
       (entry) =>
         !(
           entry.code === 'orcad_migration_target_owned' &&
-          getManagedOrcadOwnerEnvironmentId(target.owner) === environmentId
+          getManagedOrcadFenceEnvironmentId(target) === environmentId
         )
     )
   if (blockers.length) {
@@ -93,12 +93,12 @@ function requireFence(
   allowUnowned = false
 ): SshTarget {
   const target = requireTarget(claims, fence.sshTargetId)
-  const owner = getManagedOrcadOwnerEnvironmentId(target.owner)
+  const owner = getManagedOrcadFenceEnvironmentId(target)
   if (
     target.generation !== fence.sshTargetGeneration ||
     !fence.targetFingerprint ||
     fingerprintRuntimeSshTarget(target) !== fence.targetFingerprint ||
-    (owner !== environmentId && !(allowUnowned && !target.owner))
+    (owner !== environmentId && !(allowUnowned && !target.orcadFence))
   ) {
     throw new Error('The SSH target registration, connection configuration, or owner changed.')
   }
@@ -154,14 +154,22 @@ export function linkRuntimeSshAccess(
       await claims.flush()
       requireAccessOnlyTarget(claims, target.id, environmentId)
       requireFence(claims, environmentId, fence, true)
-      claims.claim(target.id, environmentId)
+      // Why recorded: the durable link intent above names this target and environment.
+      claims.claim(target.id, environmentId, { ownerRecorded: true })
       await claims.flush()
       let tunnelStarted = false
       let linkCommitted = false
       try {
         options.signal?.throwIfAborted()
         const claimed = requireFence(claims, environmentId, fence)
-        const connection = await connectionManager.connect(claimed)
+        // A cancel drops the pending connect, which frees both lifecycle queues behind it.
+        const cancelConnect = (): void =>
+          void connectionManager.disconnect(claimed.id).catch(() => {})
+        options.signal?.addEventListener('abort', cancelConnect, { once: true })
+        const connection = await connectionManager
+          .connect(claimed)
+          .finally(() => options.signal?.removeEventListener('abort', cancelConnect))
+        options.signal?.throwIfAborted()
         requireFence(claims, environmentId, fence)
         tunnelStarted = true
         const localPort = await startOrcadManagedTunnel(
@@ -233,7 +241,7 @@ export function unlinkRuntimeSshAccess(
       await options.invalidateTransport(environmentId)
       await closeOrcadManagedTunnel(environmentId)
       const target = requireFence(claims, environmentId, access, true)
-      if (target.owner && !claims.release(target.id, environmentId)) {
+      if (target.orcadFence && !claims.release(target.id, environmentId)) {
         throw new Error('The SSH target owner changed before access could be released.')
       }
       await claims.flush()
