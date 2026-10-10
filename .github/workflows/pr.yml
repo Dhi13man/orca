@@ -973,6 +973,10 @@ jobs:
           filter: blob:none
           persist-credentials: false
 
+      # Compatibility baselines are upstream releases, not fork-local publication tags.
+      - name: Fetch authoritative release baselines
+        run: git fetch --no-tags --filter=blob:none https://github.com/stablyai/orca.git 'refs/tags/v*:refs/tags/v*'
+
       - uses: ./.github/actions/install-node-dependencies
         with:
           native-runtime: node
