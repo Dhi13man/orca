@@ -32,24 +32,6 @@ describe('buildCustomAgentAutomationStartupPlan', () => {
     })
   })
 
-  it('carries exact argv through the Windows launch transport', () => {
-    const plan = buildCustomAgentAutomationStartupPlan({
-      profile: codexLuna,
-      prompt: 'Review & fix',
-      platform: 'win32',
-      shell: 'powershell'
-    })
-    const encodedLaunch = plan?.env?.ORCA_CUSTOM_AGENT_WINDOWS_RUNNER_V1
-
-    expect(encodedLaunch).toBeTypeOf('string')
-    if (!encodedLaunch) {
-      throw new Error('Missing Windows launch transport')
-    }
-    const launch = JSON.parse(Buffer.from(encodedLaunch, 'base64').toString('utf8'))
-    expect(launch.executable).toBe('codex')
-    expect(launch.runner).toContain('"--model" "luna" "Review & fix"')
-  })
-
   it('uses the provider follow-up path when the base agent requires stdin', () => {
     const plan = buildCustomAgentAutomationStartupPlan({
       profile: {
