@@ -1,7 +1,7 @@
 import type { PtySpawnResult } from '../../../providers/types'
 import { ptyIncarnationById, deletePtyOwnership } from '../provider/ownership-state'
 import { ptySizes } from '../delivery/visibility-state'
-import { tryGetProviderForAgentSessionOwner } from '../provider/registry'
+import { tryGetProviderForPty } from '../provider/registry'
 import { ensureWslHookRelayForReattach } from '../../../agent-hooks/wsl-hook-relay-reattach'
 import {
   agentSessionOwners,
@@ -13,16 +13,20 @@ import { clearProviderPtyState } from '../provider/state-cleanup'
 import { isProviderAgentSessionOwnerLive, normalizeNodePtySpawnError } from '../provider/liveness'
 import {
   SSH_SESSION_EXPIRED_ERROR,
+  isSshPtyAbsentFromRelayError,
   isSshPtyIdentityMismatchError
 } from '../../../providers/ssh-pty-errors'
 import type { RuntimePtySpawnState } from './spawn-state'
+import { markRuntimeSpawnHiddenBeforeSpawn } from './spawn-hidden-delivery'
 
 export async function executeRuntimePtySpawn(ctx: RuntimePtySpawnState): Promise<void> {
   const args = ctx.args
   const runtime = ctx.deps.runtime
   const acquireWorktreeSpawn = runtime?.acquireWorktreeTerminalSpawn
   ctx.releaseWorktreeSpawn = acquireWorktreeSpawn
-    ? await acquireWorktreeSpawn.call(runtime, args.worktreeId)
+    ? await acquireWorktreeSpawn.call(runtime, args.worktreeId, {
+        refuseSleptWorktree: args.refuseSleptWorktree
+      })
     : undefined
   try {
     if (args.preAllocatedHandle) {
@@ -41,6 +45,9 @@ export async function executeRuntimePtySpawn(ctx: RuntimePtySpawnState): Promise
           )
     const expectedPtyId =
       stablePaneOwnerCandidate?.ptyId ?? ctx.effectiveSessionAppId ?? ctx.sessionId
+    if (!stablePaneOwnerCandidate) {
+      markRuntimeSpawnHiddenBeforeSpawn(ctx)
+    }
     if (expectedPtyId) {
       ctx.deps.runtime?.beginPtyRegistration?.(expectedPtyId)
       ctx.pendingRegistrationPtyId = expectedPtyId
@@ -107,7 +114,7 @@ export async function executeRuntimePtySpawn(ctx: RuntimePtySpawnState): Promise
           }
         },
         isLive: async (owner) => {
-          const ownerProvider = tryGetProviderForAgentSessionOwner(owner.ptyId)
+          const ownerProvider = tryGetProviderForPty(owner.ptyId)
           if (!ownerProvider) {
             // Why: a disconnected relay may keep its PTY alive during the
             // grace window; missing transport is unknown, never absence.
@@ -224,6 +231,15 @@ export async function executeRuntimePtySpawn(ctx: RuntimePtySpawnState): Promise
       Boolean(args.connectionId) &&
       (spawnError.message.includes(SSH_SESSION_EXPIRED_ERROR) ||
         rawMessage.includes(SSH_SESSION_EXPIRED_ERROR))
+    // The message alone cannot carry this decision. All three reattach refusals are minted with the
+    // same `SSH_SESSION_EXPIRED` text, and only one of them observed the process: `restoreRequired`
+    // means the PTY is LIVE and only its source stream needs rebuilding, which
+    // `ssh-pty-errors.ts` states outright. Expiring its lease and deleting its ownership erases
+    // this client's last record of a running remote process, and #9819's sweep reads a PTY it has
+    // no record of as one it may SIGKILL on the next connect. Only positive host-reported absence
+    // may reach that bookkeeping; being too strict here merely leaves a dead lease for the next
+    // reattach to retire on real host evidence.
+    const relayReportedSessionAbsent = isExpiredSshSession && isSshPtyAbsentFromRelayError(err)
     const exitedBeforeSpawnReply =
       ctx.rejectedRegistrationCandidate?.exitedBeforeSpawnReply === true
     if (ctx.effectiveSessionAppId !== undefined) {
@@ -237,7 +253,11 @@ export async function executeRuntimePtySpawn(ctx: RuntimePtySpawnState): Promise
         ptySizes.delete(ctx.effectiveSessionAppId)
       }
     }
-    if (args.connectionId && ctx.effectiveSessionRelayId !== undefined && isExpiredSshSession) {
+    if (
+      args.connectionId &&
+      ctx.effectiveSessionRelayId !== undefined &&
+      relayReportedSessionAbsent
+    ) {
       if (ctx.effectiveSessionAppId !== undefined && !isIdentityMismatch) {
         clearProviderPtyState(ctx.effectiveSessionAppId)
         deletePtyOwnership(ctx.effectiveSessionAppId)

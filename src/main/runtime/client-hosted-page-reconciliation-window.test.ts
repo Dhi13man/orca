@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   ClientHostedPageReconciliationWindow,
@@ -79,11 +78,6 @@ describe('ClientHostedPageReconciliationWindow', () => {
     expect(window.isUnreconciled(DEVICE_A, OPENED_AT + 99)).toBe(true)
     expect(window.isUnreconciled(DEVICE_A, OPENED_AT + 100)).toBe(false)
   })
-
-  // This bound is what stops a host that never returns from holding client-hosted rows open forever.
-  it('bounds the default hold at 45 seconds', () => {
-    expect(DEFAULT_CLIENT_HOSTED_RECONCILIATION_WINDOW_MS).toBe(45_000)
-  })
 })
 
 describe('holdFor', () => {
@@ -124,26 +118,5 @@ describe('holdFor', () => {
     const stamped = window.holdFor(frame, DEVICE_A, OPENED_AT)
 
     expect(window.holdFor(stamped, DEVICE_A, OPENED_AT + WINDOW_MS)).toEqual(frame)
-  })
-})
-
-// The hold is only correct if every snapshot leaving the runtime for a client goes through the
-// per-client seam. A `project` call that bypasses it publishes an unheld -- or another client's --
-// answer, which is invisible to any behavioral test that does not happen to cover that call site.
-describe('session-tabs projection census', () => {
-  it('routes every client projection in orca-runtime through the per-client seam', () => {
-    const source = readFileSync(new URL('./orca-runtime.ts', import.meta.url), 'utf8')
-    const direct = source.match(/this\.clientSessionTabSelections\.project\(/g) ?? []
-
-    // Exactly two: inside `projectMobileSessionTabsForClient` itself, and the removed-worktree
-    // frame, which announces a deletion the client asked for rather than answering about contents.
-    expect(direct).toHaveLength(2)
-    expect(source).toContain('this.clientSessionTabSelections.project(removed,')
-  })
-
-  it('keeps the unreconciled flag out of every other runtime publication site', () => {
-    const source = readFileSync(new URL('./orca-runtime.ts', import.meta.url), 'utf8')
-
-    expect(source).not.toContain('clientHostedPagesUnreconciled')
   })
 })

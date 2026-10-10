@@ -171,7 +171,7 @@ describe('registerPtyHandlers daemon-swap-window presence', () => {
     const barrier = makeDeferred()
     const sshHasPty = vi.fn((id: string) => id === 'ssh-live-pty')
     registerSshPtyProvider('ssh-1', { hasPty: sshHasPty } as never)
-    ptyOwnership.set('ssh-live-pty', 'ssh-1')
+    ptyOwnership.set('ssh-live-pty', 'ssh:ssh-1')
     try {
       const controller = installRuntimeControllerWithBarrier(barrier.promise)
 
@@ -263,6 +263,11 @@ describe('registerPtyHandlers daemon-swap-window presence', () => {
     // flight there is no window in which its word could be fabricated.
     await expect(
       handlers.get('pty:inspectProcess')!(null, { id: 'never-spawned-pty' })
-    ).resolves.toEqual({ foregroundProcess: null, hasChildProcesses: false, unavailable: true })
+    ).resolves.toEqual({
+      foregroundProcess: null,
+      hasChildProcesses: false,
+      verdict: 'unverifiable',
+      reason: 'terminal_gone'
+    })
   })
 })

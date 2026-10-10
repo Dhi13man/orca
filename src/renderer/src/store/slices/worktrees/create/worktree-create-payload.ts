@@ -6,6 +6,8 @@ import type { WorkspaceLinkedItem } from '../../../../../../shared/worktree/type
 
 /** Trailing bag for `createWorktree` args that outgrew its positional list. */
 export type CreateWorktreeCallOptions = {
+  /** Captured before background preparation so navigation cannot retarget creation. */
+  executionHostId?: ExecutionHostId
   automationProvenanceRequest?: CreateWorktreeArgs['automationProvenanceRequest']
   linkedWorkItem?: WorkspaceLinkedItem | null
   linkedTaskSourceContext?: TaskSourceContext | null
@@ -13,6 +15,7 @@ export type CreateWorktreeCallOptions = {
   startupDraft?: string
   /** True only when `name` came from the creature-name generator; gates host-side retirement. */
   nameWasGenerated?: boolean
+  displayNameKind?: CreateWorktreeArgs['displayNameKind']
   /** Parent picked in the composer. Sets sidebar nesting only; ignored if it no longer exists. */
   parentWorktreeId?: string
   provisionedRoot?: {
@@ -51,6 +54,9 @@ function sharedCreateFields(
     setupDecision: request.setupDecision,
     sparseCheckout: request.sparseCheckout,
     ...(request.displayName ? { displayName: request.displayName } : {}),
+    ...((request.displayNameKind ?? options?.displayNameKind)
+      ? { displayNameKind: request.displayNameKind ?? options?.displayNameKind }
+      : {}),
     ...(request.telemetrySource ? { telemetrySource: request.telemetrySource } : {}),
     ...(request.linkedIssue !== undefined ? { linkedIssue: request.linkedIssue } : {}),
     ...(request.linkedPR !== undefined ? { linkedPR: request.linkedPR } : {}),

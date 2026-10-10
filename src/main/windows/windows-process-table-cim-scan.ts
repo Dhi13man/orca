@@ -1,5 +1,5 @@
-import { runProcess } from '../../shared/child-process/run-process'
-import { windowsPowerShellPath } from '../../shared/child-process/windows-system-binary'
+import { runProcess } from '@orca/process-host'
+import { windowsPowerShellPath } from '@orca/process-host/windows-system-binary'
 import type { WindowsProcessRow } from './windows-process-table'
 
 /**
@@ -75,8 +75,8 @@ export function parseWindowsCimProcessRows(stdout: string): WindowsProcessRow[] 
       return []
     }
     const name = fieldAsString(row.Name)
-    // memoryBytes stays undefined: Win32_Process reports WorkingSetSize, but no
-    // caller reads it off this table and asking widens an already costly scan.
+    // No working set: Win32_Process reports one, but nothing reads memory off
+    // this table and asking widens an already costly scan.
     return [{ pid, ppid, name, command: fieldAsString(row.CommandLine) || name }]
   })
 }

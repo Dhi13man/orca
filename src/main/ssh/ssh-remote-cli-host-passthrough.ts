@@ -1,28 +1,27 @@
-// Why: the SSH relay shim (`~/.orca-relay/bin/orca`) forwards CLI invocations
-// to the host app. Instead of re-implementing every command in a hand-rolled
-// switch (the cause of "Unsupported SSH Orca CLI command", #7716), the host
-// runs the real bundled `orca` CLI entry in Electron node mode — the same
-// entry the local shell command uses — so remote invocations get the full
-// command surface (orchestration, worktree, terminal, ...) by construction.
+// The SSH shim runs the bundled CLI so remote shells get the full command surface.
 import { app } from 'electron'
 import { spawn as nodeSpawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { getCanonicalUserDataPath } from '../persistence'
-import { parseRemoteCliArgs } from './ssh-remote-cli-args'
-import { clampOrchestrationAskTimeoutMs } from '../../shared/orchestration-ask-timeout'
-import {
-  MAX_TIMER_DELAY_MS,
-  isSafeTimerDelayMs,
-  parsePositiveSafeIntegerNumericText,
-  parsePositiveSafeIntegerText
-} from '../../shared/timer-delay'
+import { resolveHostCliKillTimeoutMs } from './ssh-host-cli-deadline'
+export { resolveHostCliKillTimeoutMs } from './ssh-host-cli-deadline'
+import { MAX_TIMER_DELAY_MS, isSafeTimerDelayMs } from '../../shared/timer-delay'
 import {
   ORCHESTRATION_COMPATIBILITY_ATTACHMENT_ENV,
   ORCHESTRATION_COMPATIBILITY_HOST_ID_ENV,
   ORCHESTRATION_COMPATIBILITY_HOST_INCARNATION_ENV,
   ORCHESTRATION_COMPATIBILITY_HOST_KIND_ENV
 } from '../../shared/orchestration-compatibility-evidence'
+import { ORCA_AGENT_SESSION_ID_ENV } from '../../shared/agent-session-caller-env'
+import { ORCA_STRUCTURED_SESSION_ENV } from '../../shared/structured-session-marker'
+import { ORCA_SSH_BRIDGE_CREDENTIAL_ENV } from '../../shared/ssh-bridge-credential-env'
+import { stampRuntimeSourceEnv, type RuntimeSourceStamp } from '../../shared/runtime-source-env'
+import {
+  sshBridgeCredentials,
+  type SshBridgeCallerScope,
+  type SshBridgeCredentialRegistry
+} from '../runtime/rpc/ssh-bridge-credentials'
 import {
   REMOTE_ARTIFACT_INPUT_ENV,
   sshArtifactSourceKey,
@@ -43,6 +42,8 @@ export type RemoteOrcaCliRequest = {
   stdin?: string
   artifactInput?: RemoteArtifactInput
   runtimeAuthority?: SshCliRuntimeAuthority
+  // Why: required so no bridged invocation can run with owner authority over this Orca.
+  callerScope: SshBridgeCallerScope
 }
 
 export type RemoteOrcaCliResult = {
@@ -74,6 +75,9 @@ export type HostCliPassthroughOptions = {
   spawn?: typeof nodeSpawn
   entryExists?: (path: string) => boolean
   killTimeoutMs?: number
+  credentials?: SshBridgeCredentialRegistry
+  /** The runtime this bridge belongs to; the host CLI must reach exactly that one. */
+  runtimeSource?: RuntimeSourceStamp | null
 }
 
 /** Thrown when the host CLI entry cannot be launched at all; callers fall back
@@ -81,10 +85,7 @@ export type HostCliPassthroughOptions = {
  * working even on broken installs. */
 export class HostCliUnavailableError extends Error {}
 
-// Why: only Orca terminal-context vars may cross from the remote shell into
-// the host CLI process. Remote PATH / ORCA_USER_DATA_PATH are paths on the
-// remote machine (meaningless or instance-hijacking on the host), and
-// NODE_OPTIONS-style vars could alter host execution.
+// Only terminal identity may cross hosts; remote paths and Node options cannot.
 const REMOTE_CONTEXT_ENV_VARS = [
   'ORCA_TERMINAL_HANDLE',
   'ORCA_WORKTREE_ID',
@@ -93,11 +94,8 @@ const REMOTE_CONTEXT_ENV_VARS = [
   'ORCA_WORKSPACE_ID'
 ] as const
 
-// Why: bound captured output so a runaway command cannot balloon the relay
-// JSON-RPC response or main-process memory.
+// Bound output retained for the relay response.
 const MAX_CAPTURED_OUTPUT_BYTES = 8 * 1024 * 1024
-const DEFAULT_KILL_TIMEOUT_MS = 10 * 60_000
-const KILL_TIMEOUT_GRACE_MS = 2 * 60_000
 
 export function resolveHostCliEntryPath(app: {
   isPackaged: boolean
@@ -112,38 +110,15 @@ export function resolveHostCliEntryPath(app: {
     : join(app.appPath, 'out', 'cli', 'index.js')
 }
 
-/** Kill timer for the host CLI subprocess. Long-poll commands carry their wait
- * budget in `--timeout-ms`; extend past it so the CLI's own timeout fires
- * first and produces a proper error message. */
-export function resolveHostCliKillTimeoutMs(argv: string[]): number {
-  const parsed = parseRemoteCliArgs(argv)
-  const rawTimeout = parsed.flags.get('timeout-ms')
-  if (parsed.commandPath[0] === 'orchestration' && parsed.commandPath[1] === 'ask') {
-    const explicit =
-      typeof rawTimeout === 'string' ? parsePositiveSafeIntegerText(rawTimeout) : null
-    return Math.max(
-      DEFAULT_KILL_TIMEOUT_MS,
-      clampOrchestrationAskTimeoutMs(explicit ?? undefined) + KILL_TIMEOUT_GRACE_MS
-    )
-  }
-  const explicit =
-    typeof rawTimeout === 'string' ? parsePositiveSafeIntegerNumericText(rawTimeout) : null
-  // Why: this feeds the kill timer directly, so a post-grace budget outside the
-  // timer range degrades to the default instead of throwing at spawn time.
-  const extended = explicit === null ? null : explicit + KILL_TIMEOUT_GRACE_MS
-  if (extended !== null && isSafeTimerDelayMs(extended)) {
-    return Math.max(DEFAULT_KILL_TIMEOUT_MS, extended)
-  }
-  return DEFAULT_KILL_TIMEOUT_MS
-}
-
 export function buildHostCliEnv(args: {
   hostEnv: NodeJS.ProcessEnv
   remoteEnv: Record<string, string>
   userDataPath: string
   remoteCwd: string
+  bridgeCredential: string
   runtimeAuthority?: SshCliRuntimeAuthority
   artifactInput?: RemoteArtifactInput
+  runtimeSource?: RuntimeSourceStamp | null
 }): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...args.hostEnv }
   for (const key of REMOTE_CONTEXT_ENV_VARS) {
@@ -172,6 +147,21 @@ export function buildHostCliEnv(args: {
   delete env[ORCHESTRATION_COMPATIBILITY_HOST_INCARNATION_ENV]
   delete env[ORCHESTRATION_COMPATIBILITY_ATTACHMENT_ENV]
   delete env[REMOTE_ARTIFACT_INPUT_ENV]
+  // Why: a remote command must never claim a local agent session. The host's env carries one only
+  // when Orca was launched inside a session, and identity by session id is same-host only.
+  delete env[ORCA_AGENT_SESSION_ID_ENV]
+  delete env[ORCA_STRUCTURED_SESSION_ENV]
+  // Why: this machine's paired-server selection would route the remote command with its credentials.
+  delete env.ORCA_PAIRING_CODE
+  delete env.ORCA_REMOTE_PAIRING
+  delete env.ORCA_ENVIRONMENT
+  env[ORCA_SSH_BRIDGE_CREDENTIAL_ENV] = args.bridgeCredential
+  // Why: stamped from this process, never from the remote env, so remote input cannot pick the runtime.
+  // The host CLI dials exactly this profile, so the stamp names the same one.
+  stampRuntimeSourceEnv(
+    env,
+    args.runtimeSource ? { ...args.runtimeSource, profilePath: args.userDataPath } : null
+  )
   if (args.runtimeAuthority) {
     env[ORCHESTRATION_COMPATIBILITY_HOST_KIND_ENV] = 'ssh'
     env[ORCHESTRATION_COMPATIBILITY_HOST_ID_ENV] = args.runtimeAuthority.targetId
@@ -231,16 +221,34 @@ export async function runHostOrcaCliPassthrough(
     throw new HostCliUnavailableError(`Orca CLI entry not found at ${cliEntryPath}`)
   }
 
+  const credential = (options.credentials ?? sshBridgeCredentials).mint(request.callerScope)
   const env = buildHostCliEnv({
     hostEnv,
     remoteEnv: request.env,
     userDataPath,
     remoteCwd: request.cwd,
+    bridgeCredential: credential.token,
     runtimeAuthority: request.runtimeAuthority,
-    artifactInput: request.artifactInput
+    artifactInput: request.artifactInput,
+    runtimeSource: options.runtimeSource
   })
 
-  return await new Promise<RemoteOrcaCliResult>((resolve, reject) => {
+  try {
+    return await spawnHostCli(spawn, execPath, cliEntryPath, request, env, killTimeoutMs)
+  } finally {
+    credential.revoke()
+  }
+}
+
+function spawnHostCli(
+  spawn: typeof nodeSpawn,
+  execPath: string,
+  cliEntryPath: string,
+  request: RemoteOrcaCliRequest,
+  env: NodeJS.ProcessEnv,
+  killTimeoutMs: number
+): Promise<RemoteOrcaCliResult> {
+  return new Promise<RemoteOrcaCliResult>((resolve, reject) => {
     let settled = false
     const child = spawn(execPath, [cliEntryPath, ...request.argv], {
       env,

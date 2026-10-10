@@ -8,7 +8,7 @@ export {
   __resetTrackedUpstreamBranchCacheForTests
 } from './client/lookup/tracked-upstream-cache'
 export { addPRReviewComment, addPRReviewCommentReply } from './client/create/add-pr-review-comment'
-export { checkOrcaStarred, starOrca } from './client/fetch/orca-star'
+export { __resetOrcaStarCheckForTests, checkOrcaStarred, starOrca } from './client/fetch/orca-star'
 export { countWorkItems } from './client/list/count-work-items'
 export { createGitHubPullRequest } from './client/create/create-github-pull-request'
 export { getAuthenticatedViewer } from './client/fetch/authenticated-viewer'
@@ -23,7 +23,11 @@ export {
   type PullRequestPushTarget
 } from './client/lookup/pull-request-push-target'
 export { getRepoSlug, getRepoUpstream } from './client/fetch/repo-slug-upstream'
-export { getWorkItem, getWorkItemByOwnerRepo } from './client/fetch/get-work-item'
+export {
+  getWorkItem,
+  getWorkItemByOwnerRepo,
+  getWorkItemWithRepository
+} from './client/fetch/get-work-item'
 export { listWorkItems } from './client/list/list-work-items'
 export { mergePR } from './client/merge/merge-pr'
 export { removePRReviewers, requestPRReviewers } from './client/update/pr-reviewers'

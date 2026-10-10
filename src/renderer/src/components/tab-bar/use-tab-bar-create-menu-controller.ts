@@ -7,6 +7,7 @@ import {
   launchAgentInNewTab,
   shouldQueueTerminalFocusAfterMenuClose
 } from '@/lib/launch-agent-in-new-tab'
+import { newAgentLaunchRequestId } from '@/lib/agent-launch-request-id'
 import type { WindowsTerminalCapabilities } from '@/lib/windows-terminal-capabilities'
 import { useAppStore } from '../../store'
 import type { TabAgentLaunchOption } from './tab-agent-launch-options'
@@ -105,7 +106,8 @@ export function useTabBarCreateMenuController({
   }
   const focusNewActiveTerminalWhenReady = (
     previousActiveTabId: string | null,
-    expiresAt: number
+    expiresAt: number,
+    now: number
   ): void => {
     const state = useAppStore.getState()
     if (
@@ -116,12 +118,12 @@ export function useTabBarCreateMenuController({
       focusTerminalTabSurface(state.activeTabId)
       return
     }
-    if (Date.now() >= expiresAt) {
+    if (now >= expiresAt) {
       return
     }
     pendingNewTabMenuFocusRetryRef.current = window.setTimeout(() => {
       pendingNewTabMenuFocusRetryRef.current = null
-      focusNewActiveTerminalWhenReady(previousActiveTabId, expiresAt)
+      focusNewActiveTerminalWhenReady(previousActiveTabId, expiresAt, Date.now())
     }, NEW_TAB_MENU_TERMINAL_FOCUS_RETRY_MS)
   }
   const queueNewActiveTerminalFocusAfterNewTabMenuClose = (): void => {
@@ -130,7 +132,8 @@ export function useTabBarCreateMenuController({
       // Why: paired web/SSH tab creation is async; await the host snapshot's new terminal instead of the pre-existing active tab.
       focusNewActiveTerminalWhenReady(
         previousActiveTabId,
-        Date.now() + NEW_TAB_MENU_TERMINAL_FOCUS_TIMEOUT_MS
+        Date.now() + NEW_TAB_MENU_TERMINAL_FOCUS_TIMEOUT_MS,
+        Date.now()
       )
     }
   }
@@ -221,10 +224,12 @@ export function useTabBarCreateMenuController({
   const launchAgentFromNewTabEntry = (agent: TuiAgent): void => {
     const option = agentLaunchOptions.find((candidate) => candidate.agent === agent)
     const result = launchAgentInNewTab({
+      requestId: newAgentLaunchRequestId(),
       agent,
       worktreeId,
       groupId: resolvedGroupId,
-      launchSource: 'tab_bar_quick_launch'
+      launchSource: 'tab_bar_quick_launch',
+      freshNewTab: true
     })
     if (!result) {
       toast.error(
@@ -236,8 +241,8 @@ export function useTabBarCreateMenuController({
       )
       return
     }
-    if (result.tabId) {
-      queueTerminalTabFocusAfterNewTabMenuClose(result.tabId)
+    if (result.surface.kind === 'local-terminal') {
+      queueTerminalTabFocusAfterNewTabMenuClose(result.surface.tabId)
       return
     }
     if (shouldQueueTerminalFocusAfterMenuClose(result)) {

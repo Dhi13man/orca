@@ -1,3 +1,7 @@
+import {
+  searchSessionService,
+  sessionSearchServiceStatus
+} from '../main/ai-vault-search/session-search-service-registry'
 import { homedir } from 'node:os'
 import { AI_VAULT_SCOPE_PATHS_MAX_COUNT, type AiVaultListResult } from '../shared/ai-vault-types'
 import { LOCAL_EXECUTION_HOST_ID } from '../shared/execution-host'
@@ -16,7 +20,7 @@ import {
 import { getRemoteHostPlatform, type RemoteHostPlatform } from '../main/ssh/ssh-remote-platform'
 import { parseUnameToRelayPlatform } from '../main/ssh/relay-protocol'
 import { relayLogLine } from './relay-diagnostic-log'
-import type { RelayDispatcher } from './dispatcher'
+import type { RelayDispatcher } from '../wsl-guest/dispatcher'
 import { AiVaultScanCoordinator } from '../main/ai-vault/ai-vault-scan-coordinator'
 import type { RelayAiVaultServiceApi } from './ai-vault-service-client-state'
 
@@ -31,6 +35,12 @@ export class AiVaultHandler {
   private readonly scanCoordinator = new AiVaultScanCoordinator()
 
   constructor(dispatcher: RelayDispatcher, options: AiVaultHandlerOptions = {}) {
+    dispatcher.onRequest('aiVault.searchSessions', (params) =>
+      searchSessionService(params, 'relay')
+    )
+    dispatcher.onRequest('aiVault.searchStatus', (params) =>
+      sessionSearchServiceStatus(params, 'relay')
+    )
     this.remoteHome = options.remoteHome ?? homedir()
     const hostPlatform = options.hostPlatform ?? currentRelayHostPlatform()
     // Why: an OS/arch this build has no path flavor for must not abort relay
@@ -87,6 +97,7 @@ export class AiVaultHandler {
     try {
       result = await this.scanCoordinator.run({
         key: JSON.stringify({
+          includeAntigravityIdeSessions: params.includeAntigravityIdeSessions,
           limit: params.limit,
           unlimited: params.unlimited,
           scopePaths: params.scopePaths,
@@ -184,6 +195,9 @@ export function normalizeSshAiVaultRelayListParams(
     params.scopePathsTruncated === true ||
     (Array.isArray(params.scopePaths) && params.scopePaths.length > AI_VAULT_SCOPE_PATHS_MAX_COUNT)
   return {
+    ...(params.includeAntigravityIdeSessions === true
+      ? { includeAntigravityIdeSessions: true }
+      : {}),
     ...(unlimited ? { unlimited: true } : {}),
     ...(limit === undefined ? {} : { limit }),
     ...(params.force === true ? { force: true } : {}),

@@ -94,6 +94,7 @@ export type {
 export {
   BROWSER_UNAVAILABLE_ERROR_CODE,
   browserUnavailableMessage,
+  CLIENT_NAVIGATION_PUBLICATION_EPOCH_SUFFIX,
   HEADLESS_RUNTIME_WINDOW_ID,
   UNPUBLISHED_WORKTREE_PUBLICATION_EPOCH
 } from './runtime-session-contracts'
@@ -120,6 +121,7 @@ export type {
   RuntimeMobileSessionCreateTerminalResult,
   RuntimeMobileSessionFileTab,
   RuntimeMobileSessionMarkdownTab,
+  RuntimeMobileSessionRetiredTerminalSurface,
   RuntimeMobileSessionSnapshotTab,
   RuntimeMobileSessionTabCloseResult,
   RuntimeMobileSessionTabGroup,
@@ -159,6 +161,8 @@ export type {
   RuntimeTerminalOrphanTopologyGroup,
   RuntimeTerminalOrphanTopologyTab,
   RuntimeTerminalPresentation,
+  RuntimeTerminalPromptDelivery,
+  RuntimeTerminalPromptStage,
   RuntimeTerminalRead,
   RuntimeTerminalRename,
   RuntimeTerminalResolvePane,
@@ -176,6 +180,7 @@ export type {
   RuntimeTerminalWait,
   RuntimeTerminalWaitBlockedReason,
   RuntimeTerminalWaitCondition,
+  RuntimeWorktreeTerminalCloseResult,
   RuntimeWorktreeTerminalSleepResult
 } from './runtime-terminal-contracts'
 export type {

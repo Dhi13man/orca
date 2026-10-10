@@ -1,4 +1,14 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync
+} from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -11,7 +21,39 @@ import {
   formatNodePtyPreconditionReport,
   probeLocalBuildToolchainHints
 } from './node-pty-precondition'
-import { detectNativeHostAbi } from './native-host-abi'
+import { detectNativeHostAbi, hostNodeApiVersion, type NativeHostAbi } from './native-host-abi'
+
+/** A schema 2 manifest listing whatever the test staged in `slot`, for this host. */
+function writeHostSlotManifest(prebuildsDir: string, slot: string, abi: NativeHostAbi): void {
+  const files = Object.fromEntries(
+    readdirSync(join(prebuildsDir, slot)).map((file) => [
+      file,
+      createHash('sha256')
+        .update(readFileSync(join(prebuildsDir, slot, file)))
+        .digest('hex')
+    ])
+  )
+  const napi = hostNodeApiVersion() ?? 8
+  writeFileSync(
+    join(prebuildsDir, 'manifest.json'),
+    JSON.stringify({
+      schemaVersion: 2,
+      module: 'node-pty',
+      version: '1.1.0',
+      napi,
+      slots: {
+        [slot]: {
+          platform: abi.platform,
+          arch: abi.arch,
+          libc: abi.libc,
+          glibc: null,
+          napi,
+          files
+        }
+      }
+    })
+  )
+}
 
 const require = createRequire(import.meta.url)
 const REAL_NODE_PTY = dirname(require.resolve('node-pty/package.json'))
@@ -31,10 +73,10 @@ const realNodePtyLoads = ((): boolean => {
   if (!existsSync(REAL_PTY_NODE)) {
     return false
   }
-  // Why spawn-helper too: a slot without it is legitimately 'degraded', so a test that
-  // expects 'ok' has an unsatisfiable premise on a host that lacks it. CI has the
-  // binding but not the helper, which is what made the previous gate insufficient.
-  if (process.platform !== 'win32' && !existsSync(REAL_SPAWN_HELPER)) {
+  // Why spawn-helper too: on macOS a slot without it is legitimately 'degraded', so a
+  // test that expects 'ok' has an unsatisfiable premise on a host that lacks it. Only
+  // macOS builds the helper, so gating other platforms on it never lets them run.
+  if (process.platform === 'darwin' && !existsSync(REAL_SPAWN_HELPER)) {
     return false
   }
   const probe = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(REAL_PTY_NODE)})`], {
@@ -240,8 +282,8 @@ describe('checkNodePtyPrecondition', () => {
 
   // Why gated on the real binding: this asserts a LOAD outcome, so it needs a pty.node
   // built for the Node ABI. CI's shard never runs ensure-native-runtime, so the copy
-  // ENOENT'd there.
-  it.runIf(process.platform !== 'win32' && realNodePtyLoads)(
+  // ENOENT'd there. macOS only — it is the only platform that execs spawn-helper.
+  it.runIf(process.platform === 'darwin' && realNodePtyLoads)(
     'degrades rather than blocks when only spawn-helper is missing',
     () => {
       // node-pty posix_spawns spawn-helper, so this host loads fine and then fails ENOENT
@@ -255,6 +297,31 @@ describe('checkNodePtyPrecondition', () => {
       const verdict = checkNodePtyPrecondition({ nodePtyDir: dir, prebuildsDir: null })
 
       expect(verdict).toMatchObject({ status: 'degraded', reason: 'spawn_helper_missing' })
+    }
+  )
+
+  // Same staging as above, read through a Linux ABI: node-pty builds spawn-helper only
+  // under binding.gyp's OS=="mac", so demanding one here called every healthy Linux
+  // orcad degraded while its terminals worked (#17844). Gated on a loadable binding for
+  // the same reason as the macOS case; the ABI is what makes it a Linux verdict.
+  it.runIf(process.platform !== 'win32' && realNodePtyLoads)(
+    'does not call a Linux host degraded over a spawn-helper it never execs',
+    () => {
+      const dir = stageNodePty()
+      cpSync(
+        join(REAL_NODE_PTY, 'build', 'Release', 'pty.node'),
+        join(dir, 'build', 'Release', 'pty.node')
+      )
+      expect(existsSync(join(dir, 'build', 'Release', 'spawn-helper'))).toBe(false)
+
+      const verdict = checkNodePtyPrecondition({
+        nodePtyDir: dir,
+        prebuildsDir: null,
+        abi: { platform: 'linux', arch: 'x64', libc: 'glibc', glibcVersion: '2.31', nodeAbi: '127' }
+      })
+
+      expect(verdict).toMatchObject({ status: 'ok', slot: 'linux-x64-glibc' })
+      expect(verdict.reason).toBeUndefined()
     }
   )
 
@@ -276,6 +343,7 @@ describe('checkNodePtyPrecondition', () => {
     if (process.platform !== 'win32') {
       writeFileSync(join(prebuildsDir, slot, 'spawn-helper'), '#!/bin/sh\nexit 0\n')
     }
+    writeHostSlotManifest(prebuildsDir, slot, abi)
 
     const verdict = checkNodePtyPrecondition({ nodePtyDir: dir, prebuildsDir })
 
@@ -302,6 +370,7 @@ describe('checkNodePtyPrecondition', () => {
       if (process.platform !== 'win32' && existsSync(helper)) {
         cpSync(helper, join(prebuildsDir, slot, 'spawn-helper'))
       }
+      writeHostSlotManifest(prebuildsDir, slot, abi)
 
       const verdict = checkNodePtyPrecondition({ nodePtyDir: dir, prebuildsDir })
 

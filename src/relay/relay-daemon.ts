@@ -9,19 +9,30 @@ import { RelayAgentHookRuntime } from './relay-agent-hook-runtime'
 import { RelaySocketOwnership } from './relay-socket-ownership'
 import { RelayReconnectListener } from './relay-reconnect-listener'
 import { RelayGraceLifecycle } from './relay-grace-lifecycle'
+import {
+  publishRelayEndpointCredential,
+  restrictWindowsRelayEndpointCredential
+} from './relay-endpoint-credential-publication'
 import { SKILL_RELAY_CAPABILITIES } from './skill-install-handler'
+import { publishRelayPid } from './relay-pid-publication'
+import { errorMessage } from '../shared/error-message'
 
-export async function runRelayDaemon(
-  options: RelayLaunchOptions,
-  endpointCredential: string | undefined
-): Promise<void> {
+export async function runRelayDaemon(options: RelayLaunchOptions): Promise<void> {
   if (options.detached && options.logFile) {
     installRelayLogRotation(options.logFile)
   }
 
   const socketOwnership = new RelaySocketOwnership(options.sockPath)
+  let fatalPtyHandler: RelayRuntimeServices['ptyHandler'] | null = null
   process.on('uncaughtException', (error) => {
     relayLogLine(`[relay] Uncaught exception: ${error.message}\n${error.stack}`)
+    try {
+      fatalPtyHandler?.forceKillAllPtyProcesses()
+    } catch (reapError) {
+      // Why log rather than swallow: exit must still win, but this line is the only
+      // forensic trace a crashed remote daemon leaves behind for an orphaned shell.
+      relayLogLine(`[relay] Fatal PTY reap failed: ${errorMessage(reapError)}`)
+    }
     socketOwnership.cleanup()
     process.exit(1)
   })
@@ -36,6 +47,7 @@ export async function runRelayDaemon(
     options.graceTimeMs,
     launchVersion
   )
+  fatalPtyHandler = runtime.ptyHandler
   let reconnectListener: RelayReconnectListener | null = null
   const agentHooks = new RelayAgentHookRuntime(
     primaryChannel.dispatcher,
@@ -53,6 +65,8 @@ export async function runRelayDaemon(
     hasAcceptedSocketClient: () => reconnectListener?.hasAcceptedClient ?? false,
     ownsSocketPath: () => socketOwnership.owned,
     disposeOwnedProcesses: () => runtime.disposeOwnedProcesses(),
+    reopenOwnedProcesses: () => runtime.reopenOwnedProcesses(),
+    disposeExitOnlyServices: () => runtime.disposeExitOnlyServices(),
     disposeRuntime: () => {
       primaryChannel.dispatcher.dispose()
       runtime.disposeHandlers()
@@ -66,7 +80,7 @@ export async function runRelayDaemon(
     primaryChannel.dispatcher,
     socketOwnership,
     launchVersion,
-    endpointCredential,
+    options.credentialFile,
     {
       detachPrimaryInput: () => primaryChannel.detachInput(),
       cancelGrace: (reason) => lifecycle.cancel(reason),
@@ -89,11 +103,20 @@ export async function runRelayDaemon(
   )
 
   try {
+    // Why this order: the bind is the only proof of endpoint ownership. A start that loses it
+    // exits inside start() and never reaches the credential file, so racing starters cannot
+    // rotate the secret a surviving daemon enforces.
     await reconnectListener.start()
+    publishRelayPid()
+    reconnectListener.setEndpointCredential(publishRelayEndpointCredential(options.credentialFile))
     agentHooks.publishEndpointFile()
-  } catch {
+  } catch (error) {
+    relayLogLine(`[relay] Startup failed: ${errorMessage(error)}`)
     process.exit(1)
     return
+  }
+  if (options.credentialFile) {
+    void restrictWindowsRelayEndpointCredential(options.credentialFile)
   }
 
   primaryChannel.startOutputFailureHandling()

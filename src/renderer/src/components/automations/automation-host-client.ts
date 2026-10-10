@@ -1,4 +1,5 @@
 import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
+import { assertEnvironmentSupportsExtraAgentArgs } from './automation-capability-probe'
 import type {
   Automation,
   AutomationCreateInput,
@@ -137,6 +138,9 @@ export async function updateAutomationForTarget(
   sourceTarget?: AutomationHostTarget | null
 ): Promise<Automation> {
   const target = getAutomationOwnerTarget(automation, sourceTarget)
+  if (target.kind === 'environment') {
+    await assertEnvironmentSupportsExtraAgentArgs(target.environmentId, updates.extraAgentArgs)
+  }
   const result = await callRuntimeRpc<{ automation: Automation }>(
     target,
     'automation.update',

@@ -3,6 +3,7 @@ import { useAppStore, type AppState } from '@/store'
 import { useActiveWorktree, useRepoById } from '@/store/selectors'
 import { useChecksPanelTerminalWorktree } from '../use-checks-panel-terminal-worktree'
 import { getConnectionId } from '@/lib/connection-context'
+import { readDetectedAgentsForWorktree } from '@/lib/agent-detection-target-inventory'
 import { useMountedRef } from '@/hooks/useMountedRef'
 import { useConfirmationDialog } from '@/components/confirmation-dialog-context'
 import { getWorktreeGitIdentityDisplay } from '@/lib/worktree-git-identity-display'
@@ -84,12 +85,9 @@ export function useChecksPanelControllerState() {
   const addPRReviewCommentReply = useAppStore((s) => s.addPRReviewCommentReply)
   const setPRCommentReaction = useAppStore((s) => s.setPRCommentReaction)
   const resolveReviewThread = useAppStore((s) => s.resolveReviewThread)
-  const detectedAgentIds = useAppStore((s) => s.detectedAgentIds)
-  const remoteDetectedAgentIds = useAppStore((s) => {
-    return typeof activeConnectionId === 'string'
-      ? (s.remoteDetectedAgentIds[activeConnectionId] ?? null)
-      : null
-  })
+  const detectedAgentIds = useAppStore((s) =>
+    activeWorktreeId ? readDetectedAgentsForWorktree(s, activeWorktreeId) : s.detectedAgentIds
+  )
 
   const [checks, setChecks] = useState<PRCheckDetail[]>([])
   const [checksLoading, setChecksLoading] = useState(false)
@@ -161,8 +159,6 @@ export function useChecksPanelControllerState() {
   // fetched against the MR's own project rather than this repo's default remote.
   const gitLabProjectRefRef = useRef<GitLabProjectRef | null>(null)
   const conflictSummaryRefreshKeyRef = useRef<string | null>(null)
-  const panelVisibleSinceRef = useRef<number | null>(null)
-  const foregroundedUnrenderedReviewKeyRef = useRef<string | null>(null)
   commentsRef.current = comments
   const prGenerationRecords = useAppStore((s) => s.pullRequestGenerationRecords)
   const allocatePullRequestGenerationRequestId = useAppStore(
@@ -204,8 +200,6 @@ export function useChecksPanelControllerState() {
   const asyncResultKeyRef = useRef<string>('')
   const refreshRequestKeyRef = useRef<string | null>(null)
   const refreshContextKeyRef = useRef<string | null>(null)
-  const gitStatusSnapshotInFlightContextRef = useRef<string | null>(null)
-  const gitStatusSnapshotRerunContextRef = useRef<string | null>(null)
   const gitStatusSnapshotRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const gitIdentityDisplay = activeWorktree ? getWorktreeGitIdentityDisplay(activeWorktree) : null
   const detachedHeadDisplay = gitIdentityDisplay?.kind === 'detached' ? gitIdentityDisplay : null
@@ -298,7 +292,6 @@ export function useChecksPanelControllerState() {
     setPRCommentReaction,
     resolveReviewThread,
     detectedAgentIds,
-    remoteDetectedAgentIds,
     checks,
     setChecks,
     checksLoading,
@@ -364,8 +357,6 @@ export function useChecksPanelControllerState() {
     prevChecksRef,
     gitLabProjectRefRef,
     conflictSummaryRefreshKeyRef,
-    panelVisibleSinceRef,
-    foregroundedUnrenderedReviewKeyRef,
     prGenerationRecords,
     allocatePullRequestGenerationRequestId,
     setPullRequestGenerationRecord,
@@ -374,8 +365,6 @@ export function useChecksPanelControllerState() {
     asyncResultKeyRef,
     refreshRequestKeyRef,
     refreshContextKeyRef,
-    gitStatusSnapshotInFlightContextRef,
-    gitStatusSnapshotRerunContextRef,
     gitStatusSnapshotRetryTimerRef,
     gitIdentityDisplay,
     detachedHeadDisplay,

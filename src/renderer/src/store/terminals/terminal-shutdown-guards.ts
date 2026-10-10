@@ -1,3 +1,4 @@
+import { isRemoteRuntimePtyId } from '../../../../shared/remote-runtime-pty-id'
 import type { TerminalTab } from '../../../../shared/terminal-tab-types'
 import {
   restorePtyDataHandlersAfterFailedShutdown,
@@ -13,6 +14,7 @@ import {
   settleDeferredPtyShutdownExits
 } from '@/components/terminal-pane/pty-shutdown-exit-deferral'
 import type { TerminalStoreGet, TerminalStoreSet } from './terminal-state'
+import { copyOnWriteRecord } from '../copy-on-write-record'
 
 export type TerminalShutdownGuardController = {
   commitHandlerSnapshots: () => void
@@ -48,18 +50,22 @@ export function createTerminalShutdownGuardController({
   let partialRendererStopSettled = false
 
   const markShutdownPending = (): void => {
+    // Why the early return: tearing down a worktree whose panes already exited passes
+    // no guard ids, and the spreads below would still hand both maps a new identity.
+    if (exitGuardPtyIds.length === 0) {
+      return
+    }
     set((state) => {
       const pendingPtyShutdownIds = { ...state.pendingPtyShutdownIds }
+      // Why copy-on-write: re-guarding an already-suppressed pty writes the same `true`.
+      const suppressedPtyExitIds = copyOnWriteRecord(state.suppressedPtyExitIds)
       for (const ptyId of exitGuardPtyIds) {
         pendingPtyShutdownIds[ptyId] = (pendingPtyShutdownIds[ptyId] ?? 0) + 1
+        if (state.suppressedPtyExitIds[ptyId] !== true) {
+          suppressedPtyExitIds.set(ptyId, true)
+        }
       }
-      return {
-        suppressedPtyExitIds: {
-          ...state.suppressedPtyExitIds,
-          ...Object.fromEntries(exitGuardPtyIds.map((ptyId) => [ptyId, true] as const))
-        },
-        pendingPtyShutdownIds
-      }
+      return { suppressedPtyExitIds: suppressedPtyExitIds.read(), pendingPtyShutdownIds }
     })
   }
 
@@ -129,13 +135,13 @@ export function createTerminalShutdownGuardController({
     stoppedPtyIds: string[]
     failure?: PromiseRejectedResult
   }> => {
-    const localPtyIds = rendererShutdownPtyIds.filter((ptyId) => !ptyId.startsWith('remote:'))
+    const localPtyIds = rendererShutdownPtyIds.filter((ptyId) => !isRemoteRuntimePtyId(ptyId))
     const results = await Promise.allSettled(
       localPtyIds.map((ptyId) => window.api.pty.kill(ptyId, { keepHistory: keepIdentifiers }))
     )
     const stoppedPtyIds = [
       ...(runtimeEnvironmentId
-        ? rendererShutdownPtyIds.filter((ptyId) => ptyId.startsWith('remote:'))
+        ? rendererShutdownPtyIds.filter((ptyId) => isRemoteRuntimePtyId(ptyId))
         : []),
       ...localPtyIds.filter((_, index) => results[index]?.status === 'fulfilled')
     ]

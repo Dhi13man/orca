@@ -11,7 +11,7 @@ import type {
   PtySourceSpan,
   PtySourceTransform
 } from '../shared/pty-source-credit-contract'
-import type { RelayDispatcher, RequestContext } from './dispatcher'
+import type { RelayDispatcher, RequestContext } from '../wsl-guest/dispatcher'
 import type { PtySourceSendReservation } from './pty-source-credit-ledger'
 import { SshPtySourceCreditAdapter } from './ssh-pty-source-credit-adapter'
 import {
@@ -110,6 +110,12 @@ export class SshPtyConsumerSessionAdapter {
       this.pausedDeliveryByPty.clear()
       this.sourceCredit.dispose()
     })
+  }
+
+  /** The authenticated client identity behind a transport connection, or null when it holds no
+   *  active grant. Used to stamp host-attested ownership on a PTY at spawn. */
+  clientInstanceIdFor(clientId: number): string | null {
+    return this.session.activeClientInstanceId(String(clientId))
   }
 
   openDelivery(

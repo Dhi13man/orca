@@ -11,7 +11,22 @@ export const PAIRING_LOCAL_UI_FIELDS = [
   'automationHostFilter',
   'hideWorkspacesFromOtherDevices',
   'manualRepoOrder',
-  'workspaceHostOrder'
+  'workspaceHostOrder',
+  // A phone-width browser and a desktop window each choose their own left sidebar, and old hosts reject the unknown key.
+  'sidebarOpen',
+  // Agent View filters and presentation belong to each client's host catalog and viewport.
+  'agentsVisibleHostIds',
+  'agentsFilterRepoIds',
+  'agentsHideWorkspacesFromOtherDevices',
+  'agentsHideAutomationGeneratedWorkspaces',
+  'agentsHideCliCreatedWorkspaces',
+  'agentsShowChildAgents',
+  'agentsCompactMode',
+  'agentsShowSearch',
+  'agentsReadFilter',
+  'agentsGroupBy',
+  'activityClearedAtByPaneKey',
+  'manuallyUnreadTurnsByPaneKey'
 ] as const satisfies readonly (keyof PersistedUIState)[]
 
 export type PairingLocalUiField = (typeof PAIRING_LOCAL_UI_FIELDS)[number]

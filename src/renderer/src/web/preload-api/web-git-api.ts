@@ -3,6 +3,7 @@ import { callAbortableRuntimeEnvironment } from '../../runtime/abortable-runtime
 import { toRuntimeWorktreeSelector } from '../../runtime/runtime-worktree-selector'
 import { translate } from '@/i18n/i18n'
 import { callRuntimeResult } from './web-runtime-calls'
+import { requireGitStageWorktreeScopeReceipt } from '../../../../shared/git-stage-worktree-scope'
 import { requireActiveEnvironment, updateEnvironmentFromResponse } from './web-runtime-session'
 import {
   resolveRuntimeFilePath,
@@ -44,6 +45,7 @@ export function createGitApi(): NonNullable<Partial<PreloadApi>['git']> {
     status: async ({
       worktreePath,
       includeIgnored,
+      includeLineStats,
       bypassEffectiveUpstreamNegativeCache,
       reuseLineStats,
       branchLineTotalMergeBase,
@@ -53,6 +55,7 @@ export function createGitApi(): NonNullable<Partial<PreloadApi>['git']> {
       const params = {
         worktree: toRuntimeWorktreeSelector(worktree.id),
         includeIgnored,
+        includeLineStats,
         bypassEffectiveUpstreamNegativeCache,
         reuseLineStats,
         ...(branchLineTotalMergeBase ? { branchLineTotalMergeBase } : {})
@@ -120,11 +123,12 @@ export function createGitApi(): NonNullable<Partial<PreloadApi>['git']> {
         compareAgainstHead
       })
     },
-    branchCompare: async ({ worktreePath, baseRef }) => {
+    branchCompare: async ({ worktreePath, baseRef, admissionTier }) => {
       const worktree = await resolveRuntimeWorktreeByPath(worktreePath)
       return callRuntimeResult('git.branchCompare', {
         worktree: toRuntimeWorktreeSelector(worktree.id),
-        baseRef
+        baseRef,
+        ...(admissionTier ? { admissionTier } : {})
       })
     },
     commitCompare: async ({ worktreePath, commitId }) => {
@@ -238,8 +242,19 @@ export function createGitApi(): NonNullable<Partial<PreloadApi>['git']> {
     }),
     cancelGeneratePullRequestFields: () => Promise.resolve(),
     stage: async ({ worktreePath, filePath }) => mutateGitPath('git.stage', worktreePath, filePath),
-    bulkStage: async ({ worktreePath, filePaths }) =>
-      mutateGitPaths('git.bulkStage', worktreePath, filePaths),
+    bulkStage: async ({ worktreePath, filePaths, scope }) => {
+      if (!scope) {
+        return mutateGitPaths('git.bulkStage', worktreePath, filePaths)
+      }
+      const worktree = await resolveRuntimeWorktreeByPath(worktreePath)
+      // Why no paths: an older host strips `scope` and stages `filePaths`, so an empty list makes that a no-op.
+      const reply = await callRuntimeResult<unknown>('git.bulkStage', {
+        worktree: toRuntimeWorktreeSelector(worktree.id),
+        filePaths: [],
+        scope
+      })
+      requireGitStageWorktreeScopeReceipt(reply, scope)
+    },
     unstage: async ({ worktreePath, filePath }) =>
       mutateGitPath('git.unstage', worktreePath, filePath),
     bulkUnstage: async ({ worktreePath, filePaths }) =>

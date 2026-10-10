@@ -15,6 +15,7 @@ import type { BrowserClientRetainedRendererPage as RetainedPage } from './browse
 import {
   attachBrowserClientRetainedPage,
   enrolRetainedHostDragPassthrough,
+  findBrowserClientRetainedPageForAttachment,
   type BrowserClientPageVisibleAttachment
 } from './browser-client-page-visible-attachment'
 import {
@@ -101,11 +102,7 @@ export class BrowserClientPageRetainedRegistry {
     identity: Pick<RendererPageIdentity, 'browserPageId' | 'pageHostGeneration'>,
     container: HTMLElement
   ): BrowserClientPageVisibleAttachment {
-    const page = [...this.pages.values()].find(
-      (candidate) =>
-        candidate.identity.browserPageId === identity.browserPageId &&
-        candidate.identity.pageHostGeneration === identity.pageHostGeneration
-    )
+    const page = findBrowserClientRetainedPageForAttachment(this.pages, identity)
     return attachBrowserClientRetainedPage(page, this.pages, container)
   }
 
@@ -284,6 +281,7 @@ export class BrowserClientPageRetainedRegistry {
     }
     clearTimeout(page.attachTimer)
     page.releaseDragPassthroughSurface()
+    page.visibleAttachment?.stopTrackingViewport()
     page.webview.removeEventListener('did-attach', page.onAttached)
     page.webview.removeEventListener('dom-ready', page.onReady)
     page.webview.removeEventListener('destroyed', page.onDestroyed)
@@ -310,6 +308,9 @@ export class BrowserClientPageRetainedRegistry {
   }
 
   private disconnectPage(page: RetainedPage): void {
+    // Why: the pane's own detach may never run (registry dispose, guest loss), and the sync
+    // would otherwise keep re-reading a container for a host that is no longer in the document.
+    page.visibleAttachment?.stopTrackingViewport()
     page.visibleAttachment = null
     page.webview.remove()
     page.host.remove()

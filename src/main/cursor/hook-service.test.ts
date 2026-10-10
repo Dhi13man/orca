@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { removeTreeSync } from '../../shared/windows-transient-lock-removal'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { createServer, type Server } from 'node:http'
+import { runProcess } from '@orca/process-host'
 import { findGitBash } from '../agent-hooks/windows-git-bash-path.test-fixture'
 
 const { homedirMock } = vi.hoisted(() => ({
@@ -24,6 +27,15 @@ import { CURSOR_EVENTS, type CursorEvent } from './hook-events'
 const CURSOR_SCRIPT_FILE_NAME = process.platform === 'win32' ? 'cursor-hook.cmd' : 'cursor-hook.sh'
 const WINDOWS_POWERSHELL_LAUNCHER =
   /^[A-Za-z]:\/[^"]*\/System32\/WindowsPowerShell\/v1\.0\/powershell\.exe -NoProfile -EncodedCommand \S+$/
+
+// Why: on Windows one hook run is cmd.exe -> powershell.exe -> cmd.exe -> cursor-hook.cmd ->
+// curl.exe, and the package job runs ~25 files at maxWorkers 4 alongside real-Electron and
+// node-pty suites, so a cold CLR start competes for the runner. Deliberately above the product's
+// own MANAGED_HOOK_TIMEOUT_SECONDS (10s): this gates launcher correctness, not user latency.
+const HOOK_RUN_TIMEOUT_MS = 30_000
+// Why: these cases run up to 16 of those chains back to back. Matches the same budget
+// windows-hook-payload-delivery.test.ts uses for the identical chain.
+const HOOK_CASE_TIMEOUT_MS = 60_000
 
 type InstalledCursorHooks = {
   hooks: Record<string, { command?: string }[]>
@@ -65,7 +77,7 @@ function runRegisteredCursorHook(
   const result = spawnSync(executable, args, {
     encoding: 'utf8',
     input,
-    timeout: 15_000,
+    timeout: HOOK_RUN_TIMEOUT_MS,
     env: {
       ...process.env,
       ORCA_AGENT_HOOK_ENDPOINT: '',
@@ -89,7 +101,7 @@ describe('CursorHookService', () => {
 
   afterEach(() => {
     vi.clearAllMocks()
-    rmSync(homeDir, { recursive: true, force: true })
+    removeTreeSync(homeDir)
   })
 
   it('installs Cursor Agent hooks with the documented top-level command schema', () => {
@@ -121,6 +133,7 @@ describe('CursorHookService', () => {
       'utf8'
     )
     expect(script).toContain('/hook/cursor')
+    expect(script).toContain('GROK_HOOK_EVENT')
     if (process.platform === 'win32') {
       expect(script).toContain('%SystemRoot%\\System32\\curl.exe')
     } else {
@@ -155,7 +168,7 @@ describe('CursorHookService', () => {
           expect(command).toMatch(WINDOWS_POWERSHELL_LAUNCHER)
         }
       } finally {
-        rmSync(spaceHome, { recursive: true, force: true })
+        removeTreeSync(spaceHome)
       }
     }
   )
@@ -205,64 +218,136 @@ describe('CursorHookService', () => {
 
   // Why: installer-intent assertions missed empty stdout, which Cursor treats as
   // invalid JSON and fails closed (#15462). This runs the registered command.
-  it('emits protocol-valid JSON on stdout for every managed event, including empty stdin (#15462)', () => {
-    expect(new CursorHookService().install().state).toBe('installed')
-    const config = readInstalledCursorHooks(homeDir)
-    const payloads = [
-      (eventName: string) => JSON.stringify({ hook_event_name: eventName, tool_name: 'Write' }),
-      () => ''
-    ]
+  it(
+    'emits protocol-valid JSON on stdout for every managed event, including empty stdin (#15462)',
+    () => {
+      expect(new CursorHookService().install().state).toBe('installed')
+      const config = readInstalledCursorHooks(homeDir)
+      const payloads = [
+        (eventName: string) => JSON.stringify({ hook_event_name: eventName, tool_name: 'Write' }),
+        () => ''
+      ]
 
-    for (const eventName of CURSOR_EVENTS) {
-      const command = requireRegisteredCommand(config, eventName)
-      for (const payloadFor of payloads) {
-        const result = runRegisteredCursorHook(command, payloadFor(eventName))
-        expect(result.status, `${eventName} exit`).toBe(0)
-        expect(result.stderr, `${eventName} stderr`).toBe('')
-        expect(JSON.parse(result.stdout), `${eventName} stdout`).toEqual(
+      for (const eventName of CURSOR_EVENTS) {
+        const command = requireRegisteredCommand(config, eventName)
+        for (const payloadFor of payloads) {
+          const result = runRegisteredCursorHook(command, payloadFor(eventName))
+          expect(result.status, `${eventName} exit`).toBe(0)
+          expect(result.stderr, `${eventName} stderr`).toBe('')
+          expect(JSON.parse(result.stdout), `${eventName} stdout`).toEqual(
+            EXPECTED_CURSOR_HOOK_STDOUT[eventName]
+          )
+        }
+      }
+    },
+    HOOK_CASE_TIMEOUT_MS
+  )
+
+  it.each(['ordinary', 'spaced'] as const)(
+    'emits protocol-valid JSON when the script is missing in a %s profile (#15462)',
+    (profileKind) => {
+      const installHome = profileKind === 'spaced' ? join(homeDir, 'profile with spaces') : homeDir
+      mkdirSync(installHome, { recursive: true })
+      homedirMock.mockReturnValue(installHome)
+      expect(new CursorHookService().install().state).toBe('installed')
+      const config = readInstalledCursorHooks(installHome)
+      unlinkSync(join(installHome, '.orca', 'agent-hooks', CURSOR_SCRIPT_FILE_NAME))
+
+      for (const eventName of CURSOR_EVENTS) {
+        const command = requireRegisteredCommand(config, eventName)
+        const result = runRegisteredCursorHook(command, '')
+        expect(result.status, `${eventName} missing-script exit`).toBe(0)
+        expect(result.stderr, `${eventName} missing-script stderr`).toBe('')
+        expect(JSON.parse(result.stdout), `${eventName} missing-script stdout`).toEqual(
           EXPECTED_CURSOR_HOOK_STDOUT[eventName]
         )
       }
-    }
-  })
+    },
+    HOOK_CASE_TIMEOUT_MS
+  )
 
-  it('emits protocol-valid JSON when the managed Cursor script is missing (#15462)', () => {
-    expect(new CursorHookService().install().state).toBe('installed')
-    const config = readInstalledCursorHooks(homeDir)
-    unlinkSync(join(homeDir, '.orca', 'agent-hooks', CURSOR_SCRIPT_FILE_NAME))
+  it(
+    'keeps curl failure off stdout when the listener is unreachable (#15462)',
+    () => {
+      expect(new CursorHookService().install().state).toBe('installed')
+      const config = readInstalledCursorHooks(homeDir)
 
-    for (const eventName of CURSOR_EVENTS) {
-      const command = requireRegisteredCommand(config, eventName)
-      const result = runRegisteredCursorHook(command, '')
-      expect(result.status, `${eventName} missing-script exit`).toBe(0)
-      expect(result.stderr, `${eventName} missing-script stderr`).toBe('')
-      expect(JSON.parse(result.stdout), `${eventName} missing-script stdout`).toEqual(
-        EXPECTED_CURSOR_HOOK_STDOUT[eventName]
+      for (const eventName of ['beforeSubmitPrompt', 'preToolUse', 'stop'] as const) {
+        const command = requireRegisteredCommand(config, eventName)
+        const result = runRegisteredCursorHook(
+          command,
+          JSON.stringify({ hook_event_name: eventName, tool_name: 'Write' }),
+          {
+            ORCA_AGENT_HOOK_PORT: '59999',
+            ORCA_AGENT_HOOK_TOKEN: 'token',
+            ORCA_PANE_KEY: 'tab:leaf'
+          }
+        )
+        expect(result.status, `${eventName} dead-listener exit`).toBe(0)
+        expect(JSON.parse(result.stdout), `${eventName} dead-listener stdout`).toEqual(
+          EXPECTED_CURSOR_HOOK_STDOUT[eventName]
+        )
+      }
+    },
+    HOOK_CASE_TIMEOUT_MS
+  )
+
+  it.skipIf(process.platform !== 'win32').each(['ordinary', 'spaced'] as const)(
+    'posts UTF-8 stdin unchanged for a %s profile path',
+    async (profileKind) => {
+      const installHome = profileKind === 'spaced' ? join(homeDir, 'profile with spaces') : homeDir
+      mkdirSync(installHome, { recursive: true })
+      homedirMock.mockReturnValue(installHome)
+      expect(new CursorHookService().install().state).toBe('installed')
+      const command = requireRegisteredCommand(
+        readInstalledCursorHooks(installHome),
+        'afterAgentResponse'
       )
+      expect(command).toMatch(WINDOWS_POWERSHELL_LAUNCHER)
+      const payload = JSON.stringify({ text: 'Сердце, почта в ЛК — 日本語 中文 한국어 😀 café' })
+      const posts: string[] = []
+      const server: Server = createServer((req, res) => {
+        const chunks: Buffer[] = []
+        req.on('data', (chunk: Buffer) => chunks.push(chunk))
+        req.on('end', () => {
+          const form = new URLSearchParams(Buffer.concat(chunks).toString('utf8'))
+          const posted = form.get('payload')
+          if (posted !== null) {
+            posts.push(posted)
+          }
+          res.writeHead(204)
+          res.end()
+        })
+      })
+      const port = await new Promise<number>((resolve) => {
+        server.listen(0, '127.0.0.1', () => {
+          const address = server.address()
+          resolve(typeof address === 'object' && address ? address.port : 0)
+        })
+      })
+      try {
+        const result = await runProcess({
+          program: 'cmd.exe',
+          args: ['/d', '/c', command],
+          input: payload,
+          timeoutMs: HOOK_RUN_TIMEOUT_MS,
+          env: {
+            ...process.env,
+            ORCA_AGENT_HOOK_ENDPOINT: '',
+            ORCA_AGENT_HOOK_PORT: String(port),
+            ORCA_AGENT_HOOK_TOKEN: 'token',
+            ORCA_PANE_KEY: 'tab:leaf'
+          }
+        })
+        expect(result.code).toBe(0)
+        expect(result.timedOut).toBe(false)
+        expect(JSON.parse(result.stdout)).toEqual({})
+        expect(posts).toEqual([payload])
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()))
+      }
     }
-  })
-
-  it('keeps curl failure off stdout when the listener is unreachable (#15462)', () => {
-    expect(new CursorHookService().install().state).toBe('installed')
-    const config = readInstalledCursorHooks(homeDir)
-
-    for (const eventName of ['beforeSubmitPrompt', 'preToolUse', 'stop'] as const) {
-      const command = requireRegisteredCommand(config, eventName)
-      const result = runRegisteredCursorHook(
-        command,
-        JSON.stringify({ hook_event_name: eventName, tool_name: 'Write' }),
-        {
-          ORCA_AGENT_HOOK_PORT: '59999',
-          ORCA_AGENT_HOOK_TOKEN: 'token',
-          ORCA_PANE_KEY: 'tab:leaf'
-        }
-      )
-      expect(result.status, `${eventName} dead-listener exit`).toBe(0)
-      expect(JSON.parse(result.stdout), `${eventName} dead-listener stdout`).toEqual(
-        EXPECTED_CURSOR_HOOK_STDOUT[eventName]
-      )
-    }
-  })
+  )
 
   it.skipIf(process.platform !== 'win32')(
     'emits parseable JSON through cmd.exe and Git Bash (#14825/#15462)',
@@ -280,7 +365,7 @@ describe('CursorHookService', () => {
           const result = spawnSync(shell.executable, [...shell.args, command], {
             encoding: 'utf8',
             input: JSON.stringify({ hook_event_name: eventName, tool_name: 'Write' }),
-            timeout: 15_000,
+            timeout: HOOK_RUN_TIMEOUT_MS,
             env: {
               ...process.env,
               ORCA_AGENT_HOOK_ENDPOINT: '',
@@ -298,6 +383,7 @@ describe('CursorHookService', () => {
           )
         }
       }
-    }
+    },
+    HOOK_CASE_TIMEOUT_MS
   )
 })

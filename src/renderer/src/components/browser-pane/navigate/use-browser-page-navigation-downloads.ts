@@ -1,3 +1,4 @@
+import { LOCAL_EXECUTION_HOST_ID } from '../../../../../shared/execution-host'
 import {
   useCallback,
   useEffect,
@@ -10,10 +11,15 @@ import {
   type SetStateAction
 } from 'react'
 import { translate } from '@/i18n/i18n'
-import { getWorkspaceFileBrowserOpenTarget } from '@/lib/file-preview'
+import {
+  getWorkspaceFileBrowserOpenTarget,
+  REMOTE_FILE_BROWSER_UNSUPPORTED_MESSAGE
+} from '@/lib/file-preview'
+import { routeWorkspaceDocAddressSubmission } from './workspace-doc-address-submission'
 import {
   getWorkspaceFileDragRejectionMessage,
   readWorkspaceFileDragPaths,
+  readWorkspaceFileDragSource,
   WORKSPACE_FILE_PATH_MIME
 } from '@/lib/workspace-file-drag'
 import type { BrowserLoadError } from '../../../../../shared/browser-workspace-types'
@@ -127,6 +133,15 @@ export function useBrowserPageNavigationDownloads({
 
   const submitAddressBar = (): void => {
     keepAddressBarFocusRef.current = false
+    const consumedAsWorkspaceDoc = routeWorkspaceDocAddressSubmission({
+      worktreeId,
+      pageId: browserTabId,
+      value: addressBarValue,
+      onLoadError: (loadError) => onUpdatePageStateRef.current(browserTabId, { loadError })
+    })
+    if (consumedAsWorkspaceDoc) {
+      return
+    }
     const submission = resolveBrowserAddressBarSubmission(addressBarValue)
     if (submission.status === 'invalid') {
       onUpdatePageStateRef.current(browserTabId, { loadError: submission.loadError })
@@ -160,6 +175,13 @@ export function useBrowserPageNavigationDownloads({
       }
       const filePath = dragPaths.paths[0]
       if (!filePath) {
+        return
+      }
+
+      // A file URL reads this machine, regardless of which workspace owns the browser.
+      const source = readWorkspaceFileDragSource(event.dataTransfer)
+      if (source?.executionHostId !== 'local') {
+        setResourceNotice(REMOTE_FILE_BROWSER_UNSUPPORTED_MESSAGE)
         return
       }
 
@@ -222,7 +244,7 @@ export function useBrowserPageNavigationDownloads({
         )
         return
       }
-      const opened = await window.api.shell.openFilePath(download.savePath)
+      const opened = await window.api.shell.openFilePath(download.savePath, LOCAL_EXECUTION_HOST_ID)
       if (!opened) {
         setResourceNotice(
           translate(
@@ -246,7 +268,10 @@ export function useBrowserPageNavigationDownloads({
         )
         return
       }
-      const result = await window.api.shell.openInFileManager(download.savePath)
+      const result = await window.api.shell.openInFileManager(
+        download.savePath,
+        LOCAL_EXECUTION_HOST_ID
+      )
       if (!result.ok) {
         setResourceNotice(
           translate(

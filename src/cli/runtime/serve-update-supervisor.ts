@@ -1,4 +1,4 @@
-import type { ChildProcess, SpawnOptions, spawn } from 'node:child_process'
+import type { ChildProcess, SpawnOptions } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import {
@@ -27,27 +27,36 @@ type ServeSupervisorArgs = {
   executable: string
   childArgs: string[]
   spawnOptions: SpawnOptions
-  spawnChild: typeof spawn
+  spawnChild: (program: string, args: string[], options: SpawnOptions) => ChildProcess
   handoffPath: string | null
 }
 
 export async function resumeInterruptedServeUpdate(
   args: ServeSupervisorArgs & { handoffPath: string; handoff: InstallRequestedHandoff }
 ): Promise<number> {
-  const installed = await waitForMacBundleVersion(args.executable, args.handoff.targetVersion)
-  if (!installed) {
-    await recordServeUpdateHandoffFailure(
-      args.handoffPath,
-      args.handoff,
-      `Timed out waiting for Orca ${args.handoff.targetVersion} to be installed.`
-    )
-  }
+  const expectedHandoff = await awaitInstalledHandoff(
+    args.executable,
+    args.handoffPath,
+    args.handoff
+  )
   const child = args.spawnChild(args.executable, args.childArgs, args.spawnOptions)
-  return superviseForegroundServe({
-    ...args,
-    child,
-    expectedHandoff: installed ? args.handoff : null
-  })
+  return superviseForegroundServe({ ...args, child, expectedHandoff })
+}
+
+async function awaitInstalledHandoff(
+  executable: string,
+  handoffPath: string,
+  handoff: InstallRequestedHandoff
+): Promise<InstallRequestedHandoff | null> {
+  if (await waitForMacBundleVersion(executable, handoff.targetVersion)) {
+    return handoff
+  }
+  await recordServeUpdateHandoffFailure(
+    handoffPath,
+    handoff,
+    `Timed out waiting for Orca ${handoff.targetVersion} to be installed.`
+  )
+  return null
 }
 
 export async function superviseForegroundServe(
@@ -83,26 +92,17 @@ export async function superviseForegroundServe(
 
     const handoff = args.handoffPath ? await readServeUpdateHandoff(args.handoffPath) : null
     if (
+      !args.handoffPath ||
       handoff?.phase !== 'install-requested' ||
       (child.pid !== undefined && handoff.servingPid !== child.pid)
     ) {
-      if (typeof result.code === 'number') {
-        return result.code
+      if (typeof result.code === 'number' || result.signalWasForwarded) {
+        return result.code ?? 0
       }
       throw serveSignalExitError(result.signal)
     }
 
-    const installed = await waitForMacBundleVersion(args.executable, handoff.targetVersion)
-    if (!installed) {
-      await recordServeUpdateHandoffFailure(
-        args.handoffPath!,
-        handoff,
-        `Timed out waiting for Orca ${handoff.targetVersion} to be installed.`
-      )
-      expectedHandoff = null
-    } else {
-      expectedHandoff = handoff
-    }
+    expectedHandoff = await awaitInstalledHandoff(args.executable, args.handoffPath, handoff)
     child = args.spawnChild(args.executable, args.childArgs, args.spawnOptions)
   }
 }
@@ -114,8 +114,11 @@ function waitForForegroundChild(
   code: number | null
   signal: NodeJS.Signals | null
   readiness: ServeReadiness
+  signalWasForwarded: boolean
 }> {
   return new Promise((resolveWait, reject) => {
+    const forwardsHangup = process.platform === 'linux'
+    const forwardedSignals = new Set<NodeJS.Signals>()
     let forceKillTimer: ReturnType<typeof setTimeout> | null = null
     let readyTimer: ReturnType<typeof setTimeout> | null = null
     let readiness: ServeReadiness = expected ? 'pending' : 'not-expected'
@@ -155,6 +158,7 @@ function waitForForegroundChild(
     const forwardSignal = (signal: NodeJS.Signals): void => {
       // A Windows console delivers Ctrl-C to parent and child; child.kill would terminate the child mid-teardown.
       if (process.platform !== 'win32') {
+        forwardedSignals.add(signal)
         child.kill(signal)
       }
       forceKillTimer ??= setTimeout(() => child.kill('SIGKILL'), SERVE_CHILD_FORCE_KILL_GRACE_MS)
@@ -188,6 +192,9 @@ function waitForForegroundChild(
     const cleanup = (): void => {
       process.off('SIGINT', forwardSignal)
       process.off('SIGTERM', forwardSignal)
+      if (forwardsHangup) {
+        process.off('SIGHUP', forwardSignal)
+      }
       if (typeof child.off === 'function') {
         child.off('message', handleMessage)
       }
@@ -200,6 +207,9 @@ function waitForForegroundChild(
     }
     process.on('SIGINT', forwardSignal)
     process.on('SIGTERM', forwardSignal)
+    if (forwardsHangup) {
+      process.on('SIGHUP', forwardSignal)
+    }
     if (typeof child.on === 'function') {
       child.on('message', handleMessage)
     }
@@ -213,7 +223,8 @@ function waitForForegroundChild(
     const handleExit = (code: number | null, signal: NodeJS.Signals | null): void => {
       childSettled = true
       cleanup()
-      void stateWrite.then(() => resolveWait({ code, signal, readiness }))
+      const signalWasForwarded = signal !== null && forwardedSignals.has(signal)
+      void stateWrite.then(() => resolveWait({ code, signal, readiness, signalWasForwarded }))
     }
     child.once('error', (error) => {
       childSettled = true
@@ -245,10 +256,6 @@ export function readServeUpdateHandoffSync(handoffPath: string): ServeUpdateHand
   }
 }
 
-export async function clearServeUpdateHandoff(handoffPath: string): Promise<void> {
-  await unlink(handoffPath).catch(() => undefined)
-}
-
 export async function completeServeUpdateHandoff(
   handoffPath: string,
   state: InstallRequestedHandoff,
@@ -259,7 +266,7 @@ export async function completeServeUpdateHandoff(
     phase: 'completed',
     runtimeId
   })
-  await clearServeUpdateHandoff(handoffPath)
+  await unlink(handoffPath).catch(() => undefined)
 }
 
 export async function recordServeUpdateHandoffFailure(

@@ -39,6 +39,10 @@ export function getWindowsPowerShellExecutablePath(): string {
  * Do not restore the flag to fix a console report. That trades every hook on an
  * AV host for a flicker. The answer is to shorten the interpreter chain — the
  * shipped doctrine of #15520 and #15595 — or a launcher that owns no console.
+ *
+ * #18875 took that answer for the Claude lifecycle hook, which now registers the
+ * managed `.cmd` path directly (`windows-direct-cmd-hook-command.ts`) and reaches
+ * this launcher only when the profile path is not cmd-safe. Every other caller still comes through here on every event.
  */
 export const WINDOWS_POWERSHELL_HOOK_SWITCHES = '-NoProfile'
 
@@ -69,14 +73,23 @@ const HOOK_PROGRESS_SILENCER = "$ProgressPreference='SilentlyContinue'; "
 const HOOK_EXECUTION_POLICY_BYPASS =
   'try { Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force -ErrorAction SilentlyContinue } catch {}; '
 
+export type WindowsPowerShellHookOptions = { useProcessPolicyEnvironment?: boolean }
+
 // Why: encoding shields paths and switches from cmd.exe and MSYS rewriting (#6078, #14815).
-export function encodeWindowsPowerShellHookCommand(command: string): string {
-  return Buffer.from(
-    `${HOOK_PROGRESS_SILENCER}${HOOK_EXECUTION_POLICY_BYPASS}${command}`,
-    'utf16le'
-  ).toString('base64')
+export function encodeWindowsPowerShellHookCommand(
+  command: string,
+  options: WindowsPowerShellHookOptions = {}
+): string {
+  // Process scope uses this variable; Group Policy still takes precedence.
+  const policy = options.useProcessPolicyEnvironment
+    ? "$env:PSExecutionPolicyPreference='Bypass'; "
+    : HOOK_EXECUTION_POLICY_BYPASS
+  return Buffer.from(`${HOOK_PROGRESS_SILENCER}${policy}${command}`, 'utf16le').toString('base64')
 }
 
-export function wrapWindowsPowerShellEncodedCommand(command: string): string {
-  return `${getWindowsPowerShellExecutablePath()} ${WINDOWS_POWERSHELL_HOOK_SWITCHES} -EncodedCommand ${encodeWindowsPowerShellHookCommand(command)}`
+export function wrapWindowsPowerShellEncodedCommand(
+  command: string,
+  options: WindowsPowerShellHookOptions = {}
+): string {
+  return `${getWindowsPowerShellExecutablePath()} ${WINDOWS_POWERSHELL_HOOK_SWITCHES} -EncodedCommand ${encodeWindowsPowerShellHookCommand(command, options)}`
 }

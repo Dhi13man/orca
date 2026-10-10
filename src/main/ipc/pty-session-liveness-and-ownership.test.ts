@@ -101,7 +101,8 @@ describe('registerPtyHandlers', () => {
       await expect(handlers.get('pty:inspectProcess')!(null, { id })).resolves.toEqual({
         foregroundProcess: null,
         hasChildProcesses: false,
-        unavailable: true
+        verdict: 'unverifiable',
+        reason: 'terminal_gone'
       })
       expect(inspectProcess).not.toHaveBeenCalled()
     }
@@ -385,6 +386,7 @@ describe('registerPtyHandlers', () => {
   it('ignores fire-and-forget IPC for detached SSH PTYs without a provider', async () => {
     const store = {
       upsertSshRemotePtyLease: vi.fn(),
+      supersedeSshRemotePtyLeasesForBoundPane: vi.fn(),
       persistPtyBinding: vi.fn(),
       markSshRemotePtyLease: vi.fn(),
       clearSshRemotePtyKillIntent: vi.fn()
@@ -474,7 +476,7 @@ describe('registerPtyHandlers', () => {
     }
     registerSshPtyProvider('ssh-1', provider as never)
     registerPtyHandlers(mainWindow as never)
-    setPtyOwnership('remote-pty', 'ssh-1')
+    setPtyOwnership('remote-pty', 'ssh:ssh-1')
     unregisterSshPtyProvider('ssh-1')
 
     await expect(handlers.get('pty:hasChildProcesses')!(null, { id: 'remote-pty' })).resolves.toBe(
@@ -514,7 +516,8 @@ describe('registerPtyHandlers', () => {
     await expect(handlers.get('pty:inspectProcess')!(null, { id: 'gone-pty' })).resolves.toEqual({
       foregroundProcess: null,
       hasChildProcesses: false,
-      unavailable: true
+      verdict: 'unverifiable',
+      reason: 'terminal_gone'
     })
   })
 })

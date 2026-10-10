@@ -3,6 +3,7 @@ import type { AppState } from '../types'
 import type { Repo } from '../../../../shared/repo-types'
 import { sanitizeRepoIcon } from '../../../../shared/repo-icon'
 import { normalizeRepoBadgeColor } from '../../../../shared/repo-badge-color'
+import { normalizeGhAccountBinding } from '../../../../shared/github/account-binding'
 import {
   findRepoForHost,
   getRepoHostIdentityForParts,
@@ -15,7 +16,8 @@ import {
   normalizeWorktreeVisibilitySourcePreferences
 } from '../../../../shared/worktree/visibility-sources'
 import type { RepoSlice, RepoUpdate } from './repo-state'
-import { repoWithFetchedOwner, settingsForRepoOwner } from './owner-routing'
+import { settingsForRepoOwner } from './owner-routing'
+import { adoptFromEndpoint } from '../adopt-from-endpoint'
 import { getRuntimeTargetHostId } from '../runtime-target-host'
 import { getProjectSetupRuntimeTarget } from '../projects/project-host-routing'
 import { mergeProjectCompatibilityForHostRepoChange } from './repo-catalog-identity'
@@ -49,6 +51,14 @@ export function sanitizeRepoUpdate(updates: RepoUpdate): RepoUpdate {
     sanitized.forkSyncMode !== 'off'
   ) {
     delete sanitized.forkSyncMode
+  }
+  if ('ghAccount' in sanitized && sanitized.ghAccount != null) {
+    const normalized = normalizeGhAccountBinding(sanitized.ghAccount)
+    if (!normalized) {
+      delete sanitized.ghAccount
+    } else {
+      sanitized.ghAccount = normalized
+    }
   }
   if ('customWorktreeVisibilitySources' in sanitized) {
     const sources = normalizeCustomWorktreeVisibilitySources(
@@ -139,12 +149,13 @@ export function createRepoUpdateActions(
                 return r
               }
               if (updatedRepo) {
-                return repoWithFetchedOwner(updatedRepo, target)
+                return adoptFromEndpoint(target, { kind: 'repo', row: updatedRepo })
               }
               let mergedRepo: Repo = r
               const {
                 sourceControlAi,
                 externalWorktreeDiscoverySuppressedAt,
+                ghAccount,
                 externalWorktreeVisibility,
                 agentWorktreeVisibility,
                 ...updatesWithoutClearSentinels
@@ -179,6 +190,12 @@ export function createRepoUpdateActions(
                 mergedRepo = repoWithoutSuppression
               } else if (externalWorktreeDiscoverySuppressedAt !== undefined) {
                 mergedRepo = { ...mergedRepo, externalWorktreeDiscoverySuppressedAt }
+              }
+              if (ghAccount === null) {
+                const { ghAccount: _ghAccount, ...repoWithoutGhAccount } = mergedRepo
+                mergedRepo = repoWithoutGhAccount
+              } else if (ghAccount !== undefined) {
+                mergedRepo = { ...mergedRepo, ghAccount }
               }
               return mergedRepo
             })

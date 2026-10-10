@@ -1,5 +1,4 @@
 import type { Dispatch, MutableRefObject, RefObject, SetStateAction } from 'react'
-import type { BrowserGrabPayload } from '../../../../../shared/browser-grab-types'
 import {
   normalizeBrowserNavigationUrl,
   redactKagiSessionToken
@@ -35,10 +34,9 @@ export type BrowserPageWebviewLoadingHandlersArgs = {
   trackNextLoadingEventRef: MutableRefObject<boolean>
   keepAddressBarFocusRef: MutableRefObject<boolean>
   recoveryNavigationValidationRef: MutableRefObject<BrowserPageRecoveryNavigationValidation | null>
-  clearBrowserPageAnnotationsRef: MutableRefObject<(pageId: string) => void>
+  invalidateBrowserAnnotationDocumentRef: MutableRefObject<() => void>
   onUpdatePageStateRef: MutableRefObject<(tabId: string, updates: BrowserTabPageState) => void>
   onSetUrlRef: MutableRefObject<BrowserPageUrlSetter>
-  setPendingAnnotationPayload: Dispatch<SetStateAction<BrowserGrabPayload | null>>
   setBrowserOverlayViewport: Dispatch<SetStateAction<BrowserOverlayViewport>>
   setAddressBarValue: Dispatch<SetStateAction<string>>
   focusAddressBarNow: () => boolean
@@ -62,26 +60,24 @@ export function createBrowserPageWebviewLoadingHandlers({
   trackNextLoadingEventRef,
   keepAddressBarFocusRef,
   recoveryNavigationValidationRef,
-  clearBrowserPageAnnotationsRef,
+  invalidateBrowserAnnotationDocumentRef,
   onUpdatePageStateRef,
   onSetUrlRef,
-  setPendingAnnotationPayload,
   setBrowserOverlayViewport,
   setAddressBarValue,
   focusAddressBarNow
 }: BrowserPageWebviewLoadingHandlersArgs): BrowserPageWebviewLoadingHandlers {
   const handleDidStartLoading = (): void => {
-    // Why: a reload replaces the document without changing the URL, invalidating captured element rects like a navigation does.
-    clearBrowserPageAnnotationsRef.current(browserTabId)
-    setPendingAnnotationPayload(null)
+    // A reload replaces geometry even when the URL stays the same.
+    invalidateBrowserAnnotationDocumentRef.current()
     setBrowserOverlayViewport({ scrollX: 0, scrollY: 0, version: 0 })
     if (!trackNextLoadingEventRef.current) {
       return
     }
-    faviconUrlRef.current = null
+    // Why the favicon isn't cleared here: it is dropped on the cross-origin did-start-navigation
+    // instead, because Chromium won't re-announce an unchanged icon for a same-origin load.
     onUpdatePageStateRef.current(browserTabId, {
-      loading: true,
-      faviconUrl: null
+      loading: true
     })
   }
 

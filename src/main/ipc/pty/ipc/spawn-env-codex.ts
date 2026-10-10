@@ -1,9 +1,12 @@
+import { inheritOmpLaunchEnvironment } from '../host-env/omp-launch-environment'
 import { getAppEnvironment } from '../../../../shared/app-environment'
 import { isTuiAgent } from '../../../../shared/tui-agent-config'
 import { isAgentStatusHooksEnabled } from '../../../agent-hooks/managed-agent-hook-controls'
 import { isSafePtySessionId } from '../../../daemon/pty-session-id'
 import { isNativeWindowsLocalPtySpawn } from '../../../runtime/terminal-model-query-authority'
 import { stampWslOrchestrationCompatibilityHost } from '../../../pty/wsl-orca-env'
+import { stampRuntimeSourceEnv } from '../../../../shared/runtime-source-env'
+import { getRuntimeSourceStamp } from '../../../runtime/host-descriptor'
 import { ensureCodexStateDbBackfillRecoveryStarted } from '../../../codex/codex-state-db-backfill-recovery'
 import { buildPtyHostEnv } from '../host-env/assembly'
 import {
@@ -12,7 +15,6 @@ import {
   resolveCodexHomeAfterManagedAuthReadiness,
   shouldSkipCodexHomeEnvForWindowsShell,
   shouldStripInheritedOrcaCodexHome,
-  isCodexStatusHooksEnabled,
   codexHomePathsEqual
 } from '../host-env/codex-home'
 import { promoteAgentTeamsShimPath } from '../host-env/path'
@@ -40,21 +42,25 @@ export async function assemblePtyIpcSpawnCodexEnv(ctx: PtyIpcSpawnState): Promis
         providerSession: args.resumeProviderSession,
         target: ctx.codexSelectionTarget,
         launchEnv: ctx.baseEnv,
-        workspacePath: ctx.cwd
+        ...(args.replacesPtyId ? { useSelectedAccount: true } : {})
       })
   ctx.codexResumeLaunch = codexResumePreparation
     ? await ctx.deps.resolveCodexResumeLaunch(args.command, codexResumePreparation)
     : ctx.deps.noCodexResumeLaunch(ctx.preAdoptedStablePane ? undefined : args.command)
+  // Why: these three phases have unrelated costs (session provenance + hook
+  // repair, account/auth resolution, then the synchronous env build). One
+  // `host_env` label hid all of them behind the name of the cheapest.
+  ctx.spawnTiming.mark('codex_resume')
   const codexResumeHome = ctx.codexResumeLaunch.codexResumeHome
   ctx.launchCommand = ctx.codexResumeLaunch.command
   ctx.baseEnv = ctx.deps.stripSequencedStartupResumeArgv(ctx.baseEnv, ctx.codexResumeLaunch)
   // Why: declared after the strip so a local-provider spawn cannot capture the
   // pre-strip env — only the daemon branch below re-derives this from baseEnv.
   ctx.env = ctx.baseEnv
+  const launchesCodex = args.launchAgent === 'codex'
   const selectLaunchCodexHome = async (): Promise<string | null> =>
     (await ctx.deps.getSelectedCodexHomePath?.(ctx.codexSelectionTarget, ctx.baseEnv, {
-      workspacePath: ctx.cwd,
-      launchAgent: isTuiAgent(args.launchAgent) ? args.launchAgent : undefined
+      launchesCodex
     })) ?? null
   ctx.selectedCodexHomePath =
     !ctx.preAdoptedStablePane && !args.connectionId
@@ -80,17 +86,15 @@ export async function assemblePtyIpcSpawnCodexEnv(ctx: PtyIpcSpawnState): Promis
         getCompatibleSelectedCodexHomePath(
           ctx.codexSelectionTarget,
           (await ctx.deps.getSelectedCodexHomePath?.(ctx.codexSelectionTarget, ctx.baseEnv, {
-            workspacePath: ctx.cwd,
-            launchAgent: 'codex'
+            launchesCodex
           })) ?? null
         ),
       resolveAfterUnavailable: async (unavailableManagedHomePath) =>
         getCompatibleSelectedCodexHomePath(
           ctx.codexSelectionTarget,
           (await ctx.deps.getSelectedCodexHomePath?.(ctx.codexSelectionTarget, ctx.baseEnv, {
-            workspacePath: ctx.cwd,
-            launchAgent: 'codex',
-            unavailableManagedHomePath
+            unavailableManagedHomePath,
+            launchesCodex
           })) ?? null
         )
     })
@@ -99,6 +103,7 @@ export async function assemblePtyIpcSpawnCodexEnv(ctx: PtyIpcSpawnState): Promis
   if (args.launchAgent === 'codex' && ctx.selectedCodexHomePath) {
     await ensureCodexStateDbBackfillRecoveryStarted(ctx.selectedCodexHomePath)
   }
+  ctx.spawnTiming.mark('codex_home')
   ctx.codexResumeHomeSelected = Boolean(
     codexResumeHome && codexHomePathsEqual(ctx.selectedCodexHomePath, codexResumeHome.codexHomePath)
   )
@@ -128,6 +133,11 @@ export async function assemblePtyIpcSpawnCodexEnv(ctx: PtyIpcSpawnState): Promis
     // Why: clone before mutating so injections don't leak back into args.env (renderer may reuse it).
     ctx.env = { ...ctx.baseEnv }
     try {
+      await inheritOmpLaunchEnvironment(ctx.env, {
+        isWsl: shouldSkipCodexHomeEnvForWindowsShell(ctx.effectiveShellOverride, ctx.cwd),
+        launchAgent: args.launchAgent,
+        launchCommand: ctx.launchCommand
+      })
       buildPtyHostEnv(sessionIdForEnv, ctx.env, {
         isPackaged: getAppEnvironment().isPackaged(),
         resourcesPath: process.resourcesPath,
@@ -137,11 +147,13 @@ export async function assemblePtyIpcSpawnCodexEnv(ctx: PtyIpcSpawnState): Promis
         stripInheritedOrcaCodexHome: ctx.stripInheritedOrcaCodexHome,
         launchCommand: ctx.launchCommand,
         launchAgent: isTuiAgent(args.launchAgent) ? args.launchAgent : undefined,
+        shellPath: ctx.effectiveShellOverride,
         isWsl: shouldSkipCodexHomeEnvForWindowsShell(ctx.effectiveShellOverride, ctx.cwd),
         wslDistro: ctx.codexSelectionTarget.runtime === 'wsl' ? ctx.expectedWslDistro : null,
         agentStatusHooksEnabled: isAgentStatusHooksEnabled(ptySettings),
-        codexStatusHooksEnabled: isCodexStatusHooksEnabled(ptySettings),
+        disabledTuiAgents: ptySettings?.disabledTuiAgents,
         networkProxySettings: ptySettings,
+        routeBrowserOpensToClient: ctx.deps.runtime?.shouldRelayTerminalBrowserOpens?.(),
         deferGitConfigGuardToDaemon:
           ctx.provider.supportsGitCredentialGuardHost?.(ctx.effectiveSessionId) === true
       })
@@ -149,6 +161,10 @@ export async function assemblePtyIpcSpawnCodexEnv(ctx: PtyIpcSpawnState): Promis
         ctx.env,
         ctx.deps.runtime?.getOrchestrationCompatibilityHostId?.(),
         ctx.codexSelectionTarget.runtime === 'wsl' ? ctx.expectedWslDistro : null
+      )
+      stampRuntimeSourceEnv(
+        ctx.env,
+        getRuntimeSourceStamp(ctx.deps.runtime, getAppEnvironment().getPath('userData'))
       )
       promoteAgentTeamsShimPath(ctx.env, ctx.requestedAgentTeamsPath)
     } catch (err) {

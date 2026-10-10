@@ -12,6 +12,8 @@ import {
   getExecutionHostIdForFolderWorkspace,
   getRuntimeEnvironmentIdForFolderWorkspace
 } from '@/lib/folder-workspace-runtime-owner'
+import { callHostRoute } from '@/runtime/host-route-call'
+import { hostRouteForAuthority } from '@/runtime/runtime-client-target'
 import { parseWorkspaceKey } from '../../../../shared/workspace-scope'
 
 export function normalizeDiffComment(comment: DiffComment): DiffComment {
@@ -65,21 +67,23 @@ async function persist(
       scope.folderWorkspaceId,
       executionHostId
     )
-    const target = getActiveRuntimeTarget({ activeRuntimeEnvironmentId: runtimeEnvironmentId })
-    const updated =
-      target.kind === 'local'
-        ? await window.api.folderWorkspaces.update({
-            folderWorkspaceId: scope.folderWorkspaceId,
-            updates: { diffComments }
-          })
-        : (
-            await callRuntimeRpc<{ folderWorkspace: FolderWorkspace | null }>(
-              target,
-              'folderWorkspace.update',
-              { folderWorkspaceId: scope.folderWorkspaceId, updates: { diffComments } },
-              { timeoutMs: 15_000 }
-            )
-          ).folderWorkspace
+    const updated = runtimeEnvironmentId
+      ? (
+          await callHostRoute<{ folderWorkspace: FolderWorkspace | null }>(
+            // Why local: the folder's catalog row lives on the server even when it names an SSH target.
+            hostRouteForAuthority({
+              endpoint: { kind: 'environment', environmentId: runtimeEnvironmentId },
+              at: 'local'
+            }),
+            'folderWorkspace.update',
+            { folderWorkspaceId: scope.folderWorkspaceId, updates: { diffComments } },
+            { timeoutMs: 15_000 }
+          )
+        ).folderWorkspace
+      : await window.api.folderWorkspaces.update({
+          folderWorkspaceId: scope.folderWorkspaceId,
+          updates: { diffComments }
+        })
     if (!updated?.diffComments) {
       throw new Error('Failed to persist folder workspace review notes')
     }
@@ -239,13 +243,13 @@ export function mutateDiffComments(
     if (scope?.type === 'folder') {
       const target = findFolderWorkspaceOwner(s, scope.folderWorkspaceId)
       if (!target) {
-        return {}
+        return s
       }
       folderExecutionHostId = getExecutionHostIdForFolderWorkspace(s, scope.folderWorkspaceId)
       previous = target.diffComments
       const computed = mutate(previous ?? [])
       if (computed === null) {
-        return {}
+        return s
       }
       next = computed
       return {
@@ -256,16 +260,16 @@ export function mutateDiffComments(
     }
     const repoList = s.worktreesByRepo[repoId]
     if (!repoList) {
-      return {}
+      return s
     }
     const target = repoList.find((w) => w.id === worktreeId)
     if (!target) {
-      return {}
+      return s
     }
     previous = target.diffComments
     const computed = mutate(previous ?? [])
     if (computed === null) {
-      return {}
+      return s
     }
     next = computed
     const nextList: Worktree[] = repoList.map((w) =>
@@ -293,7 +297,7 @@ function rollback(
     if (scope?.type === 'folder') {
       const target = findFolderWorkspaceOwner(s, scope.folderWorkspaceId, folderExecutionHostId)
       if (!target || target.diffComments !== expectedCurrent) {
-        return {}
+        return s
       }
       return {
         folderWorkspaces: s.folderWorkspaces.map((workspace) =>
@@ -303,16 +307,16 @@ function rollback(
     }
     const repoList = s.worktreesByRepo[repoId]
     if (!repoList) {
-      return {}
+      return s
     }
     const target = repoList.find((w) => w.id === worktreeId)
     // Why: worktree gone since the mutation; bail before remapping so we don't allocate a new array identity and fire spurious notifications.
     if (!target) {
-      return {}
+      return s
     }
     // Why: only roll back if no later mutation replaced the array, else our stale `previous` would erase newer state.
     if (target.diffComments !== expectedCurrent) {
-      return {}
+      return s
     }
     const nextList: Worktree[] = repoList.map((w) =>
       w.id === worktreeId ? { ...w, diffComments: previous } : w

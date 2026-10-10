@@ -35,19 +35,29 @@ vi.mock('../../../shared/git-discard-path-safety', () => ({
 
 import { bulkDiscardChanges } from './discard-changes'
 import { resetWslGitReadEnvironmentForTests } from '../wsl-git-read-environment'
+import { _resetGitAdmissionForTests } from '../command-runner/git-subprocess-admission'
+
+afterEach(() => _resetGitAdmissionForTests())
 
 const DISTRO = 'Ubuntu-24.04'
 const WSL_WORKTREE = `\\\\wsl$\\${DISTRO}\\home\\emilio\\projects\\orca`
 const TRACKED_PATHS = ['docs/architecture.md', 'src/main/git/runner.ts']
 // Stock Ubuntu writes this to *stdout* from the interactive login shell's rc.
 const BANNER = 'To run a command as administrator (user "root"), use "sudo <command>".\n\n'
+const stdinEndMock = vi.fn()
 
-type MockChild = EventEmitter & { stdout: EventEmitter; stderr: EventEmitter; kill: () => void }
+type MockChild = EventEmitter & {
+  stdout: EventEmitter
+  stderr: EventEmitter
+  stdin: EventEmitter & { end: (input: string) => void }
+  kill: () => void
+}
 
 function createMockChild(): MockChild {
   const child = new EventEmitter() as MockChild
   child.stdout = new EventEmitter()
   child.stderr = new EventEmitter()
+  child.stdin = Object.assign(new EventEmitter(), { end: stdinEndMock })
   child.kill = vi.fn()
   return child
 }
@@ -58,7 +68,7 @@ function guestScript(args: unknown): string {
 
 /** Wrap the payload in the caller's own fence when it asked for one; otherwise hand it over raw. */
 function loginShellStdout(script: string, payload: string): string {
-  const nonce = /__ORCA_WSL_CAPTURE_BEGIN_([^_]+)__/.exec(script)?.[1]
+  const nonce = /__ORCA_WSL_CAPTURE_BEGIN_ ([^_]+)__/.exec(script)?.[1]
   return nonce
     ? `${BANNER}__ORCA_WSL_CAPTURE_BEGIN_${nonce}__${payload}__ORCA_WSL_CAPTURE_END_${nonce}__`
     : `${BANNER}${payload}`
@@ -76,6 +86,7 @@ describe('WSL tracked-path listing behind a login-shell banner', () => {
   beforeEach(() => {
     resetWslGitReadEnvironmentForTests()
     execFileMock.mockReset()
+    stdinEndMock.mockReset()
     Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
     execFileMock.mockImplementation((_command, args, _options, callback) => {
       const script = guestScript(args)
@@ -102,8 +113,9 @@ describe('WSL tracked-path listing behind a login-shell banner', () => {
     expect(commandLines.filter((line) => line.includes('clean'))).toEqual([])
     const restored = commandLines.filter((line) => line.includes('restore'))
     expect(restored.length).toBeGreaterThan(0)
-    for (const trackedPath of TRACKED_PATHS) {
-      expect(restored.some((line) => line.includes(`:(literal)${trackedPath}`))).toBe(true)
-    }
+    expect(restored.every((line) => line.includes('--pathspec-from-file=-'))).toBe(true)
+    expect(stdinEndMock).toHaveBeenCalledWith(
+      TRACKED_PATHS.map((trackedPath) => `:(literal)${trackedPath}\0`).join('')
+    )
   })
 })

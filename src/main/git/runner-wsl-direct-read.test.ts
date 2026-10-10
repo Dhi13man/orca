@@ -17,11 +17,18 @@ vi.mock('../observability/instrumentation', () => ({
 }))
 vi.mock('../diagnostics/main-thread-churn-probe', () => ({ recordSubprocessSpawn: vi.fn() }))
 
+import { getBranchConflictKind } from './repo-branch-conflict'
 import { pendingWslDirectGitReadEnvironment } from './command-runner/git-command-resolution'
-import { gitExecFileAsync, gitSpawn, gitStreamStdout } from './runner'
+import { gitExecFileAsync, gitExecFileAsyncBuffer, gitSpawn, gitStreamStdout } from './runner'
+import {
+  GitAdmissionScheduler,
+  _resetGitAdmissionForTests,
+  type GitAdmissionEvent
+} from './command-runner/git-subprocess-admission'
 import {
   disableWslGitReadEnvironment,
   getWslGitReadEnvironment,
+  peekWslGitReadEnvironment,
   resetWslGitReadEnvironmentForTests,
   seedWslGitReadEnvironmentForTests,
   WSL_GIT_READ_ENVIRONMENT_WAIT_MS
@@ -33,6 +40,8 @@ import {
   type WslLinkedWorktreeRoutingFileSystem
 } from './wsl-linked-worktree-git-routing'
 
+afterEach(() => _resetGitAdmissionForTests())
+
 const DISTRO = 'Ubuntu'
 const LOGIN_ENVIRONMENT = {
   gitPath: '/home/user/bin/git',
@@ -42,7 +51,7 @@ const LOGIN_ENVIRONMENT = {
 
 /** Stand in for the guest shell: rc chatter first, then the payload inside the command's own fence. */
 function fencedProbeStdout(command: unknown, payload: string): string {
-  const nonce = /__ORCA_WSL_CAPTURE_BEGIN_([^_]+)__/.exec(String(command))?.[1] ?? ''
+  const nonce = /__ORCA_WSL_CAPTURE_BEGIN_ ([^_]+)__/.exec(String(command))?.[1] ?? ''
   return `profile banner\n__ORCA_WSL_CAPTURE_BEGIN_${nonce}__${payload}__ORCA_WSL_CAPTURE_END_${nonce}__`
 }
 
@@ -157,6 +166,14 @@ describe('WSL direct Git reads', () => {
     } finally {
       nowSpy.mockRestore()
     }
+  })
+
+  it('bounds settled environment entries during distro churn', () => {
+    for (let index = 0; index < 132; index += 1) {
+      seedWslGitReadEnvironmentForTests(`distro-${index}`, LOGIN_ENVIRONMENT)
+    }
+    expect(peekWslGitReadEnvironment('distro-0')).toBeUndefined()
+    expect(peekWslGitReadEnvironment('distro-131')).toEqual(LOGIN_ENVIRONMENT)
   })
 
   it('runs an opted-in read directly with translated cwd and arguments', async () => {
@@ -493,36 +510,53 @@ describe('WSL direct Git reads', () => {
     })
   })
 
-  it('invalidates a missing direct executable and retries through the login shell', async () => {
+  it('waits for direct Git to close before retrying through the login shell', async () => {
     await withPlatform('win32', async () => {
+      const admissionEvents: GitAdmissionEvent[] = []
+      _resetGitAdmissionForTests(
+        new GitAdmissionScheduler({ onAdmissionEvent: (event) => admissionEvents.push(event) })
+      )
       seedWslGitReadEnvironmentForTests(DISTRO, LOGIN_ENVIRONMENT)
+      let directChild!: ReturnType<typeof createMockChild>
       execFileMock.mockImplementationOnce((_command, _args, _options, callback) => {
         const child = createMockChild()
-        queueMicrotask(() =>
+        directChild = child
+        queueMicrotask(() => {
           callback?.(
             Object.assign(new Error('exit 127'), { code: 127 }),
             '',
             '/usr/bin/env: No such file or directory'
           )
-        )
+        })
         return child
       })
       execFileMock.mockImplementationOnce((_command, _args, _options, callback) => {
         const child = createMockChild()
-        queueMicrotask(() => callback?.(null, 'ok', ''))
+        queueMicrotask(() => {
+          child.emit('close', 0, null)
+          callback?.(null, 'ok', '')
+        })
         return child
       })
 
-      await expect(
-        gitExecFileAsync(['status', '--short'], {
-          cwd: String.raw`C:\repo`,
-          preferWslDirectGit: true,
-          wslDistro: DISTRO
-        })
-      ).resolves.toEqual({ stdout: 'ok', stderr: '' })
+      const result = gitExecFileAsync(['status', '--short'], {
+        cwd: String.raw`C:\repo`,
+        preferWslDirectGit: true,
+        wslDistro: DISTRO
+      })
+
+      await vi.waitFor(() => expect(directChild).toBeDefined())
+      await Promise.resolve()
+      expect(execFileMock).toHaveBeenCalledTimes(1)
+      directChild.emit('close', 127, null)
+      await expect(result).resolves.toEqual({ stdout: 'ok', stderr: '' })
 
       expect(execFileMock.mock.calls[0]?.[1]).toContain('--exec')
       expect(execFileMock.mock.calls[1]?.[1]?.slice(3, 5)).toEqual(['sh', '-lc'])
+      expect(admissionEvents.map(({ phase, waiterId }) => [phase, waiterId])).toEqual([
+        ['grant', 0],
+        ['release', 0]
+      ])
     })
   })
 
@@ -531,14 +565,18 @@ describe('WSL direct Git reads', () => {
       seedWslGitReadEnvironmentForTests(DISTRO, LOGIN_ENVIRONMENT)
       execFileMock.mockImplementationOnce((_command, _args, _options, callback) => {
         const child = createMockChild()
-        queueMicrotask(() =>
+        queueMicrotask(() => {
           callback?.(Object.assign(new Error('exit 128'), { code: 128 }), '', 'helper failed')
-        )
+          child.emit('close', 128, null)
+        })
         return child
       })
       execFileMock.mockImplementation((_command, _args, _options, callback) => {
         const child = createMockChild()
-        queueMicrotask(() => callback?.(null, 'ok', ''))
+        queueMicrotask(() => {
+          callback?.(null, 'ok', '')
+          child.emit('close', 0, null)
+        })
         return child
       })
       const options = {
@@ -556,27 +594,59 @@ describe('WSL direct Git reads', () => {
     })
   })
 
+  it('checks a missing branch conflict without retrying through a login shell', async () => {
+    await withPlatform('win32', async () => {
+      seedWslGitReadEnvironmentForTests(DISTRO, LOGIN_ENVIRONMENT)
+      execFileMock.mockImplementation((_command, args: string[], _options, callback) => {
+        const child = createMockChild()
+        queueMicrotask(() => {
+          const missingRef = args.join(' ').includes('rev-parse')
+          const quiet = args.includes('--quiet')
+          const code = missingRef ? (quiet ? 1 : 128) : 0
+          callback?.(
+            code ? Object.assign(new Error('missing ref'), { code }) : null,
+            '',
+            missingRef && !quiet ? 'fatal: Needed a single revision' : ''
+          )
+          child.emit('close', code, null)
+        })
+        return child
+      })
+
+      await expect(
+        getBranchConflictKind(String.raw`\\wsl.localhost\Ubuntu\repo`, 'new-feature')
+      ).resolves.toBeNull()
+      expect(execFileMock).toHaveBeenCalledTimes(3)
+      expect(execFileMock.mock.calls[0]?.[1]).toContain('--quiet')
+    })
+  })
+
   it('keeps the fast path when direct and login Git both report an expected failure', async () => {
     await withPlatform('win32', async () => {
       seedWslGitReadEnvironmentForTests(DISTRO, LOGIN_ENVIRONMENT)
       execFileMock
         .mockImplementationOnce((_command, _args, _options, callback) => {
           const child = createMockChild()
-          queueMicrotask(() =>
+          queueMicrotask(() => {
             callback?.(Object.assign(new Error('exit 128'), { code: 128 }), '', 'missing ref')
-          )
+            child.emit('close', 128, null)
+          })
           return child
         })
         .mockImplementationOnce((_command, _args, _options, callback) => {
           const child = createMockChild()
-          queueMicrotask(() =>
+          queueMicrotask(() => {
             callback?.(Object.assign(new Error('exit 128'), { code: 128 }), '', 'missing ref')
-          )
+            child.emit('close', 128, null)
+          })
           return child
         })
         .mockImplementationOnce((_command, _args, _options, callback) => {
           const child = createMockChild()
-          queueMicrotask(() => callback?.(null, 'ok', ''))
+          queueMicrotask(() => {
+            callback?.(null, 'ok', '')
+            child.emit('close', 0, null)
+          })
           return child
         })
       const options = {
@@ -755,38 +825,41 @@ describe('WSL direct Git reads', () => {
     })
   })
 
-  it('aborts an async Git call while linked-worktree discovery remains pending', async () => {
-    await withPlatform('win32', async () => {
-      let releaseStat: (() => void) | undefined
-      const delayedStat = new Promise<void>((resolve) => {
-        releaseStat = resolve
-      })
-      const fileSystem: WslLinkedWorktreeRoutingFileSystem = {
-        stat: vi.fn(async () => {
-          await delayedStat
-          return { isDirectory: () => false, isFile: () => true }
-        }),
-        readFile: vi.fn(async () => 'gitdir: C:/main/.git/worktrees/linked\n')
-      }
-      const discovery = prepareWslLinkedWorktreeGitRouting(String.raw`C:\repo`, DISTRO, {
-        platform: 'win32',
-        fileSystem
-      })
-      const controller = new AbortController()
+  it.each([gitExecFileAsync, gitExecFileAsyncBuffer])(
+    'aborts an async Git read while linked-worktree discovery remains pending (%s)',
+    async (readGit) => {
+      await withPlatform('win32', async () => {
+        let releaseStat: (() => void) | undefined
+        const delayedStat = new Promise<void>((resolve) => {
+          releaseStat = resolve
+        })
+        const fileSystem: WslLinkedWorktreeRoutingFileSystem = {
+          stat: vi.fn(async () => {
+            await delayedStat
+            return { isDirectory: () => false, isFile: () => true }
+          }),
+          readFile: vi.fn(async () => 'gitdir: C:/main/.git/worktrees/linked\n')
+        }
+        const discovery = prepareWslLinkedWorktreeGitRouting(String.raw`C:\repo`, DISTRO, {
+          platform: 'win32',
+          fileSystem
+        })
+        const controller = new AbortController()
 
-      const command = gitExecFileAsync(['status', '--short'], {
-        cwd: String.raw`C:\repo`,
-        wslDistro: DISTRO,
-        signal: controller.signal
-      })
-      controller.abort()
+        const command = readGit(['show', 'HEAD:file'], {
+          cwd: String.raw`C:\repo`,
+          wslDistro: DISTRO,
+          signal: controller.signal
+        })
+        controller.abort()
 
-      await expect(command).rejects.toMatchObject({ name: 'AbortError' })
-      expect(execFileMock).not.toHaveBeenCalled()
-      releaseStat?.()
-      await expect(discovery).resolves.toBe(true)
-    })
-  })
+        await expect(command).rejects.toMatchObject({ name: 'AbortError' })
+        expect(execFileMock).not.toHaveBeenCalled()
+        releaseStat?.()
+        await expect(discovery).resolves.toBe(true)
+      })
+    }
+  )
 
   it('keeps gitSpawn cache-only when a linked-worktree route expires', async () => {
     await withPlatform('win32', async () => {

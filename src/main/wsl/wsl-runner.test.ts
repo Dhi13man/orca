@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const runProcessMock = vi.hoisted(() => vi.fn())
-vi.mock('../../shared/child-process/run-process', () => ({ runProcess: runProcessMock }))
+vi.mock('@orca/process-host', () => ({ runProcess: runProcessMock }))
 vi.mock('./wsl-executable-path', () => ({
   resolveWslExecutablePath: () => 'C:\\Windows\\System32\\wsl.exe'
 }))
@@ -30,8 +30,8 @@ function lastArgv(): string[] {
 function fencedEcho(payload = ''): void {
   runProcessMock.mockImplementation(async (spec: { args: string[] }) => {
     const script = spec.args.at(-1) ?? ''
-    const begin = /__ORCA_WSL_CAPTURE_BEGIN_[a-z0-9]+__/.exec(script)?.[0] ?? ''
-    const end = /__ORCA_WSL_CAPTURE_END_[a-z0-9]+__/.exec(script)?.[0] ?? ''
+    const begin = (/__ORCA_WSL_CAPTURE_BEGIN_ [a-z0-9]+__/.exec(script)?.[0] ?? '').replace(' ', '')
+    const end = (/__ORCA_WSL_CAPTURE_END_ [a-z0-9]+__/.exec(script)?.[0] ?? '').replace(' ', '')
     return {
       environmentResolved: true,
       code: 0,
@@ -236,7 +236,10 @@ describe('guest cwd', () => {
   it('cds inside the guest rather than passing a Windows cwd to wsl.exe', async () => {
     seedWslGuestEnvironmentForTests(undefined, ENVIRONMENT)
     await runWslProcess({ loginPath: 'preferred', program: '/usr/bin/git', cwd: '/home/u/repo' })
-    expect(runProcessMock.mock.calls.at(-1)?.[0].cwd).toBeUndefined()
+    // The contract is that the GUEST path never becomes wsl.exe's Windows cwd,
+    // not that there is no cwd: inheriting one is its own bug (#16463).
+    expect(runProcessMock.mock.calls.at(-1)?.[0].cwd).not.toBe('/home/u/repo')
+    expect(runProcessMock.mock.calls.at(-1)?.[0].cwd).toEqual(expect.any(String))
     expect(lastArgv()).toContain('/home/u/repo')
     expect(lastArgv()).toContain('sh')
   })

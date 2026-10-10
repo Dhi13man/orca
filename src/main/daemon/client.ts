@@ -6,9 +6,10 @@ import {
   PROTOCOL_VERSION,
   NOTIFY_PREFIX,
   DaemonConnectionLostError,
-  DaemonProtocolError
+  DaemonProtocolError,
+  type DaemonEndpointIdentity
 } from './types'
-import type { DaemonEndpointIdentity } from './types'
+import { writeRefused, type WriteSettlement } from '../../shared/pty-write-settlement'
 import {
   armDaemonSocketCloseHandlers,
   connectDaemonSocket,
@@ -146,29 +147,27 @@ export class DaemonClient {
       const pendingControlSocket = await connectDaemonSocket(this.socketPath, remainingMs())
       this.assertConnectionAttemptCurrent(attemptGeneration, pendingControlSocket)
       this.controlSocket = pendingControlSocket
-      const controlIdentity = await this.sendHello(
-        this.controlSocket,
-        token,
-        'control',
-        remainingMs()
-      )
+      const controlHello = await this.sendHello(this.controlSocket, token, 'control', remainingMs())
+      const controlIdentity = controlHello.identity
       this.assertConnectionAttemptCurrent(attemptGeneration, this.controlSocket)
       pendingListenerCleanups.push(
-        attachControlResponseReader(this.controlSocket, (response) =>
-          this.pendingRequests.settle(response)
+        attachControlResponseReader(
+          this.controlSocket,
+          (response) => this.pendingRequests.settle(response),
+          controlHello.remainder
         )
       )
 
       const pendingStreamSocket = await connectDaemonSocket(this.socketPath, remainingMs())
       this.assertConnectionAttemptCurrent(attemptGeneration, pendingStreamSocket)
       this.streamSocket = pendingStreamSocket
-      const streamIdentity = await this.sendHello(this.streamSocket, token, 'stream', remainingMs())
+      const streamHello = await this.sendHello(this.streamSocket, token, 'stream', remainingMs())
       this.assertConnectionAttemptCurrent(attemptGeneration, this.streamSocket)
-      if (!sameDaemonIdentity(controlIdentity, streamIdentity)) {
+      if (!sameDaemonIdentity(controlIdentity, streamHello.identity)) {
         throw new DaemonProtocolError('Daemon identity changed during connection')
       }
       pendingListenerCleanups.push(
-        attachStreamEventReader(this.streamSocket, (event) => {
+        attachStreamEventReader(this.streamSocket, streamHello, (event) => {
           this.eventListeners.each((listener) => listener(event))
         })
       )
@@ -253,18 +252,17 @@ export class DaemonClient {
     type: string,
     payload: unknown,
     timeoutMs = NOTIFY_SETTLEMENT_TIMEOUT_MS
-  ): Promise<boolean> {
+  ): Promise<WriteSettlement> {
     if (!this.connected || !this.controlSocket) {
-      return false
+      return writeRefused('endpoint_disconnected')
     }
 
     const id = `${NOTIFY_PREFIX}${++this.requestCounter}`
-    const msg = { id, type, ...(payload !== undefined ? { payload } : {}) }
     const socket = this.controlSocket
     const generation = this.connectionGeneration
     return await writeNotifyWithSettlement({
       socket,
-      message: msg,
+      message: { id, type, ...(payload !== undefined ? { payload } : {}) },
       timeoutMs,
       onUndeliverable: () => {
         if (this.controlSocket === socket && this.connectionGeneration === generation) {
@@ -310,7 +308,7 @@ export class DaemonClient {
     token: string,
     role: 'control' | 'stream',
     timeoutMs: number
-  ): Promise<DaemonEndpointIdentity | null> {
+  ): ReturnType<typeof sendDaemonHello> {
     return sendDaemonHello({
       socket,
       token,

@@ -1,38 +1,38 @@
+import { agentSessionCurrentContextRows } from '../../../../shared/agent-session-context-clear'
 import type {
   AgentJournalRenderItem,
   AgentJournalSubmission
 } from '../../../../shared/agent-session-journal-types'
-import { agentJournalSubmissionKey } from '../../../../shared/agent-session-journal-item-key'
-import type { NativeChatMessage } from '../../../../shared/native-chat-types'
-import {
-  reconcileStructuredAgentSessionOutbox,
-  type StructuredAgentSessionOutboxEntry
-} from '../../../../shared/structured-agent-session-outbox'
-import { projectStructuredItemsToNativeChat } from '../../../../shared/structured-agent-session-projection'
+import type { StructuredAgentSessionOptimisticMessage } from '../../../../shared/structured-agent-session-message-projection'
+import { projectStructuredAgentSessionMessages as projectMessages } from '../../../../shared/structured-agent-session-message-projection'
+import { projectStructuredQuestionMessages } from './structured-agent-question-projection'
 
+/** The desktop's transcript: a message the host accepted and then rejected stays where it was
+ *  sent, as not sent, unless the queue holds it as a card. */
 export function projectStructuredAgentSessionMessages(
   items: readonly AgentJournalRenderItem[],
-  outbox: readonly StructuredAgentSessionOutboxEntry[],
+  optimistic: readonly StructuredAgentSessionOptimisticMessage[],
   submissions: readonly AgentJournalSubmission[]
-): NativeChatMessage[] {
-  const optimistic = reconcileStructuredAgentSessionOutbox(outbox, submissions)
-  // Why: the host renders its own bubble off the submission WAL row, which lands
-  // while the dispatch is still `pending`. Reconciliation only retires the echo on
-  // `accepted`, so keying visibility on that alone double-rendered the bubble for
-  // the whole provider round trip. The entry itself stays for retry/unconfirmed.
-  const journalled = new Set(items.map((item) => item.itemId))
-  return [
-    ...projectStructuredItemsToNativeChat(items),
-    ...optimistic
-      .filter((entry) => !journalled.has(agentJournalSubmissionKey(entry.clientMessageId)))
-      .map(
-        (entry): NativeChatMessage => ({
-          id: agentJournalSubmissionKey(entry.clientMessageId),
-          role: 'user',
-          source: 'transcript',
-          timestamp: entry.queuedAt,
-          blocks: entry.body.blocks
-        })
-      )
-  ]
+) {
+  return projectMessages(
+    items,
+    optimistic,
+    submissions,
+    { rejectedInPlace: true },
+    projectStructuredQuestionMessages
+  )
+}
+
+export type StructuredPromptItem = AgentJournalRenderItem & {
+  body: Extract<AgentJournalRenderItem['body'], { kind: 'approval' | 'question' }>
+}
+
+export function pendingStructuredSessionPrompts(
+  items: AgentJournalRenderItem[]
+): StructuredPromptItem[] {
+  return agentSessionCurrentContextRows(items).items.filter(
+    (item): item is StructuredPromptItem =>
+      (item.body.kind === 'approval' || item.body.kind === 'question') &&
+      item.body.resolution.state === 'pending'
+  )
 }

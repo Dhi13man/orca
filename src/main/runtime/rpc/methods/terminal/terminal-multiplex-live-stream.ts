@@ -1,8 +1,9 @@
 import { sendMobileResizeRestream } from './terminal-snapshot-publication'
 import { updateViewportForClient } from './terminal-viewport-update'
-import type {
-  MultiplexSubscribeRequest,
-  TerminalMultiplexConnection
+import {
+  isMultiplexStreamAttached,
+  type MultiplexSubscribeRequest,
+  type TerminalMultiplexConnection
 } from './terminal-multiplex-connection'
 import type { MultiplexPublishedInitialState } from './terminal-multiplex-initial-snapshot'
 import type { TerminalMultiplexStream } from './terminal-stream-types'
@@ -70,14 +71,11 @@ export function activateMultiplexStream(
         (opcode, payload) => state.sendFrame(request.streamId, opcode, payload),
         event,
         () =>
-          !state.closed &&
-          streams.get(request.streamId) === stream &&
-          stream.resizeGeneration === resizeGeneration
+          isMultiplexStreamAttached(state, stream) && stream.resizeGeneration === resizeGeneration
       )
         .then((restreamed) => {
           if (
-            state.closed ||
-            streams.get(request.streamId) !== stream ||
+            !isMultiplexStreamAttached(state, stream) ||
             stream.resizeGeneration !== resizeGeneration
           ) {
             return
@@ -89,8 +87,7 @@ export function activateMultiplexStream(
         // Why: on re-stream failure, still emit the geometry-only Resized frame so the client never misses the resize.
         .catch(() => {
           if (
-            state.closed ||
-            streams.get(request.streamId) !== stream ||
+            !isMultiplexStreamAttached(state, stream) ||
             stream.resizeGeneration !== resizeGeneration
           ) {
             return
@@ -126,14 +123,19 @@ export function activateMultiplexStream(
       condition: 'exit',
       signal: stream.exitWaiterAbort.signal
     })
-    .then(() => {
+    .then((wait) => {
       if (streams.get(request.streamId) === stream) {
-        state.detachStream(request.streamId, true)
+        state.detachStream(
+          request.streamId,
+          wait.satisfied && wait.condition === 'exit' && wait.status === 'exited'
+            ? 'exited'
+            : 'unverifiable'
+        )
       }
     })
     .catch(() => {
       if (streams.get(request.streamId) === stream) {
-        state.detachStream(request.streamId, true)
+        state.detachStream(request.streamId, 'unverifiable')
       }
     })
 }

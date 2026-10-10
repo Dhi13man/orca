@@ -9,21 +9,25 @@ import {
   type SetStateAction
 } from 'react'
 import { translate } from '@/i18n/i18n'
+import { useMountedRef } from '@/hooks/useMountedRef'
 import { useAppStore } from '@/store'
 import type {
   BrowserAnnotationIntent,
   BrowserGrabPayload
 } from '../../../../../shared/browser-grab-types'
 import { formatGrabPayloadAsText } from './GrabConfirmationSheet'
-import type { GrabModeHook } from './useGrabMode'
 import {
   createBrowserAnnotationId,
   createBrowserAnnotationPayload,
-  DEFAULT_BROWSER_ANNOTATION_PRIORITY,
-  type BrowserOverlayViewport
+  DEFAULT_BROWSER_ANNOTATION_PRIORITY
 } from '../describe-page/browser-annotation-geometry'
+import { useBrowserPageAnnotationViewportTracking } from './use-browser-page-annotation-viewport-tracking'
 import { runBrowserGrabActionShortcut } from './browser-page-grab-action'
-import type { BrowserPageGrabToastState, GrabIntent } from '../describe-page/browser-page-types'
+import type {
+  BrowserPageGrabAnnotationsOptions,
+  BrowserPageGrabToastState,
+  GrabIntent
+} from '../describe-page/browser-page-types'
 
 const copiedGrabToastMessage = (): string =>
   translate(
@@ -47,27 +51,13 @@ export function useBrowserPageGrabAnnotations({
   isActive,
   grab,
   containerRef,
+  trackingContainer,
+  trackingScroller,
   webviewRef,
   setBrowserOverlayViewport,
   browserAnnotationsLength,
   setBrowserAnnotationTrayOpen
-}: {
-  /** Scopes the stored annotations. Stable for the life of the surface. */
-  browserTabId: string
-  /**
-   * The id main resolves to a guest. Defaults to the annotation scope, which is the same string
-   * for a browser page — a preview re-mints this on recovery, and its annotations must not be
-   * orphaned when it does.
-   */
-  toolTargetId?: string
-  isActive: boolean
-  grab: GrabModeHook
-  containerRef: MutableRefObject<HTMLDivElement | null>
-  webviewRef: MutableRefObject<Electron.WebviewTag | null>
-  setBrowserOverlayViewport: Dispatch<SetStateAction<BrowserOverlayViewport>>
-  browserAnnotationsLength: number
-  setBrowserAnnotationTrayOpen: Dispatch<SetStateAction<boolean>>
-}): {
+}: BrowserPageGrabAnnotationsOptions): {
   grabIntent: GrabIntent
   startGrabIntent: (nextIntent: GrabIntent) => void
   pendingAnnotationPayload: BrowserGrabPayload | null
@@ -81,8 +71,10 @@ export function useBrowserPageGrabAnnotations({
   grabMenuActionTakenRef: MutableRefObject<boolean>
   handleAddBrowserAnnotation: (comment: string, intent: BrowserAnnotationIntent) => void
   handleCancelPendingBrowserAnnotation: () => void
+  cancelPendingBrowserCapture: () => void
   handleGrabActionShortcut: (key: 'c' | 's') => void
 } {
+  const mountedRef = useMountedRef()
   const toolTargetIdRef = useRef(toolTargetId)
   const grabToastTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const [grabIntent, setGrabIntent] = useState<GrabIntent>('copy')
@@ -107,11 +99,7 @@ export function useBrowserPageGrabAnnotations({
   const recordFeatureInteraction = useAppStore((s) => s.recordFeatureInteraction)
   const addBrowserPageAnnotation = useAppStore((s) => s.addBrowserPageAnnotation)
 
-  useEffect(() => {
-    return () => {
-      clearTimeout(grabToastTimerRef.current)
-    }
-  }, [])
+  useEffect(() => () => clearTimeout(grabToastTimerRef.current), [])
 
   const dismissGrabToast = useCallback(() => {
     clearTimeout(grabToastTimerRef.current)
@@ -127,6 +115,9 @@ export function useBrowserPageGrabAnnotations({
 
   const showGrabToast = useCallback(
     (message: string, type: 'success' | 'error', payload?: BrowserGrabPayload | null) => {
+      if (!mountedRef.current) {
+        return
+      }
       let x = 0
       let y = 0
       let below = true
@@ -152,16 +143,19 @@ export function useBrowserPageGrabAnnotations({
       setGrabToast({ message, type, x, y, below, payload: payload ?? null })
       grabToastTimerRef.current = setTimeout(() => dismissGrabToast(), 2000)
     },
-    [containerRef, dismissGrabToast, webviewRef]
+    [containerRef, dismissGrabToast, mountedRef, webviewRef]
   )
 
-  // Why: the same in-guest picker powers two flows — Cmd/Ctrl+C copies, the toolbar action creates a pending annotation.
+  // The picker supports clipboard copying and independently dismissible annotation drafts.
   useEffect(() => {
     if (grab.state !== 'confirming' || !grab.payload) {
       return
     }
     if (grabIntent === 'annotate') {
-      setPendingAnnotationPayload(grab.payload)
+      // Loading may cancel the selection before React accepts this pending snapshot.
+      setPendingAnnotationPayload(() =>
+        grabPayloadRef.current === grab.payload ? grab.payload : null
+      )
       return
     }
     if (!grab.contextMenu) {
@@ -179,32 +173,17 @@ export function useBrowserPageGrabAnnotations({
     showGrabToast
   ])
 
-  useEffect(() => {
-    if (!isActive || (!pendingAnnotationPayload && browserAnnotationsLength === 0)) {
-      return
-    }
-
-    const observedContainer = containerRef.current
-    const resizeObserver =
-      typeof ResizeObserver === 'undefined' || !observedContainer
-        ? null
-        : new ResizeObserver(() => {
-            setBrowserOverlayViewport((current) => ({ ...current, version: current.version + 1 }))
-          })
-    if (resizeObserver && observedContainer) {
-      resizeObserver.observe(observedContainer)
-    }
-
-    return () => {
-      resizeObserver?.disconnect()
-    }
-  }, [
-    browserAnnotationsLength,
-    containerRef,
+  useBrowserPageAnnotationViewportTracking({
     isActive,
-    pendingAnnotationPayload,
+    pendingAnnotation: pendingAnnotationPayload,
+    annotationCount: browserAnnotationsLength,
+    container: trackingContainer ?? containerRef.current,
+    scroller:
+      trackingScroller ??
+      containerRef.current?.querySelector<HTMLDivElement>('[data-browser-page-scroller]') ??
+      null,
     setBrowserOverlayViewport
-  ])
+  })
 
   const startGrabIntent = useCallback(
     (nextIntent: GrabIntent): void => {
@@ -272,7 +251,7 @@ export function useBrowserPageGrabAnnotations({
 
   const handleAddBrowserAnnotation = useCallback(
     (comment: string, intent: BrowserAnnotationIntent): void => {
-      const payload = pendingAnnotationPayload
+      const payload = pendingAnnotationPayloadRef.current
       if (!payload) {
         return
       }
@@ -286,6 +265,7 @@ export function useBrowserPageGrabAnnotations({
         payload: createBrowserAnnotationPayload(payload)
       })
       recordFeatureInteraction('browser-annotations')
+      pendingAnnotationPayloadRef.current = null
       setPendingAnnotationPayload(null)
       setBrowserAnnotationTrayOpen(true)
       showGrabToast(annotationAddedGrabToastMessage(), 'success', payload)
@@ -295,7 +275,6 @@ export function useBrowserPageGrabAnnotations({
       addBrowserPageAnnotation,
       browserTabId,
       grab,
-      pendingAnnotationPayload,
       recordFeatureInteraction,
       setBrowserAnnotationTrayOpen,
       showGrabToast
@@ -303,11 +282,21 @@ export function useBrowserPageGrabAnnotations({
   )
 
   const handleCancelPendingBrowserAnnotation = useCallback((): void => {
+    pendingAnnotationPayloadRef.current = null
     setPendingAnnotationPayload(null)
     if (grabIntent === 'annotate' && grab.state === 'confirming') {
       grab.rearm()
     }
   }, [grab, grabIntent])
+
+  const cancelPendingBrowserCapture = useCallback((): void => {
+    grabRef.current.cancel()
+    pendingAnnotationPayloadRef.current = null
+    grabPayloadRef.current = null
+    setPendingAnnotationPayload(null)
+    clearTimeout(grabToastTimerRef.current)
+    setGrabToast(null)
+  }, [])
 
   return {
     grabIntent,
@@ -323,6 +312,7 @@ export function useBrowserPageGrabAnnotations({
     grabMenuActionTakenRef,
     handleAddBrowserAnnotation,
     handleCancelPendingBrowserAnnotation,
+    cancelPendingBrowserCapture,
     handleGrabActionShortcut
   }
 }

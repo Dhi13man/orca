@@ -1,7 +1,18 @@
+import {
+  hasExplicitWorkspaceReviewSelection,
+  getWorkspaceReviewPersistenceUpdates,
+  getWorkspaceReviewRefreshHints
+} from './workspace-attachment-review-selection'
+import {
+  getWorkspaceAttachments,
+  normalizeWorkspaceAttachmentUpdate
+} from '../../../../../../shared/workspace-attachments'
+import { normalizeGitHubPRSuppressionUpdate } from '../../../../../../shared/worktree/github-pr-suppression'
 import type { WorktreeSlice } from '../../worktree-helpers'
 import type { WorktreeSliceGet, WorktreeSliceSet } from '../listing/worktree-slice-types'
 import { translate } from '@/i18n/i18n'
 import { isPositiveHostedReviewNumber } from '../../../../../../shared/hosted-review'
+import { displayNameUpdatePinsLabel } from '../../../../../../shared/worktree/display-name-provenance'
 import { parseWorkspaceKey } from '../../../../../../shared/workspace-scope'
 import { applyWorktreeUpdates, getRepoIdFromWorktreeId } from '../../worktree-helpers'
 import { getHostedReviewCacheKey } from '../../hosted-review-cache-identity'
@@ -13,8 +24,6 @@ import {
 } from '../listing/detected-worktree-meta'
 import {
   bumpHostedReviewLinkMutationGeneration,
-  clearOlderHostedReviewLinksForReplacement,
-  getHostedReviewLinkForMetaRefresh,
   hasChangedHostedReviewLinkUpdates,
   hasHostedReviewLinkUpdates
 } from './hosted-review-link-mutation'
@@ -45,9 +54,19 @@ export function createUpdateWorktreeMeta(
     if (shouldApplyUpdate && !shouldApplyUpdate(existingWorktree)) {
       return { ok: true }
     }
+    const mutationUpdates =
+      updates.linkedItems === undefined
+        ? updates
+        : {
+            ...updates,
+            linkedItems: updates.linkedItems,
+            linkedItemsBase: updates.linkedItemsBase ?? getWorkspaceAttachments(existingWorktree),
+            linkedItemsSelectionChanged:
+              updates.linkedItemsSelectionChanged ?? hasExplicitWorkspaceReviewSelection(updates)
+          }
     const workspaceScope = parseWorkspaceKey(worktreeId)
     if (workspaceScope?.type === 'folder') {
-      const folderUpdates = getFolderWorkspaceMetaUpdates(updates)
+      const folderUpdates = getFolderWorkspaceMetaUpdates(mutationUpdates)
       if (Object.keys(folderUpdates).length === 0) {
         return { ok: true }
       }
@@ -56,7 +75,8 @@ export function createUpdateWorktreeMeta(
         // reporting ok would show the dialog a save that silently undid itself.
         const updated = await get().updateFolderWorkspace(
           workspaceScope.folderWorkspaceId,
-          folderUpdates
+          folderUpdates,
+          { executionHostId }
         )
         return updated
           ? { ok: true }
@@ -72,9 +92,7 @@ export function createUpdateWorktreeMeta(
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
       }
     }
-    const normalizedUpdates = existingWorktree
-      ? clearOlderHostedReviewLinksForReplacement(updates, existingWorktree)
-      : updates
+    let normalizedUpdates = normalizeWorkspaceAttachmentUpdate(existingWorktree, mutationUpdates)
     // Why: manual PR linking supplies only the number; resolve the head branch so Push targets the review branch.
     const linkedPrForPushTarget = isPositiveHostedReviewNumber(normalizedUpdates.linkedPR)
       ? normalizedUpdates.linkedPR
@@ -95,23 +113,28 @@ export function createUpdateWorktreeMeta(
             linkedPrForPushTarget
           )
         : undefined
-    const existingHostedReviewPushTargetLookup = existingWorktree
-      ? getHostedReviewPushTargetLookup(existingWorktree)
-      : null
-    const nextHostedReviewPushTargetLookup = existingWorktree
-      ? getHostedReviewPushTargetLookup({ ...existingWorktree, ...normalizedUpdates })
-      : null
-    // Why: a pushTarget derived from a linked review must not keep steering pushes after it's unlinked or replaced.
-    const shouldClearStaleHostedReviewPushTarget =
-      Boolean(existingWorktree?.pushTarget) &&
-      normalizedUpdates.pushTarget === undefined &&
-      resolvedPushTarget === undefined &&
-      existingHostedReviewPushTargetLookup !== null &&
-      existingHostedReviewPushTargetLookup.key !== nextHostedReviewPushTargetLookup?.key
     const worktreeForUpdate = get().getKnownWorktreeById(worktreeId, executionHostId)
     if (shouldApplyUpdate && !shouldApplyUpdate(worktreeForUpdate)) {
       return { ok: true }
     }
+    normalizedUpdates = normalizeGitHubPRSuppressionUpdate(
+      normalizeWorkspaceAttachmentUpdate(worktreeForUpdate, mutationUpdates)
+    )
+    const currentResolvedPushTarget =
+      normalizedUpdates.linkedPR === linkedPrForPushTarget ? resolvedPushTarget : undefined
+    const existingHostedReviewPushTargetLookup = worktreeForUpdate
+      ? getHostedReviewPushTargetLookup(worktreeForUpdate)
+      : null
+    const nextHostedReviewPushTargetLookup = worktreeForUpdate
+      ? getHostedReviewPushTargetLookup({ ...worktreeForUpdate, ...normalizedUpdates })
+      : null
+    // A lookup can finish after another editor changes the selected review.
+    const shouldClearStaleHostedReviewPushTarget =
+      Boolean(worktreeForUpdate?.pushTarget) &&
+      normalizedUpdates.pushTarget === undefined &&
+      currentResolvedPushTarget === undefined &&
+      existingHostedReviewPushTargetLookup !== null &&
+      existingHostedReviewPushTargetLookup.key !== nextHostedReviewPushTargetLookup?.key
     const shouldRefreshHostedReview = Boolean(
       worktreeForUpdate && hasChangedHostedReviewLinkUpdates(normalizedUpdates, worktreeForUpdate)
     )
@@ -124,11 +147,15 @@ export function createUpdateWorktreeMeta(
     const reviewBranch = worktreeForUpdate?.branch.replace(/^refs\/heads\//, '')
 
     // Why: bump lastActivityAt on comment edits so the time-decay sort doesn't drop a just-touched worktree.
-    const targetEnriched = resolvedPushTarget
-      ? { ...normalizedUpdates, pushTarget: resolvedPushTarget }
+    const displayNameProvenance =
+      'displayName' in normalizedUpdates
+        ? { displayNameIsPinned: displayNameUpdatePinsLabel(normalizedUpdates.displayName) }
+        : {}
+    const targetEnriched = currentResolvedPushTarget
+      ? { ...normalizedUpdates, ...displayNameProvenance, pushTarget: currentResolvedPushTarget }
       : shouldClearStaleHostedReviewPushTarget
-        ? { ...normalizedUpdates, pushTarget: undefined }
-        : normalizedUpdates
+        ? { ...normalizedUpdates, ...displayNameProvenance, pushTarget: undefined }
+        : { ...normalizedUpdates, ...displayNameProvenance }
     const renameCleared =
       'displayName' in targetEnriched
         ? {
@@ -146,7 +173,7 @@ export function createUpdateWorktreeMeta(
         shouldApplyUpdate &&
         !shouldApplyUpdate(findKnownWorktreeById(s, worktreeId, executionHostId))
       ) {
-        return {}
+        return s
       }
       didApply = true
       const nextWorktrees = applyWorktreeUpdates(
@@ -201,7 +228,7 @@ export function createUpdateWorktreeMeta(
         !cacheKey &&
         !prCacheKey
       ) {
-        return {}
+        return s
       }
 
       const nextHostedReviewCache =
@@ -246,7 +273,7 @@ export function createUpdateWorktreeMeta(
       await persistWorktreeMeta(
         settingsForWorktreeOwner(get(), worktreeId, executionHostId),
         worktreeId,
-        enriched,
+        getWorkspaceReviewPersistenceUpdates(mutationUpdates, enriched),
         executionHostId ?? existingWorktree?.hostId,
         worktreeForUpdate?.identity?.key
       )
@@ -260,31 +287,7 @@ export function createUpdateWorktreeMeta(
         void get().fetchHostedReviewForBranch(reviewRepo.path, reviewBranch, {
           repoId: reviewRepo.id,
           repoOwnerExecutionHostId: executionHostId ?? worktreeForUpdate?.hostId,
-          linkedGitHubPR: getHostedReviewLinkForMetaRefresh(
-            targetEnriched,
-            worktreeForUpdate,
-            'linkedPR'
-          ),
-          linkedGitLabMR: getHostedReviewLinkForMetaRefresh(
-            targetEnriched,
-            worktreeForUpdate,
-            'linkedGitLabMR'
-          ),
-          linkedBitbucketPR: getHostedReviewLinkForMetaRefresh(
-            targetEnriched,
-            worktreeForUpdate,
-            'linkedBitbucketPR'
-          ),
-          linkedAzureDevOpsPR: getHostedReviewLinkForMetaRefresh(
-            targetEnriched,
-            worktreeForUpdate,
-            'linkedAzureDevOpsPR'
-          ),
-          linkedGiteaPR: getHostedReviewLinkForMetaRefresh(
-            targetEnriched,
-            worktreeForUpdate,
-            'linkedGiteaPR'
-          ),
+          ...getWorkspaceReviewRefreshHints(targetEnriched, worktreeForUpdate),
           force: true
         })
       }

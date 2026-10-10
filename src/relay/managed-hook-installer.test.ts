@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { AGENT_HOOK_INSTALL_MANAGED_HOOKS_METHOD } from '../shared/agent-hook-relay'
-import type { MethodHandler, RequestContext } from './dispatcher'
+import type { MethodHandler, RequestContext } from '../wsl-guest/dispatcher'
 import { registerManagedHookInstaller, type ManagedHookRuntime } from './managed-hook-installer'
 
 function captureHandler(loadRuntime: () => ManagedHookRuntime): MethodHandler {
@@ -93,5 +93,23 @@ describe('registerManagedHookInstaller', () => {
     await expect(handler({ agents: ['unknown'] }, context())).rejects.toThrow(
       'invalid_managed_hook_agents'
     )
+  })
+
+  it('forwards only a parseable Claude execution-host version', async () => {
+    const installManagedHooks = vi.fn().mockResolvedValue({ installers: 1, errors: 0 })
+    const handler = captureHandler(() => ({ installManagedHooks }))
+
+    await handler({ agents: ['claude'], claudeVersion: '2.1.261 (Claude Code)' }, context())
+    await handler({ agents: ['claude'], claudeVersion: 'unknown' }, context())
+
+    expect(installManagedHooks).toHaveBeenNthCalledWith(1, {
+      signal: undefined,
+      agents: ['claude'],
+      claudeVersion: '2.1.261'
+    })
+    expect(installManagedHooks).toHaveBeenNthCalledWith(2, {
+      signal: undefined,
+      agents: ['claude']
+    })
   })
 })

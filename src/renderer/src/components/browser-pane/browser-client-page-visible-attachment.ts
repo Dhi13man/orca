@@ -2,12 +2,29 @@ import {
   isWebviewDragPassthroughActive,
   registerWebviewDragPassthroughSurface
 } from './host-guest/webview-drag-passthrough'
+import { registerBrowserClientPagePositionSync } from './browser-client-page-position-driver'
+import type { BrowserClientPageRendererIdentity as RendererPageIdentity } from '../../../../shared/browser-client-page-renderer-protocol'
 import type { BrowserClientRetainedRendererPage as RetainedPage } from './browser-client-page-retained-state'
 
 export type BrowserClientPageVisibleAttachment = {
   webview: Electron.WebviewTag
   nextMetadataRevision(): number
   detach(): void
+}
+
+export function findBrowserClientRetainedPageForAttachment(
+  pages: Map<string, RetainedPage>,
+  identity: Pick<RendererPageIdentity, 'browserPageId' | 'pageHostGeneration'>
+): RetainedPage | undefined {
+  for (const page of pages.values()) {
+    if (
+      page.identity.browserPageId === identity.browserPageId &&
+      page.identity.pageHostGeneration === identity.pageHostGeneration
+    ) {
+      return page
+    }
+  }
+  return undefined
 }
 
 export function attachBrowserClientRetainedPage(
@@ -24,9 +41,9 @@ export function attachBrowserClientRetainedPage(
   if (!page.host.parentElement) {
     throw new Error('browser_client_page_renderer_retained_host_unavailable')
   }
-  const attachment = { container }
-  page.visibleAttachment = attachment
   const stopTrackingViewport = showRetainedHost(page.host, container)
+  const attachment = { container, stopTrackingViewport }
+  page.visibleAttachment = attachment
   let detached = false
   return {
     webview: page.webview,
@@ -108,19 +125,17 @@ function showRetainedHost(host: HTMLDivElement, container: HTMLElement): () => v
   window.addEventListener('scroll', syncViewport, true)
   // Why: a pane can MOVE without resizing (tab dragged across an even split, sidebar toggles),
   // which fires no resize/scroll event — the overlay would keep painting at the old pane's rect.
-  let positionFrame: number | null = null
-  const trackPosition = (): void => {
-    syncViewport()
-    positionFrame = requestAnimationFrame(trackPosition)
-  }
-  if (typeof requestAnimationFrame === 'function') {
-    positionFrame = requestAnimationFrame(trackPosition)
-  }
+  // The per-frame re-read is shared with every other shown host by the position driver.
+  const releasePositionSync = registerBrowserClientPagePositionSync(syncViewport)
   syncViewport()
+  // Idempotent: the registry releases a page it tears down, and the pane's own detach follows.
+  let stopped = false
   return () => {
-    if (positionFrame !== null) {
-      cancelAnimationFrame(positionFrame)
+    if (stopped) {
+      return
     }
+    stopped = true
+    releasePositionSync()
     observer?.disconnect()
     window.removeEventListener('resize', syncViewport)
     window.removeEventListener('scroll', syncViewport, true)

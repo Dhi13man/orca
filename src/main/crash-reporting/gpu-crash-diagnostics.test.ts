@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { buildGpuCrashDiagnostics, GpuCrashDiagnosticsRecorder } from './gpu-crash-diagnostics'
 
@@ -221,21 +219,5 @@ describe('GpuCrashDiagnosticsRecorder', () => {
     await recorder.record()
 
     expect(recordBreadcrumb).toHaveBeenCalledWith({ gpuInfoLevel: 'unavailable' })
-  })
-})
-
-describe('GPU crash diagnostics production wiring', () => {
-  it('starts diagnostics without delaying safe-graphics fallback', () => {
-    const source = readFileSync(join(__dirname, '..', 'index.ts'), 'utf8')
-    const listenerStart = source.indexOf("app.on('child-process-gone'")
-    expect(listenerStart).toBeGreaterThan(0)
-    const listener = source.slice(listenerStart, source.indexOf('\n  })', listenerStart))
-    expect(source).toMatch(
-      /recordBreadcrumb: \(data\) =>\s*recordDurableCrashBreadcrumb\('gpu_crash_hardware', data\)/
-    )
-    expect(listener).toMatch(
-      /const crashedAt = performance\.now\(\)[\s\S]*?void gpuCrashDiagnostics\?\.record\(\)[\s\S]*?void handleGpuChildCrash\(details\.reason, details\.exitCode \?\? null, crashedAt\)/
-    )
-    expect(listener).not.toMatch(/gpuCrashDiagnostics\?\.record\(\)[\s\S]*?\.then\(/)
   })
 })

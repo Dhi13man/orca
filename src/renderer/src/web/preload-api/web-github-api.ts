@@ -24,7 +24,7 @@ export function createGitHubApi(): WebGitHubApi {
       route<WebGitHubResult<'repoUpstream'>>(GITHUB_WEB_RPC_METHODS.repoUpstream, args),
     prForBranch: (args) =>
       route<WebGitHubResult<'prForBranch'>>(GITHUB_WEB_RPC_METHODS.prForBranch, args),
-    refreshPRNow: async ({ candidate }) => {
+    refreshPRNow: async ({ candidate, reason }) => {
       const acceptMergedFallbackPR =
         candidate.linkedPRNumber == null &&
         candidate.fallbackPRNumber != null &&
@@ -36,6 +36,7 @@ export function createGitHubApi(): WebGitHubApi {
         linkedPRNumber: candidate.linkedPRNumber ?? null,
         fallbackPRNumber: candidate.fallbackPRNumber ?? null,
         currentHeadOid: candidate.currentHeadOid ?? null,
+        ...(reason ? { reason } : {}),
         ...(acceptMergedFallbackPR ? { acceptMergedFallbackPR: true } : {})
       })
       return pr
@@ -128,6 +129,16 @@ export function createGitHubApi(): WebGitHubApi {
     starOrca: () => Promise.resolve(false),
     rateLimit: (args) =>
       route<WebGitHubResult<'rateLimit'>>(GITHUB_WEB_RPC_METHODS.rateLimit, args),
+    listBindableAccounts: (args) =>
+      route<WebGitHubResult<'listBindableAccounts'>>(
+        GITHUB_WEB_RPC_METHODS.listBindableAccounts,
+        args
+      ),
+    validateAccountBinding: (args) =>
+      route<WebGitHubResult<'validateAccountBinding'>>(
+        GITHUB_WEB_RPC_METHODS.validateAccountBinding,
+        args
+      ),
     diagnoseAuth: () =>
       Promise.resolve({
         ok: false,

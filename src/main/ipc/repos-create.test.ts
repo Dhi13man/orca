@@ -31,7 +31,6 @@ const {
   mockStore: {
     getRepos: vi.fn().mockReturnValue([]),
     addRepo: vi.fn(),
-    removeProject: vi.fn(),
     getRepo: vi.fn(),
     updateRepo: vi.fn(),
     getSettings: vi.fn()
@@ -61,8 +60,11 @@ vi.mock('fs/promises', () => ({
   rm: rmMock
 }))
 
+// `availableParallelism` is read at module load by the git admission scheduler,
+// which this module graph reaches; a partial `os` mock breaks that import.
 vi.mock('os', () => ({
-  homedir: homedirMock
+  homedir: homedirMock,
+  availableParallelism: () => 8
 }))
 
 vi.mock('../git/runner', () => ({
@@ -148,7 +150,7 @@ describe('repos:create', () => {
     gitExecFileAsyncMock.mockReset().mockResolvedValue({ stdout: '', stderr: '' })
     homedirMock.mockReset().mockReturnValue('/Users/alice')
 
-    registerRepoHandlers(mockWindow as never, mockStore as never)
+    registerRepoHandlers(mockWindow as never, mockStore as never, {} as never)
   })
 
   it('registers the repos:create handler', () => {

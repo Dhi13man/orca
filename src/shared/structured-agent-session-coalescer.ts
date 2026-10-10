@@ -1,10 +1,14 @@
 import type { AgentSessionSubscribeEvent } from './agent-session-wire'
+import { latestTurnAfterStructuredAgentSessionBatch } from './structured-agent-session-live-turn'
 
 export const STRUCTURED_AGENT_SESSION_CLIENT_COALESCE_MS = 48
 
 function bypassCoalescing(event: AgentSessionSubscribeEvent): boolean {
   return (
     event.type !== 'batch' ||
+    // A queue list lands at once: held, the card would be missing for a moment after the send's
+    // own "Sending…" card went with its queued answer.
+    event.queuedMessages !== undefined ||
     event.batch.items.some((item) => item.body.kind !== 'message' || item.body.role !== 'assistant')
   )
 }
@@ -23,8 +27,13 @@ function mergeBatch(
   for (const submission of right.batch.submissions) {
     submissions.set(submission.clientMessageId, submission)
   }
+  // As applying both in turn would leave it, so an older host's rows still drop a stale claim.
+  const latestTurn = latestTurnAfterStructuredAgentSessionBatch(left.latestTurn, right)
   return {
     type: 'batch',
+    ...(right.commands !== undefined || left.commands !== undefined
+      ? { commands: right.commands !== undefined ? right.commands : left.commands }
+      : {}),
     sessionId: right.sessionId,
     batch: {
       cursor: right.batch.cursor,
@@ -35,7 +44,18 @@ function mergeBatch(
     ...(right.fence !== undefined || left.fence !== undefined
       ? { fence: right.fence ?? left.fence }
       : {}),
-    ...(right.handoff || left.handoff ? { handoff: right.handoff ?? left.handoff } : {})
+    ...(right.backgroundTasks !== undefined || left.backgroundTasks !== undefined
+      ? {
+          backgroundTasks:
+            right.backgroundTasks !== undefined
+              ? right.backgroundTasks
+              : (left.backgroundTasks ?? null)
+        }
+      : {}),
+    ...(right.activity !== undefined || left.activity !== undefined
+      ? { activity: right.activity !== undefined ? right.activity : (left.activity ?? null) }
+      : {}),
+    ...(latestTurn !== undefined ? { latestTurn } : {})
   }
 }
 

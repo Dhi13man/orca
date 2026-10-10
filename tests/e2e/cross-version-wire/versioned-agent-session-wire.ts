@@ -1,9 +1,10 @@
-import { readFileSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import type * as ClientReducer from '../../../src/shared/structured-agent-session-reducer'
+import type * as ClientProjection from '../../../src/shared/structured-agent-session-projection'
+import type * as ClientSchemas from '../../../src/shared/agent-session-journal-schemas'
+import type { sendPlan } from '../../../src/main/native-chat/agent-session-wire/structured-agent-session-mutation-plans'
 import {
   importReleaseCheckoutModule,
   materializeReleaseCheckout,
-  REPO_ROOT,
   type ReleaseCheckout
 } from './release-checkout'
 
@@ -16,6 +17,22 @@ import {
 
 export const WORKING_TREE = 'working-tree' as const
 
+export type AgentSessionClientProjection = Pick<
+  typeof ClientReducer,
+  'EMPTY_STRUCTURED_AGENT_SESSION' | 'reduceStructuredAgentSession'
+> &
+  Pick<typeof ClientProjection, 'projectStructuredItemsToNativeChat'> &
+  Pick<typeof ClientSchemas, 'AgentJournalRenderItemSchema'>
+
+/** Each build owns its own copy of the module-level host slot, so a host installed
+ *  in current source is invisible to a release checkout's dispatcher. */
+const STRUCTURED_HOST_REGISTRY =
+  '/src/main/native-chat/agent-session-wire/structured-agent-session-registry.ts'
+const MUTATION_PLANS =
+  '/src/main/native-chat/agent-session-wire/structured-agent-session-mutation-plans.ts'
+const MUTATION_ADMISSION =
+  '/src/main/native-chat/agent-session-wire/structured-agent-session-mutation-admission.ts'
+
 export type RpcReply = {
   id: string
   ok: boolean
@@ -27,6 +44,7 @@ export type RpcReply = {
 export type RpcClientIdentity = {
   clientKind?: 'mobile' | 'runtime'
   clientCapabilities?: readonly string[]
+  updateClientCapabilities?: (capabilities: readonly string[]) => void
   connectionId?: string
   clientId?: string
 }
@@ -53,36 +71,88 @@ export type AgentSessionWireBuild = {
   /** A dispatcher carrying a method set this build really ships, so an
    *  unknown-method answer is about the method and not an empty registry. */
   createDispatcher: (runtime: unknown) => AgentSessionDispatcher
+  /** Put a host in *this* build's slot. Loaded on call so a release that predates
+   *  the surface stays loadable, and throws rather than no-opping so a build with
+   *  no slot cannot read as a surface that answered. */
+  installStructuredHost: (host: unknown) => Promise<void>
+  /** This build's own admission of the `agentSession.send` params its host was handed. With no
+   *  journal it stops after the fingerprint check: a fingerprint it derives differently refuses
+   *  as `fingerprintMismatch`, one it agrees with as `sessionNotAttached`. */
+  admitSend: (sent: SentMessage) => Promise<unknown>
+  clientProjection: () => Promise<AgentSessionClientProjection>
+}
+
+async function loadClientProjection(
+  load: (path: string) => Promise<Record<string, unknown>>
+): Promise<AgentSessionClientProjection> {
+  const modules = await Promise.all([
+    load('/src/shared/structured-agent-session-reducer.ts'),
+    load('/src/shared/structured-agent-session-projection.ts'),
+    load('/src/shared/agent-session-journal-schemas.ts')
+  ])
+  const client = Object.assign({}, ...modules)
+  if (
+    typeof client.reduceStructuredAgentSession !== 'function' ||
+    typeof client.projectStructuredItemsToNativeChat !== 'function' ||
+    !client.EMPTY_STRUCTURED_AGENT_SESSION ||
+    typeof client.AgentJournalRenderItemSchema?.parse !== 'function'
+  ) {
+    throw new Error('Release does not export the structured transcript reader')
+  }
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: checked release exports; skew tests exercise admission, reducer and transcript signatures against real host frames.
+  return client as AgentSessionClientProjection
 }
 
 type DispatcherModule = {
   RpcDispatcher: new (options: { runtime: unknown; methods: unknown[] }) => AgentSessionDispatcher
 }
 
-// A dotted literal in a `name:` position. Deliberately loose: over-matching only
-// makes "this build registers no agentSession method" a stronger claim.
-const METHOD_NAME = /\bname:\s*'([A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z0-9]+)+)'/g
-
-/**
- * Method names declared under `runtime/rpc/methods`, scanned rather than imported:
- * a released build's method manifest reaches Electron, which cannot load here.
- */
-function scanMethodNames(root: string): string[] {
-  const names = new Set<string>()
-  const walk = (directory: string): void => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const full = join(directory, entry.name)
-      if (entry.isDirectory()) {
-        walk(full)
-      } else if (entry.isFile() && entry.name.endsWith('.ts')) {
-        for (const match of readFileSync(full, 'utf8').matchAll(METHOD_NAME)) {
-          names.add(match[1]!)
-        }
+function registeredMethodNames(methods: readonly unknown[]): string[] {
+  return methods
+    .flatMap((method) => {
+      if (!method || typeof method !== 'object' || !('name' in method)) {
+        return []
       }
-    }
+      const { name } = method
+      return typeof name === 'string' ? [name] : []
+    })
+    .sort()
+}
+
+function applyStructuredHost(module: Record<string, unknown>, label: string, host: unknown): void {
+  const install = module.setStructuredAgentSessionHost
+  if (typeof install !== 'function') {
+    throw new Error(`Build ${label} publishes no structured agent-session host registry`)
   }
-  walk(join(root, 'src', 'main', 'runtime', 'rpc', 'methods'))
-  return [...names].sort()
+  ;(install as (next: unknown) => void)(host)
+}
+
+/** The `agentSession.send` params a host is handed. */
+export type SentMessage = Parameters<typeof sendPlan>[0]
+
+type SendAdmissionModules = {
+  sendPlan: (sent: SentMessage) => unknown
+  admitAndRunAgentSessionMutation: (request: {
+    plan: unknown
+    envelope: SentMessage['envelope']
+    journal: () => undefined
+    store: { getRecord: () => null }
+  }) => Promise<unknown>
+}
+
+async function admitSend(
+  plans: Record<string, unknown>,
+  admission: Record<string, unknown>,
+  sent: SentMessage
+): Promise<unknown> {
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the build's own send plan and admission; the absent session and journal stop both admission routes after fingerprint validation. A drifted export or shape fails this check.
+  const build = { ...plans, ...admission } as unknown as SendAdmissionModules
+  return build.admitAndRunAgentSessionMutation({
+    plan: build.sendPlan(sent),
+    envelope: sent.envelope,
+    journal: () => undefined,
+    store: { getRecord: () => null }
+  })
 }
 
 function capabilityStrings(module: Record<string, unknown>): readonly string[] {
@@ -94,52 +164,82 @@ function capabilityStrings(module: Record<string, unknown>): readonly string[] {
 }
 
 async function loadWorkingTreeBuild(): Promise<AgentSessionWireBuild> {
-  const [protocol, dispatcher, structured, aiVault, sessionTabs, terminal] = await Promise.all([
+  const [protocol, dispatcher, methodRegistry] = await Promise.all([
     import('../../../src/shared/protocol-version'),
     import('../../../src/main/runtime/rpc/dispatcher'),
-    import('../../../src/main/runtime/rpc/methods/structured-agent-session'),
-    import('../../../src/main/runtime/rpc/methods/ai-vault'),
-    import('../../../src/main/runtime/rpc/methods/session-tabs'),
-    import('../../../src/main/runtime/rpc/methods/terminal')
+    import('../../../src/main/runtime/rpc/methods')
   ])
   const module = dispatcher as unknown as DispatcherModule
+  const methods = methodRegistry.ALL_RPC_METHODS as unknown[]
   return {
     label: WORKING_TREE,
     revision: WORKING_TREE,
     capabilities: capabilityStrings(protocol as unknown as Record<string, unknown>),
     protocolVersion: protocol.RUNTIME_PROTOCOL_VERSION,
-    methodNames: scanMethodNames(REPO_ROOT),
+    methodNames: registeredMethodNames(methods),
+    clientProjection: async () => {
+      const [reducer, projection, schemas] = await Promise.all([
+        import('../../../src/shared/structured-agent-session-reducer'),
+        import('../../../src/shared/structured-agent-session-projection'),
+        import('../../../src/shared/agent-session-journal-schemas')
+      ])
+      return { ...reducer, ...projection, ...schemas }
+    },
     createDispatcher: (runtime) =>
       new module.RpcDispatcher({
         runtime,
-        methods: [
-          ...(structured.STRUCTURED_AGENT_SESSION_METHODS as unknown[]),
-          ...(aiVault.AI_VAULT_METHODS as unknown[]),
-          ...(sessionTabs.SESSION_TAB_METHODS as unknown[]),
-          ...(terminal.TERMINAL_METHODS as unknown[])
-        ]
-      })
+        methods
+      }),
+    installStructuredHost: async (host) => {
+      const registry =
+        await import('../../../src/main/native-chat/agent-session-wire/structured-agent-session-registry')
+      applyStructuredHost(registry as unknown as Record<string, unknown>, WORKING_TREE, host)
+    },
+    admitSend: async (sent) => {
+      const [plans, admission] = await Promise.all([
+        import('../../../src/main/native-chat/agent-session-wire/structured-agent-session-mutation-plans'),
+        import('../../../src/main/native-chat/agent-session-wire/structured-agent-session-mutation-admission')
+      ])
+      return admitSend(plans, admission, sent)
+    }
   }
 }
 
 async function loadReleaseBuild(checkout: ReleaseCheckout): Promise<AgentSessionWireBuild> {
-  const [protocol, dispatcher, terminalMethods] = await Promise.all([
+  const [protocol, dispatcher, methodRegistry] = await Promise.all([
     importReleaseCheckoutModule(checkout, '/src/shared/protocol-version.ts'),
     importReleaseCheckoutModule(checkout, '/src/main/runtime/rpc/dispatcher.ts'),
-    importReleaseCheckoutModule(checkout, '/src/main/runtime/rpc/methods/terminal.ts')
+    importReleaseCheckoutModule(checkout, '/src/main/runtime/rpc/methods/index.ts')
   ])
   const module = dispatcher as unknown as DispatcherModule
+  const methods = methodRegistry.ALL_RPC_METHODS as unknown[]
   return {
     label: checkout.ref,
     revision: checkout.commit,
     capabilities: capabilityStrings(protocol),
     protocolVersion: protocol.RUNTIME_PROTOCOL_VERSION as number,
-    methodNames: scanMethodNames(checkout.root),
+    methodNames: registeredMethodNames(methods),
+    clientProjection: () =>
+      loadClientProjection((path) => importReleaseCheckoutModule(checkout, path)),
     createDispatcher: (runtime) =>
       new module.RpcDispatcher({
         runtime,
-        methods: terminalMethods.TERMINAL_METHODS as unknown[]
-      })
+        methods
+      }),
+    installStructuredHost: async (host) => {
+      applyStructuredHost(
+        await importReleaseCheckoutModule(checkout, STRUCTURED_HOST_REGISTRY),
+        checkout.ref,
+        host
+      )
+    },
+    admitSend: async (sent) => {
+      const [plans, admission] = await Promise.all([
+        importReleaseCheckoutModule(checkout, MUTATION_PLANS),
+        importReleaseCheckoutModule(checkout, MUTATION_ADMISSION)
+      ])
+      return admitSend(plans, admission, sent)
+    }
   }
 }
 

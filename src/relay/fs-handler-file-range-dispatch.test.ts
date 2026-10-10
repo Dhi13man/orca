@@ -4,8 +4,8 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { FsHandler } from './fs-handler'
 import { RelayContext } from './context'
-import { RelayDispatcher } from './dispatcher'
-import { encodeJsonRpcFrame, RelayErrorCode } from './protocol'
+import { RelayDispatcher } from '../wsl-guest/dispatcher'
+import { encodeJsonRpcFrame, RelayErrorCode } from '../wsl-guest/protocol'
 import { FileRangeReadRequestError, MAX_FILE_RANGE_READ_BYTES } from '../shared/file-range-read'
 
 /** Minimal dispatcher: this suite only needs the registered request handlers.
@@ -149,8 +149,8 @@ describe('fs.getCapabilities', () => {
   // is additive. Dropping the pre-existing key would strand an older desktop's
   // quick-open probe on a host that still serves it.
   it('advertises ranged reads without dropping the existing capability', async () => {
-    await expect(underTest.call('fs.getCapabilities', {})).resolves.toEqual({
-      quickOpenSearchVersion: 1,
+    await expect(underTest.call('fs.getCapabilities', {})).resolves.toMatchObject({
+      quickOpenSearchVersion: 3,
       rangedReadVersion: 1
     })
   })

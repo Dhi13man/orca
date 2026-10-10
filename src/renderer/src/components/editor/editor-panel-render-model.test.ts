@@ -31,7 +31,7 @@ function renderModel(args: {
   fileContents?: Record<string, FileContent>
   editorDrafts?: Record<string, string>
   markdownViewMode?: Record<string, 'source' | 'rich' | 'preview'>
-  markdownRichModeSizeOverride?: Record<string, boolean>
+  markdownRichModeSizeOverridden?: boolean
   isChangesMode?: boolean
   gitStatusByWorktree?: Record<string, GitStatusEntry[]>
 }) {
@@ -43,7 +43,7 @@ function renderModel(args: {
     gitStatusEntries: args.gitStatusByWorktree?.[activeFile.worktreeId],
     gitBranchEntries: undefined,
     markdownViewMode: args.markdownViewMode ?? {},
-    markdownRichModeSizeOverride: args.markdownRichModeSizeOverride ?? {},
+    markdownRichModeSizeOverridden: args.markdownRichModeSizeOverridden ?? false,
     isChangesMode: args.isChangesMode ?? false,
     canOpenWorkspaceFileBrowser: true
   })
@@ -78,7 +78,7 @@ describe('getEditorPanelRenderModel HTML preview affordance', () => {
       gitStatusEntries: undefined,
       gitBranchEntries: undefined,
       markdownViewMode: {},
-      markdownRichModeSizeOverride: {},
+      markdownRichModeSizeOverridden: false,
       isChangesMode: false,
       canOpenWorkspaceFileBrowser: false
     })
@@ -184,7 +184,7 @@ describe('getEditorPanelRenderModel markdown export affordance', () => {
     const model = renderModel({
       markdownViewMode: { '/repo/README.md': 'rich' },
       editorDrafts: { '/repo/README.md': 'a'.repeat(RICH_MARKDOWN_MAX_SIZE_BYTES + 1) },
-      markdownRichModeSizeOverride: { '/repo/README.md': true }
+      markdownRichModeSizeOverridden: true
     })
 
     expect(model.canExportMarkdownToPdf).toBe(true)
@@ -194,7 +194,7 @@ describe('getEditorPanelRenderModel markdown export affordance', () => {
     const model = renderModel({
       markdownViewMode: { '/repo/README.md': 'rich' },
       editorDrafts: { '/repo/README.md': 'a'.repeat(RICH_MARKDOWN_MAX_SIZE_BYTES + 1) },
-      markdownRichModeSizeOverride: { '/repo/OTHER.md': true }
+      markdownRichModeSizeOverridden: false
     })
 
     expect(model.canExportMarkdownToPdf).toBe(false)
@@ -247,5 +247,27 @@ describe('getEditorPanelRenderModel markdown export affordance', () => {
         fileContents: { [preview.id]: textContent({ isBinary: true }) }
       }).canExportMarkdownToPdf
     ).toBe(false)
+  })
+})
+
+describe('virtual Markdown preview PDF export', () => {
+  it('disables export for large previews, including unsaved drafts', () => {
+    for (const useDraft of [false, true]) {
+      const content = 'x'.repeat(RICH_MARKDOWN_MAX_SIZE_BYTES + 1)
+      expect(
+        renderModel({
+          activeFile: markdownFile({
+            id: 'preview:/repo/README.md',
+            mode: 'markdown-preview',
+            markdownPreviewSourceFileId: '/repo/README.md'
+          }),
+          fileContents: {
+            'preview:/repo/README.md': textContent({ content: useDraft ? '# Small' : content })
+          },
+          editorDrafts: useDraft ? { '/repo/README.md': content } : {},
+          markdownRichModeSizeOverridden: true
+        }).canExportMarkdownToPdf
+      ).toBe(false)
+    }
   })
 })

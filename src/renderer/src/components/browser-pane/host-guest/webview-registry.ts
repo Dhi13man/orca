@@ -1,5 +1,8 @@
 import { clearLiveBrowserUrl } from '../describe-page/live-browser-url-registry'
-import { removeBrowserPageViewport } from './browser-page-viewport'
+import {
+  clearBrowserPageViewportPresetSize,
+  removeBrowserPageViewport
+} from './browser-page-viewport'
 import { forgetExplicitBrowserPageZoomLevel } from './browser-page-zoom'
 import {
   acquireWebviewsDragPassthrough,
@@ -41,6 +44,8 @@ type DragListenerRegistry = {
   dragstart: () => void
   dragend: () => void
   drop: () => void
+  pointerdown: () => void
+  pointermove: () => void
 }
 
 function getListenerHost(): (Window & { [DRAG_LISTENER_KEY]?: DragListenerRegistry }) | null {
@@ -59,6 +64,8 @@ function removeDragListeners(): void {
   window.removeEventListener('dragstart', existingListeners.dragstart, true)
   window.removeEventListener('dragend', existingListeners.dragend, true)
   window.removeEventListener('drop', existingListeners.drop, true)
+  window.removeEventListener('pointerdown', existingListeners.pointerdown, true)
+  window.removeEventListener('pointermove', existingListeners.pointermove, true)
   delete listenerHost[DRAG_LISTENER_KEY]
   dragListenersAttached = false
   nativeDragPassthroughRelease?.()
@@ -78,13 +85,19 @@ function ensureDragListeners(): void {
   const dragstart = (): void => setWebviewsDragPassthrough(true)
   const dragend = (): void => setWebviewsDragPassthrough(false)
   const drop = (): void => setWebviewsDragPassthrough(false)
+  // Why: a cancelled dragstart never starts a drag, so no dragend or drop follows and every webview
+  // would stay click-through. A live native drag delivers no pointer events, so one proves it is over.
+  const pointerdown = (): void => setWebviewsDragPassthrough(false)
+  const pointermove = (): void => setWebviewsDragPassthrough(false)
 
   window.addEventListener('dragstart', dragstart, true)
   window.addEventListener('dragend', dragend, true)
   window.addEventListener('drop', drop, true)
+  window.addEventListener('pointerdown', pointerdown, true)
+  window.addEventListener('pointermove', pointermove, true)
   // Why: only live webviews need drag passthrough listeners; removing them
   // when the registry empties keeps browserless sessions free of global hooks.
-  listenerHost[DRAG_LISTENER_KEY] = { dragstart, dragend, drop }
+  listenerHost[DRAG_LISTENER_KEY] = { dragstart, dragend, drop, pointerdown, pointermove }
   dragListenersAttached = true
 }
 
@@ -250,6 +263,7 @@ function removePersistentWebview(
     // Why: the viewport can outlive a missing webview entry; tear it down on
     // explicit close paths so overlay slots do not leak parked shells.
     if (!preserveViewport) {
+      clearBrowserPageViewportPresetSize(browserTabId)
       removeBrowserPageViewport(browserTabId)
     }
     registeredWebContentsIds.delete(browserTabId)
@@ -263,6 +277,7 @@ function removePersistentWebview(
   webview.remove()
   unregisterPersistentWebview(browserTabId)
   if (!preserveViewport) {
+    clearBrowserPageViewportPresetSize(browserTabId)
     removeBrowserPageViewport(browserTabId)
   }
   registeredWebContentsIds.delete(browserTabId)
