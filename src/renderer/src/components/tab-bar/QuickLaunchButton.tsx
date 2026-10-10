@@ -1,7 +1,11 @@
 import React, { useCallback } from 'react'
-import { Settings as SettingsIcon } from 'lucide-react'
+import { Settings as SettingsIcon, Terminal } from 'lucide-react'
 import { toast } from 'sonner'
-import { DropdownMenuItem, DropdownMenuShortcut } from '@/components/ui/dropdown-menu'
+import {
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut
+} from '@/components/ui/dropdown-menu'
 import { getAgentCatalog, AgentIcon } from '@/lib/agent-catalog'
 import { useAppStore } from '@/store'
 import { useAgentDetectionTargetForWorktree } from '@/hooks/useAgentDetectionTarget'
@@ -9,6 +13,7 @@ import { useDetectedAgents } from '@/hooks/useDetectedAgents'
 import { useOptionalShortcutLabel } from '@/hooks/useShortcutLabel'
 import { launchAgentInNewTab } from '@/lib/launch-agent-in-new-tab'
 import { newAgentLaunchRequestId } from '@/lib/agent-launch-request-id'
+import { launchCustomAgentInNewTab } from '@/lib/launch-custom-agent-in-new-tab'
 import type { TuiAgent } from '../../../../shared/tui-agent'
 import type { LaunchSource } from '../../../../shared/telemetry-events'
 import {
@@ -18,6 +23,10 @@ import {
 import { translate } from '@/i18n/i18n'
 import { newAgentPromptOutcome } from '@/lib/new-agent-prompt-outcome'
 import { activeAgentNotesSendFailureMessage } from '@/lib/active-agent-note-send-result'
+import {
+  isCustomAgentProfileEnabled,
+  normalizeCustomAgentProfiles
+} from '../../../../shared/custom-agent-profile'
 
 export type QuickLaunchAgentMenuItemsProps = {
   worktreeId: string
@@ -101,6 +110,21 @@ async function waitForTerminalPty(tabId: string, timeoutMs: number): Promise<boo
   return getTerminalLaunchState(tabId).hasPty
 }
 
+function watchTerminalLaunch(tabId: string, worktreeId: string, label: string): void {
+  void waitForTerminalPty(tabId, 5000).then((hasPty) => {
+    if (hasPty) {
+      return
+    }
+    const launchState = getTerminalLaunchState(tabId)
+    if (!launchState.stillOpen || useAppStore.getState().activeWorktreeId !== worktreeId) {
+      return
+    }
+    if (shouldShowLaunchWatchdogTimeout({ hasPty: launchState.hasPty })) {
+      toast.message(getLaunchWatchdogTimeoutMessage(label))
+    }
+  })
+}
+
 function QuickLaunchAgentMenuItemsInner({
   worktreeId,
   groupId,
@@ -126,6 +150,19 @@ function QuickLaunchAgentMenuItemsInner({
   const openSettingsPage = useAppStore((s) => s.openSettingsPage)
   const openSettingsTarget = useAppStore((s) => s.openSettingsTarget)
   const newAgentShortcut = useOptionalShortcutLabel('tab.newAgent')
+  const rawCustomProfiles = useAppStore((s) => s.settings?.customAgentProfiles)
+  const customProfiles = normalizeCustomAgentProfiles(rawCustomProfiles)
+  const enabledCustomProfiles = customProfiles.filter(isCustomAgentProfileEnabled)
+  const defaultCustomAgent = enabledCustomProfiles.find((profile) => profile.isDefault) ?? null
+  const launchableCustomProfiles =
+    prompt !== undefined
+      ? []
+      : defaultCustomAgent
+        ? [
+            defaultCustomAgent,
+            ...enabledCustomProfiles.filter((profile) => profile.id !== defaultCustomAgent.id)
+          ]
+        : enabledCustomProfiles
 
   const openAgentSettings = useCallback(() => {
     openSettingsTarget({ pane: 'agents', repoId: null })
@@ -186,27 +223,7 @@ function QuickLaunchAgentMenuItemsInner({
         return
       }
       onFocusTerminal(result.surface.tabId)
-
-      // Why: launch success means the terminal session exists. Agent readiness
-      // can lag behind on slow machines, and prompt paste flows already own
-      // their own readiness timeout once a PTY exists.
-      const launchedTabId = result.surface.tabId
-      void waitForTerminalPty(launchedTabId, 5000).then((hasPty) => {
-        if (hasPty) {
-          return
-        }
-        const launchState = getTerminalLaunchState(launchedTabId)
-        if (!launchState.stillOpen) {
-          return
-        }
-        if (useAppStore.getState().activeWorktreeId !== worktreeId) {
-          return
-        }
-        if (!shouldShowLaunchWatchdogTimeout({ hasPty: launchState.hasPty })) {
-          return
-        }
-        toast.message(getLaunchWatchdogTimeoutMessage(label))
-      })
+      watchTerminalLaunch(result.surface.tabId, worktreeId, label)
     },
     [
       worktreeId,
@@ -223,10 +240,22 @@ function QuickLaunchAgentMenuItemsInner({
 
   const enabledDetectedIds = detectedIds ? filterEnabledTuiAgents(detectedIds, disabledAgents) : []
   const agents = detectedIds ? orderAgents(defaultAgent, enabledDetectedIds) : []
+  const runCustomLaunch = (profileId: string, label: string): void => {
+    const result = launchCustomAgentInNewTab({
+      profileId,
+      worktreeId,
+      groupId
+    })
+    if (!result) {
+      return
+    }
+    onFocusTerminal(result.tabId)
+    watchTerminalLaunch(result.tabId, worktreeId, label)
+  }
 
   return (
     <>
-      {agents.length === 0 ? (
+      {agents.length === 0 && launchableCustomProfiles.length === 0 ? (
         <DropdownMenuItem
           disabled
           className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 text-muted-foreground"
@@ -256,7 +285,10 @@ function QuickLaunchAgentMenuItemsInner({
         const entry = getCatalogEntry(agent)
         const label = entry?.label ?? agent
         const showsDefaultAgentShortcut =
-          newAgentShortcut !== null && defaultAgent !== 'blank' && agent === defaultAgent
+          newAgentShortcut !== null &&
+          !defaultCustomAgent &&
+          defaultAgent !== 'blank' &&
+          agent === defaultAgent
         return (
           <DropdownMenuItem
             key={agent}
@@ -277,6 +309,25 @@ function QuickLaunchAgentMenuItemsInner({
           </DropdownMenuItem>
         )
       })}
+      {agents.length > 0 && launchableCustomProfiles.length > 0 ? <DropdownMenuSeparator /> : null}
+      {launchableCustomProfiles.map((profile) => (
+        <DropdownMenuItem
+          key={profile.id}
+          onSelect={() => runCustomLaunch(profile.id, profile.name)}
+          className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 font-medium"
+          title={translate(
+            'auto.components.tab.bar.QuickLaunchButton.ec2adf093e',
+            'Launch {{value0}} in a new terminal',
+            { value0: profile.name }
+          )}
+        >
+          <Terminal className="size-3.5" />
+          <span className="flex-1">{profile.name}</span>
+          {newAgentShortcut !== null && profile.id === defaultCustomAgent?.id ? (
+            <DropdownMenuShortcut>{newAgentShortcut}</DropdownMenuShortcut>
+          ) : null}
+        </DropdownMenuItem>
+      ))}
       <DropdownMenuItem
         onSelect={openAgentSettings}
         className="gap-2 rounded-[7px] px-2 py-1.5 text-[12px] leading-5 font-medium text-muted-foreground"

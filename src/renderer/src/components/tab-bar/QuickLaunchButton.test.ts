@@ -14,7 +14,10 @@ const {
   storeState: {
     settings: {
       defaultTuiAgent: 'codex' as 'claude' | 'codex' | 'gemini' | 'blank' | null,
-      disabledTuiAgents: [] as string[]
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: widens the empty literal so tests can set disabled agents.
+      disabledTuiAgents: [] as string[],
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: widens the empty literal so tests can set profiles.
+      customAgentProfiles: [] as unknown[]
     },
     worktreesByRepo: {} as Record<string, unknown[]>,
     repos: [] as unknown[],
@@ -73,7 +76,8 @@ vi.mock('@/components/ui/dropdown-menu', async () => {
     DropdownMenuItem: ({ children, ...props }: { children: React.ReactNode }) =>
       ReactActual.createElement('div', props, children),
     DropdownMenuShortcut: ({ children }: { children: React.ReactNode }) =>
-      ReactActual.createElement('span', { 'data-dropdown-shortcut': 'true' }, children)
+      ReactActual.createElement('span', { 'data-dropdown-shortcut': 'true' }, children),
+    DropdownMenuSeparator: () => ReactActual.createElement('hr')
   }
 })
 
@@ -94,6 +98,10 @@ vi.mock('sonner', () => ({
 
 vi.mock('@/lib/launch-agent-in-new-tab', () => ({
   launchAgentInNewTab: vi.fn()
+}))
+
+vi.mock('@/lib/launch-custom-agent-in-new-tab', () => ({
+  launchCustomAgentInNewTab: vi.fn()
 }))
 
 function renderAgentMenuItems(): string {
@@ -123,6 +131,7 @@ beforeEach(() => {
   openSettingsTargetMock.mockReset()
   storeState.settings.defaultTuiAgent = 'codex'
   storeState.settings.disabledTuiAgents = []
+  storeState.settings.customAgentProfiles = []
   storeState.worktreesByRepo = {}
   storeState.repos = []
   storeState.openSettingsPage = openSettingsPageMock
@@ -219,6 +228,69 @@ describe('QuickLaunchAgentMenuItems', () => {
 
     storeState.settings.defaultTuiAgent = 'blank'
     expect(renderAgentMenuItems()).not.toContain('data-dropdown-shortcut="true"')
+  })
+
+  it('lists custom profiles even when no built-in agent is detected', () => {
+    useDetectedAgentsMock.mockReturnValueOnce({ detectedIds: [] })
+    storeState.settings.customAgentProfiles = [
+      {
+        id: 'dhimanex',
+        name: 'Dhimanex',
+        executable: 'dhimanex',
+        args: []
+      }
+    ]
+
+    const html = renderAgentMenuItems()
+
+    expect(rowMarkup(html, 'Dhimanex')).toContain('Dhimanex')
+    expect(html).not.toContain('No agents detected')
+    expect(html).not.toContain('<hr')
+  })
+
+  it('orders the enabled custom default first and assigns it the new-agent shortcut', () => {
+    shortcutLabelMock.mockReturnValue('⌘⌥T')
+    storeState.settings.customAgentProfiles = [
+      {
+        id: 'disabled',
+        name: 'Disabled agent',
+        executable: 'disabled',
+        args: [],
+        enabled: false
+      },
+      {
+        id: 'codex-luna',
+        name: 'Codex Luna',
+        executable: 'codex',
+        args: ['--model', 'luna'],
+        isDefault: true
+      }
+    ]
+
+    const html = renderAgentMenuItems()
+
+    expect(rowMarkup(html, 'Codex Luna')).toContain('⌘⌥T')
+    expect(rowMarkup(html, 'Codex')).not.toContain('⌘⌥T')
+    expect(html).not.toContain('Disabled agent')
+  })
+
+  it('ignores a disabled custom default', () => {
+    shortcutLabelMock.mockReturnValue('⌘⌥T')
+    storeState.settings.customAgentProfiles = [
+      {
+        id: 'disabled-default',
+        name: 'Disabled default',
+        executable: 'disabled',
+        args: [],
+        enabled: false,
+        isDefault: true
+      }
+    ]
+
+    const html = renderAgentMenuItems()
+
+    expect(html).not.toContain('Disabled default')
+    expect(rowMarkup(html, 'Codex')).toContain('⌘⌥T')
   })
 })
 

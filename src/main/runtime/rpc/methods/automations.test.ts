@@ -35,6 +35,7 @@ describe('automation RPC methods', () => {
         prompt: 'Review changes',
         precheck: { command: 'test -f ready', timeoutSeconds: 30 },
         agentId: 'codex',
+        customAgentProfileId: 'codex-luna',
         runContext: {
           kind: 'workspace-run',
           projectId: 'github:stablyai/orca',
@@ -64,6 +65,7 @@ describe('automation RPC methods', () => {
         id: 'auto-1',
         updates: {
           enabled: false,
+          customAgentProfileId: null,
           setupDecision: 'run',
           reuseSession: false,
           rrule: '0 9 * * 1-5',
@@ -84,6 +86,7 @@ describe('automation RPC methods', () => {
         prompt: 'Review changes',
         precheck: { command: 'test -f ready', timeoutSeconds: 30 },
         agentId: 'codex',
+        customAgentProfileId: 'codex-luna',
         runContext: expect.objectContaining({ hostId: 'runtime:gpu' }),
         sourceContext: expect.objectContaining({ hostId: 'local' }),
         repo: 'repo-1',
@@ -95,6 +98,7 @@ describe('automation RPC methods', () => {
       'auto-1',
       expect.objectContaining({
         enabled: false,
+        customAgentProfileId: null,
         setupDecision: 'run',
         reuseSession: false,
         rrule: '0 9 * * 1-5'

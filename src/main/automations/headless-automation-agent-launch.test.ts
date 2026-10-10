@@ -205,4 +205,14 @@ describe('headless automation agent launch', () => {
     )
     expect(runtime.launchAgentTerminal).not.toHaveBeenCalled()
   })
+
+  it('refuses a custom-profile automation headless, before any workspace work', async () => {
+    const runtime = harness()
+
+    await expect(launch(runtime, { customAgentProfileId: 'codex-luna' })).rejects.toThrow(
+      'Custom agent automations require the desktop app.'
+    )
+    expect(runtime.launchAgentTerminal).not.toHaveBeenCalled()
+    expect(runtime.createManagedWorktree).not.toHaveBeenCalled()
+  })
 })
