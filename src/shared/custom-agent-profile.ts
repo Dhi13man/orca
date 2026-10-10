@@ -1,6 +1,6 @@
 import type { AgentStartupShell } from './tui-agent-startup-shell'
 import { buildShellCommandFromArgv } from './tui-agent-startup-shell'
-import { quoteWindowsCmdArgument } from '@orca/process-host/windows-command-line'
+import { quoteWindowsArgument } from '@orca/process-host/windows-command-line'
 import type { TuiAgent } from './tui-agent'
 import { isTuiAgent } from './tui-agent-config'
 import { TUI_AGENT_DISPLAY_NAMES } from './tui-agent-display-names'
@@ -195,12 +195,10 @@ function encodeUtf8Base64(value: string): string {
 }
 
 function buildWindowsRunnerPayload(argv: readonly string[]): string {
-  const args = argv.slice(1).map(quoteWindowsCmdArgument).join(' ').replaceAll('%', '%%')
-  const command = `"%${WINDOWS_EXECUTABLE_ENV}%"${args ? ` ${args}` : ''}`
   return encodeUtf8Base64(
     JSON.stringify({
       executable: argv[0],
-      runner: `@echo off\r\n@chcp 65001 >nul\r\n${command}\r\nexit /b %errorlevel%\r\n`
+      arguments: argv.slice(1).map(quoteWindowsArgument).join(' ')
     })
   )
 }
@@ -215,11 +213,23 @@ function buildCustomAgentWindowsLaunch(
     '$launch = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($runnerPayload)) | ConvertFrom-Json;',
     '$escapedCommand = [Management.Automation.WildcardPattern]::Escape([string]$launch.executable);',
     `$env:${WINDOWS_EXECUTABLE_ENV} = (Get-Command -Name $escapedCommand -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source;`,
-    "$runnerPath = [IO.Path]::Combine([IO.Path]::GetTempPath(), 'orca-agent-' + [Guid]::NewGuid().ToString('N') + '.cmd')",
-    '; $runnerExit = 1; try {',
-    '[IO.File]::WriteAllText($runnerPath, [string]$launch.runner, [Text.UTF8Encoding]::new($false));',
-    '& cmd.exe /d /q /v:off /c $runnerPath; $runnerExit = $LASTEXITCODE',
-    `} finally { Remove-Item Env:${WINDOWS_EXECUTABLE_ENV} -ErrorAction SilentlyContinue; Remove-Item -LiteralPath $runnerPath -Force -ErrorAction SilentlyContinue };`
+    '$runnerExit = 1; try {',
+    `if ([IO.Path]::GetExtension($env:${WINDOWS_EXECUTABLE_ENV}) -in @('.cmd', '.bat')) {`,
+    '$percent = [string][char]37; $quote = [string][char]34; $newline = [Environment]::NewLine;',
+    String.raw`$batchArguments = [Regex]::Replace([string]$launch.arguments, ('(\\*)' + $percent), ('$1$1' + $quote + '^' + $percent + $quote)).Replace($percent, $percent + $percent);`,
+    `$runner = '@echo off' + $newline + '@chcp 65001 >nul' + $newline + $quote + $percent + '${WINDOWS_EXECUTABLE_ENV}' + $percent + $quote + ' ' + $batchArguments + $newline + 'exit /b ' + $percent + 'errorlevel' + $percent + $newline;`,
+    "$runnerPath = [IO.Path]::Combine([IO.Path]::GetTempPath(), 'orca-agent-' + [Guid]::NewGuid().ToString('N') + '.cmd');",
+    'try {',
+    '[IO.File]::WriteAllText($runnerPath, $runner, [Text.UTF8Encoding]::new($false));',
+    '& cmd.exe /d /q /v:off /c $runnerPath; $runnerExit = $LASTEXITCODE;',
+    '} finally { Remove-Item -LiteralPath $runnerPath -Force -ErrorAction SilentlyContinue }',
+    '} else {',
+    `$startArguments = @{ FilePath = $env:${WINDOWS_EXECUTABLE_ENV}; NoNewWindow = $true; Wait = $true; PassThru = $true };`,
+    'if ($launch.arguments) { $startArguments.ArgumentList = [string]$launch.arguments };',
+    '$childProcess = Start-Process @startArguments;',
+    'try { $runnerExit = $childProcess.ExitCode } finally { $childProcess.Dispose() }',
+    '}',
+    `} finally { Remove-Item Env:${WINDOWS_EXECUTABLE_ENV} -ErrorAction SilentlyContinue };`
   ].join(' ')
   const command =
     shell === 'cmd'
