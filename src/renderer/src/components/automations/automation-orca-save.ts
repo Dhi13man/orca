@@ -88,6 +88,19 @@ export async function saveOrcaAutomation(
       : createCheck
         ? { status: 'ready' as const, ...createCheck.destination }
         : null
+  if (
+    draft.customAgentProfileId &&
+    setupResolution?.status === 'ready' &&
+    setupResolution.authority.kind === 'runtime'
+  ) {
+    toast.error(
+      translate(
+        'auto.components.automations.AutomationsPage.customAgentRemoteHost',
+        'Choose a built-in agent for automations stored on a paired Orca host.'
+      )
+    )
+    return
+  }
   const setupHostId: ExecutionHostId | undefined =
     setupResolution?.status === 'ready' && setupResolution.authority.kind === 'runtime'
       ? (`runtime:${setupResolution.authority.environmentId}` as ExecutionHostId)
@@ -164,6 +177,7 @@ export async function saveOrcaAutomation(
     ...(hasExtraAgentArgs(draft.extraAgentArgs) || currentAutomation?.extraAgentArgs
       ? { extraAgentArgs: draft.extraAgentArgs }
       : {}),
+    customAgentProfileId: draft.customAgentProfileId,
     runContext,
     projectId: draft.projectId,
     workspaceMode: draft.workspaceMode,
@@ -184,6 +198,7 @@ export async function saveOrcaAutomation(
     precheck,
     agentId: draft.agentId,
     ...(hasExtraAgentArgs(draft.extraAgentArgs) ? { extraAgentArgs: draft.extraAgentArgs } : {}),
+    ...(draft.customAgentProfileId ? { customAgentProfileId: draft.customAgentProfileId } : {}),
     runContext,
     projectId: draft.projectId,
     workspaceMode: draft.workspaceMode,

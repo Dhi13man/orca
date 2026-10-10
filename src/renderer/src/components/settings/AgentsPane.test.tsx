@@ -21,9 +21,8 @@ import { getCodexTerminalServerIsolationTitle } from './codex-terminal-server-is
 import { AgentAwakeSetting } from './AgentAwakeSetting'
 import { AgentRuntimeSetting } from './AgentRuntimeSetting'
 import type * as AgentRuntimeSettingModule from './AgentRuntimeSetting'
+import { AgentAvailabilityControl } from './AgentSettingsRow'
 import {
-  AgentAvailabilityControl,
-  AgentPermissionsSetting,
   AgentGeneratedTabTitlesSetting,
   AgentStatusHooksSetting,
   AgentWorkspaceTrustSetting,
@@ -181,6 +180,14 @@ describe('AgentsPane', () => {
     expect(detectedAgentsMock.lastTarget).toEqual({ kind: 'local' })
   })
 
+  it('offers duplicate-as-custom and places custom agents below Installed', () => {
+    const markup = renderPane(getDefaultSettings('/tmp'))
+
+    expect(markup).toContain('Duplicate Claude as custom agent')
+    expect(markup.indexOf('Installed')).toBeLessThan(markup.indexOf('Custom agents'))
+    expect(markup.indexOf('Custom agents')).toBeLessThan(markup.indexOf('Available to install'))
+  })
+
   it('scopes agent detection to the active remote server', () => {
     // Repro for the "Remote Server lists local agents" bug: with an Active
     // Server selected, the Installed list must probe that server's PATH.
@@ -201,6 +208,9 @@ describe('AgentsPane', () => {
 
       expect(detectedAgentsMock.lastTarget).toEqual({ kind: 'runtime', environmentId: 'env-1' })
       expect(markup).toContain('on Coder')
+      expect(markup).toMatch(
+        /<button[^>]*disabled=""[^>]*aria-label="Duplicate Claude as custom agent"/
+      )
     } finally {
       initialState.runtimeEnvironments = priorRuntimeEnvironments
     }
@@ -488,24 +498,6 @@ describe('AgentsPane', () => {
     expect(matchesSettingsSearch('permission', getAgentsPaneSearchEntries())).toBe(true)
     expect(matchesSettingsSearch('yolo', getAgentsPaneSearchEntries())).toBe(true)
     expect(matchesSettingsSearch('manual', getAgentsPaneSearchEntries())).toBe(true)
-  })
-
-  it('applies the selected agent permission mode from settings without a mixed segment', () => {
-    const onChange = vi.fn()
-    const element = AgentPermissionsSetting({ mode: 'mixed', onChange })
-    const props = element.props.children.props.action.props as {
-      value: 'yolo'
-      onChange: (value: 'yolo' | 'manual' | 'mixed') => void
-      options: { value: string }[]
-    }
-
-    expect(props.value).toBe('yolo')
-    expect(props.options.map((option) => option.value)).toEqual(['yolo', 'manual'])
-    props.onChange('mixed')
-    expect(onChange).not.toHaveBeenCalled()
-
-    props.onChange('manual')
-    expect(onChange).toHaveBeenCalledWith('manual')
   })
 
   it('keeps catalog agent ids, labels, and commands discoverable in settings search', () => {

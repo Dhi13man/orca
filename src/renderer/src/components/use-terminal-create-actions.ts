@@ -11,6 +11,7 @@ import {
 import { openMobileEmulatorTab } from '@/lib/open-mobile-emulator-tab'
 import { launchAgentInNewTab } from '@/lib/launch-agent-in-new-tab'
 import { newAgentLaunchRequestId } from '@/lib/agent-launch-request-id'
+import { launchCustomAgentInNewTab } from '@/lib/launch-custom-agent-in-new-tab'
 import { buildDuplicatedBrowserTabOptions } from '@/lib/duplicate-browser-tab-options'
 import { browserWorkspaceHasRemoteOwner } from '@/runtime/remote-browser-tab-ownership'
 import { getClientCreationActionPolicy } from '@/lib/client-creation-action-policy'
@@ -113,6 +114,23 @@ export function useTerminalCreateActions(controller: TerminalColdActivationContr
           )
         )
       }
+    },
+    [activeWorktreeId]
+  )
+
+  const handleNewCustomAgentTab = useCallback(
+    (profileId: string) => {
+      if (!activeWorktreeId) {
+        return
+      }
+      const state = useAppStore.getState()
+      launchCustomAgentInNewTab({
+        profileId,
+        worktreeId: activeWorktreeId,
+        groupId:
+          state.activeGroupIdByWorktree[activeWorktreeId] ??
+          state.groupsByWorktree[activeWorktreeId]?.[0]?.id
+      })
     },
     [activeWorktreeId]
   )
@@ -232,6 +250,7 @@ export function useTerminalCreateActions(controller: TerminalColdActivationContr
   return {
     handleNewTab,
     handleNewAgentTab,
+    handleNewCustomAgentTab,
     handleNewSimulatorTab,
     handleNewBrowserTab,
     handleOpenEntry,

@@ -43,6 +43,9 @@ export async function launchHeadlessAutomationAgent(
   }
 ): Promise<HeadlessAutomationAgentLaunch> {
   const { automation, run, target } = request
+  if (automation.customAgentProfileId) {
+    throw new Error('Custom agent automations require the desktop app.')
+  }
   const agent = automation.agentId
   // The startup plan trims the prompt for every agent; a blank one launches the agent bare.
   const text = automation.prompt?.trim()

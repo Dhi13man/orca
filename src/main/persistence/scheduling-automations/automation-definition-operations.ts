@@ -94,6 +94,7 @@ export function createAutomation(
     precheck: normalizeAutomationPrecheck(input.precheck),
     agentId: input.agentId,
     ...(extraAgentArgs !== undefined ? { extraAgentArgs } : {}),
+    ...(input.customAgentProfileId ? { customAgentProfileId: input.customAgentProfileId } : {}),
     // Why own contexts win: a wire context speaks the client's perspective —
     // 'runtime:<id>' is a client-assigned name this store cannot interpret, and
     // persisting it makes the projection orphan a record this authority owns.
@@ -157,6 +158,7 @@ export function updateAutomation(
   const definedUpdates = Object.fromEntries(
     Object.entries(updates).filter(([, value]) => value !== undefined)
   ) as AutomationUpdateInput
+  const { customAgentProfileId, ...mergedUpdates } = definedUpdates
   const repoId = updates.projectId ?? current.projectId
   const repo = operations.state.repos.find((entry) => entry.id === repoId)
   const selectorMoveRequested =
@@ -174,7 +176,7 @@ export function updateAutomation(
     : storedExtraAgentArgs(current.extraAgentArgs)
   const merged: Automation = {
     ...current,
-    ...definedUpdates,
+    ...mergedUpdates,
     name: updates.name !== undefined ? updates.name.trim() || 'Untitled automation' : current.name,
     precheck: Object.hasOwn(definedUpdates, 'precheck')
       ? normalizeAutomationPrecheck(definedUpdates.precheck)
@@ -235,6 +237,11 @@ export function updateAutomation(
     merged.extraAgentArgs = extraAgentArgs
   }
   assertAutomationExtraAgentArgs(merged)
+  if (customAgentProfileId === null) {
+    delete merged.customAgentProfileId
+  } else if (customAgentProfileId !== undefined) {
+    merged.customAgentProfileId = customAgentProfileId
+  }
   const previousPin = automationWorkspaceSshPin(operations.state, current.workspaceId)
   const workspaceSshPin = automationWorkspaceSshPin(operations.state, merged.workspaceId)
   const workspaceSshPinMoved = previousPin?.targetId !== workspaceSshPin?.targetId

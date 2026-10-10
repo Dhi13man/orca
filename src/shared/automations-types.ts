@@ -98,6 +98,8 @@ export type Automation = {
   agentId: TuiAgent
   /** Saved text appended to the host's default agent Arguments on each fresh run; absent means none. */
   extraAgentArgs?: string
+  /** Launch profile only; agentId remains the provider identity. */
+  customAgentProfileId?: string
   /** Why: runContext carries the logical project + host setup identity for
    *  multi-host projects; projectId remains only as the legacy repo-id storage
    *  field for pre-host-context automations.
@@ -187,6 +189,7 @@ export type AutomationCreateInput = {
   agentId: TuiAgent
   /** Empty or whitespace means no extras. */
   extraAgentArgs?: string
+  customAgentProfileId?: string
   runContext?: WorkspaceRunContext | null
   sourceContext?: TaskSourceContext | null
   /** @deprecated Legacy repo-id compatibility field required for older stored
@@ -226,7 +229,7 @@ export type AutomationUpdateInput = Partial<
     | 'enabled'
     | 'missedRunGraceMinutes'
   >
->
+> & { customAgentProfileId?: string | null }
 
 export type AutomationDispatchRequest = {
   automation: Automation

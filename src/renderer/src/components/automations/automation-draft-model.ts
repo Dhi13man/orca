@@ -7,6 +7,7 @@ import {
   parseExtraAgentArgs
 } from '../../../../shared/automation-extra-agent-args'
 import type { AutomationDraft } from './AutomationEditorDialog'
+import type { CustomAgentProfile } from '../../../../shared/custom-agent-profile'
 
 export const AUTOMATION_DEFAULT_TIME = '09:00'
 
@@ -51,7 +52,17 @@ export function buildHermesCronSchedule(draft: AutomationDraft): string {
   })
 }
 
-export function getAgentLabel(agentId: string): string {
+export function getAgentLabel(
+  agentId: string,
+  customAgentProfileId?: string,
+  customAgentProfiles?: readonly CustomAgentProfile[]
+): string {
+  const customLabel = customAgentProfileId
+    ? customAgentProfiles?.find((profile) => profile.id === customAgentProfileId)?.name
+    : null
+  if (customLabel) {
+    return customLabel
+  }
   return getAgentCatalog().find((agent) => agent.id === agentId)?.label ?? agentId
 }
 

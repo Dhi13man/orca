@@ -135,6 +135,7 @@ export function useAutomationsPageLocalState(store: AutomationsPageStoreState) {
     prompt: '',
     agentId: defaultAgent,
     extraAgentArgs: '',
+    customAgentProfileId: null,
     projectId: '',
     workspaceMode: 'existing',
     workspaceId: '',

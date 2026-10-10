@@ -33,6 +33,7 @@ import { listedRow } from './automations-page-listed-items'
 import { makeAutomation, REPO_ID, WORKSPACE_ID } from './automations-page-fixtures'
 import type { Repo } from '../../../../shared/repo-types'
 import type { ProjectHostSetup } from '../../../../shared/project-types'
+import type { AutomationTemplate } from './automation-templates'
 
 installAutomationsPageHarness()
 
@@ -160,6 +161,47 @@ function runtimeCreateCalls(): unknown[][] {
 }
 
 describe('AutomationsPage create destination', () => {
+  it('clears the default custom agent when a template selects a built-in', async () => {
+    mocks.state.settings = {
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the mocked store state is a plain object.
+      ...(mocks.state.settings as Record<string, unknown>),
+      customAgentProfiles: [
+        {
+          id: 'codex-luna',
+          name: 'Codex Luna',
+          baseAgent: 'codex',
+          baseAgentExecutable: 'codex',
+          executable: 'codex',
+          args: ['--model', 'luna'],
+          isDefault: true
+        }
+      ]
+    }
+    await renderPage()
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the mocked list panel exposes this callback.
+    const openFromTemplate = mocks.listPanel?.openCreateDialog as
+      | ((template: AutomationTemplate) => void)
+      | undefined
+
+    await act(async () => {
+      openFromTemplate?.({
+        id: 'claude-review',
+        category: 'Review',
+        label: 'Claude review',
+        description: 'Review with Claude',
+        name: 'Claude review',
+        prompt: 'Review the repository.',
+        preset: 'daily',
+        agentId: 'claude'
+      })
+    })
+
+    expect(mocks.editorDialog?.draft).toMatchObject({
+      agentId: 'claude',
+      customAgentProfileId: null
+    })
+  })
+
   it('creates on the selected runtime rather than under the desktop authority', async () => {
     api.automations.list.mockResolvedValue([])
     scopedList([])
@@ -182,6 +224,48 @@ describe('AutomationsPage create destination', () => {
       workspace: `id:${RUNTIME_WORKSPACE_ID}`,
       destination: { selector: { kind: 'self' } }
     })
+  })
+
+  it('refuses a client-side custom profile for a runtime destination', async () => {
+    api.automations.list.mockResolvedValue([])
+    scopedList([])
+    runtimeHost([], [])
+    addRuntimeProject()
+    mocks.state.automationHostFilter = RUNTIME_SELF_FILTER
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the mocked store state is a plain object.
+    const settings = mocks.state.settings as {
+      customAgentProfiles?: unknown[]
+      disabledTuiAgents?: string[]
+    }
+    settings.disabledTuiAgents = ['codex']
+    settings.customAgentProfiles = [
+      {
+        id: 'codex-luna',
+        name: 'Codex Luna',
+        baseAgent: 'codex',
+        baseAgentExecutable: 'codex',
+        executable: 'codex',
+        args: ['--model', 'luna']
+      }
+    ]
+
+    await renderPage()
+    await settleHostQueries()
+    await openCreateDialogFor(RUNTIME_REPO_ID, RUNTIME_WORKSPACE_ID)
+    await act(async () => {
+      mocks.editorDialog?.onDraftChange((current) => ({
+        ...(current as Record<string, unknown>),
+        agentId: 'codex',
+        customAgentProfileId: 'codex-luna'
+      }))
+    })
+    await save()
+
+    expect(runtimeCreateCalls()).toHaveLength(0)
+    expect(api.automations.create).not.toHaveBeenCalled()
+    expect(mocks.toastError).toHaveBeenCalledWith(
+      'Choose a built-in agent for automations stored on a paired Orca host.'
+    )
   })
 
   it('refuses a desktop project for a runtime destination instead of sending its id', async () => {
